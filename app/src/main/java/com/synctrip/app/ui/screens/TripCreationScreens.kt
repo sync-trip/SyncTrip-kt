@@ -192,7 +192,7 @@ private fun TravelStyleGrid(selectedStyles: Set<TravelStyle>, onStyleToggle: (Tr
         TravelStyle.CULTURE    to Pair(Icons.Outlined.Museum,          "문화"),
         TravelStyle.ADVENTURE  to Pair(Icons.Outlined.Hiking,          "모험"),
         TravelStyle.RELAXATION to Pair(Icons.Outlined.SelfImprovement, "휴양"),
-        TravelStyle.NIGHTLIFE  to Pair(Icons.Outlined.NightlifeSharp,  "나이트"),
+        TravelStyle.NIGHTLIFE  to Pair(Icons.Outlined.Nightlife,        "나이트"),
     )
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
