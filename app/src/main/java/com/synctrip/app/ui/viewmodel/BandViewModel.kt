@@ -19,6 +19,8 @@ data class BandUiState(
     val isSearchLoading: Boolean               = false,
     val isLoading: Boolean                     = false,
     val error: String?                         = null,
+    // 장바구니 최대 개수 초과 시 다이얼로그 트리거
+    val pickLimitReached: Boolean              = false,
 )
 
 class BandViewModel : ViewModel() {
@@ -83,7 +85,15 @@ class BandViewModel : ViewModel() {
     fun setReady(bandId: Long) {
         viewModelScope.launch {
             runCatching { BandRepository.setReady(bandId) }
-                .onSuccess { _uiState.value = _uiState.value.copy(readyStatus = it) }
+                .onSuccess { resp ->
+                    // members 목록에서 내 isReady 상태 즉시 반영 — 재조회 없이 UI 즉시 갱신
+                    _uiState.value = _uiState.value.copy(
+                        readyStatus = resp,
+                        members = _uiState.value.members.map { member ->
+                            if (member.userId == resp.userId) member.copy(isReady = resp.isReady) else member
+                        },
+                    )
+                }
                 .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
         }
     }
@@ -111,6 +121,7 @@ class BandViewModel : ViewModel() {
 
     /**
      * 장바구니 토글 — externalId로 담기/삭제 분기.
+     * 담기 시 한도 초과면 pickLimitReached 플래그만 세우고 API 호출하지 않음.
      * 낙관적 업데이트: UI에 먼저 반영 후 API 호출, 실패 시 롤백.
      */
     fun togglePick(bandId: Long, externalId: String) {
@@ -118,9 +129,20 @@ class BandViewModel : ViewModel() {
         if (existingPick != null) {
             doDeletePick(bandId, existingPick.placeId, externalId)
         } else {
+            // 담기 전 한도 체크 — 초과 시 다이얼로그 표시
+            val picks = _uiState.value.picks
+            if (picks != null && picks.currentCount >= picks.maxCount) {
+                _uiState.value = _uiState.value.copy(pickLimitReached = true)
+                return
+            }
             val place = _uiState.value.searchResults.find { it.externalId == externalId } ?: return
             doAddPick(bandId, place)
         }
+    }
+
+    /** 한도 초과 다이얼로그 닫기 */
+    fun clearPickLimit() {
+        _uiState.value = _uiState.value.copy(pickLimitReached = false)
     }
 
     /** 장소 담기 — 낙관적 업데이트 후 API, 실패 시 롤백 */

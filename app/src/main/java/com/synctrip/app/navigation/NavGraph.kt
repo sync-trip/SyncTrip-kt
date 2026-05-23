@@ -3,10 +3,13 @@ package com.synctrip.app.navigation
 import android.content.Intent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +26,8 @@ import com.synctrip.app.ui.screens.*
 import com.synctrip.app.ui.viewmodel.AuthUiState
 import com.synctrip.app.ui.viewmodel.AuthViewModel
 import com.synctrip.app.ui.viewmodel.BandViewModel
+import com.synctrip.app.ui.viewmodel.VoteViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -104,7 +109,7 @@ fun SyncTripNavGraph() {
                             modifier         = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center,
                         ) {
-                            CircularProgressIndicator()
+                            PlaneLoadingIndicator()
                         }
                     }
                 }
@@ -246,12 +251,24 @@ fun SyncTripNavGraph() {
             }
         }
 
+        // bandId 없이 진입하는 경우 (로비에서 상태 전환 시) — 완료 후 홈으로
         composable("aiLoading") {
-            AiLoadingScreen(
-                status     = AiGenerationStatus("job1", 0, "일정 생성 중…", false),
+            AiLoadingSimulated(
                 onComplete = {
                     navController.navigate("home") {
                         popUpTo("home") { inclusive = false }
+                    }
+                },
+            )
+        }
+
+        // 투표 완료 후 진입하는 경우 — 완료 후 해당 밴드 일정 화면으로
+        composable("aiLoading/{bandId}") { backStackEntry ->
+            val bandId = backStackEntry.arguments?.getString("bandId") ?: ""
+            AiLoadingSimulated(
+                onComplete = {
+                    navController.navigate("schedule/$bandId") {
+                        popUpTo("aiLoading/$bandId") { inclusive = true }
                     }
                 },
             )
@@ -292,7 +309,7 @@ fun SyncTripNavGraph() {
                 if (band == null) {
                     // 밴드 로딩 중이거나 찾을 수 없을 때 중앙 스피너 표시
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                        PlaneLoadingIndicator()
                     }
                 } else {
                     TripLobbyScreen(
@@ -348,23 +365,89 @@ fun SyncTripNavGraph() {
             )
         }
 
-        // 로비에서 진입하는 경우 — bandId 포함
+        // 로비에서 진입하는 경우 — bandId 포함, BandViewModel 연결
         composable("placeSearch/{bandId}") { backStackEntry ->
-            val bandIdArg        = backStackEntry.arguments?.getString("bandId") ?: ""
+            val bandId           = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState          by bandViewModel.uiState.collectAsState()
             var query            by remember { mutableStateOf("") }
-            var selectedCategory by remember { mutableStateOf(com.synctrip.app.data.models.PlaceCategory.ALL) }
+            var selectedCategory by remember { mutableStateOf(PlaceCategory.ALL) }
+
+            // 진입 시 픽 목록 + 전체 장소 초기 로드
+            LaunchedEffect(bandId) {
+                bandViewModel.loadPicks(bandId)
+                bandViewModel.searchPlaces(bandId)
+            }
 
             PlaceSearchScreen(
                 query            = query,
                 onQueryChange    = { query = it },
                 selectedCategory = selectedCategory,
-                onCategoryChange = { selectedCategory = it },
-                places           = emptyList(),
-                cartCount        = 0,
+                onCategoryChange = { cat ->
+                    selectedCategory = cat
+                    bandViewModel.searchPlaces(
+                        bandId   = bandId,
+                        keyword  = query.takeIf { it.isNotBlank() },
+                        category = if (cat == PlaceCategory.ALL) null else cat.name,
+                    )
+                },
+                onSearch = {
+                    bandViewModel.searchPlaces(
+                        bandId   = bandId,
+                        keyword  = query.takeIf { it.isNotBlank() },
+                        category = if (selectedCategory == PlaceCategory.ALL) null else selectedCategory.name,
+                    )
+                },
+                places           = uiState.searchResults,
+                isLoading        = uiState.isSearchLoading,
+                cartCount        = uiState.picks?.items?.size ?: 0,
                 onPlaceClick     = {},
-                onCartToggle     = {},
-                onViewCartClick  = {},
+                onCartToggle     = { externalId -> bandViewModel.togglePick(bandId, externalId) },
+                onViewCartClick  = { navController.popBackStack() },
                 onBackClick      = { navController.popBackStack() },
+            )
+
+            // 장바구니 한도 초과 다이얼로그
+            if (uiState.pickLimitReached) {
+                AlertDialog(
+                    onDismissRequest = { bandViewModel.clearPickLimit() },
+                    title = { Text("장소 한도 도달") },
+                    text  = { Text("장소는 최대 ${uiState.picks?.maxCount ?: 5}개까지 담을 수 있어요.\n기존 장소를 삭제하고 새로 담아보세요.") },
+                    confirmButton = {
+                        TextButton(onClick = { bandViewModel.clearPickLimit() }) { Text("확인") }
+                    },
+                )
+            }
+        }
+
+        // 투표 화면 — 스와이프 카드 방식, 완료 시 일정 생성 화면으로 이동
+        composable("blindVoting/{bandId}") { backStackEntry ->
+            val bandId        = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
+            val voteViewModel: VoteViewModel = viewModel()
+            val uiState       by voteViewModel.uiState.collectAsState()
+
+            // 화면 진입 시 투표 대상 장소 로드
+            LaunchedEffect(bandId) {
+                voteViewModel.loadVotePlaces(bandId)
+            }
+
+            // pendingPlaces 소진 또는 서버 응답 isComplete = 모두 투표 완료
+            val isComplete = uiState.myStatus?.isComplete == true ||
+                (uiState.pendingPlaces.isEmpty() && uiState.votedPlaces.isNotEmpty())
+
+            SwipeVotingScreen(
+                pendingPlaces    = uiState.pendingPlaces,
+                votedCount       = uiState.votedPlaces.size,
+                isMyVoteComplete = isComplete,
+                isLoading        = uiState.isLoading,
+                onVote           = { placeId, result -> voteViewModel.voteForPlace(placeId, result) },
+                onBackClick      = { navController.popBackStack() },
+                onVotingDone     = {
+                    // 투표 완료 → 일정 생성 로딩 화면으로 이동 (bandId 포함, 투표 화면 백스택 제거)
+                    navController.navigate("aiLoading/$bandId") {
+                        popUpTo("blindVoting/$bandId") { inclusive = true }
+                    }
+                },
             )
         }
 
@@ -390,6 +473,48 @@ fun SyncTripNavGraph() {
             )
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 일정 생성 시뮬레이션 헬퍼
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 일정 생성 로딩 화면.
+ * 백엔드 폴링 대신 단계별 진행률을 시뮬레이션하여 UX를 유지한다.
+ * 완료(100%) 도달 후 0.6초 뒤 onComplete 호출.
+ */
+@Composable
+private fun AiLoadingSimulated(onComplete: () -> Unit) {
+    // 각 단계: (목표 진행률, 단계 메시지, 딜레이ms)
+    val steps = listOf(
+        Triple(15,  "투표 결과 분석 중…",    900L),
+        Triple(35,  "장소 동선 최적화 중…",  1100L),
+        Triple(58,  "숙소 및 식당 배정 중…", 1000L),
+        Triple(78,  "세부 일정 조율 중…",    900L),
+        Triple(92,  "마지막 손질 중…",       800L),
+        Triple(100, "일정 생성 완료!",        600L),
+    )
+
+    var progress    by remember { mutableIntStateOf(0) }
+    var currentStep by remember { mutableStateOf("일정 생성 시작 중…") }
+    var isComplete  by remember { mutableStateOf(false) }
+
+    // 단계별 진행률 순차 실행
+    LaunchedEffect(Unit) {
+        for ((target, label, delayMs) in steps) {
+            delay(delayMs)
+            progress    = target
+            currentStep = label
+        }
+        delay(600)
+        isComplete = true
+    }
+
+    AiLoadingScreen(
+        status     = AiGenerationStatus("sim", progress, currentStep, isComplete),
+        onComplete = onComplete,
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -3,44 +3,34 @@ package com.synctrip.app.ui.screens
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
 
+/**
+ * 스플래시 화면.
+ * 흰 배경에 SyncTrip 로고와 태그라인을 표시하고,
+ * 하단에 비행기 로딩 인디케이터를 보여준다.
+ * 페이드인 후 일정 시간이 지나면 onSplashComplete를 호출한다.
+ */
 @Composable
 fun SplashScreen(
     onSplashComplete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val logoScale by rememberInfiniteTransition(label = "logo-pulse").animateFloat(
-        initialValue  = 1f,
-        targetValue   = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation  = tween(1500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "logo-scale",
-    )
+    val alpha = remember { Animatable(0f) }
 
-    val alphaAnim = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        alphaAnim.animateTo(
-            targetValue   = 1f,
-            animationSpec = tween(durationMillis = 800),
-        )
+        alpha.animateTo(1f, animationSpec = tween(600))
         kotlinx.coroutines.delay(1800)
         onSplashComplete()
     }
@@ -48,55 +38,43 @@ fun SplashScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF00B2FF),
-                        Color(0xFF006492),
-                        Color(0xFF001E2F),
-                    ),
-                ),
-            ),
-        contentAlignment = Alignment.Center,
+            .background(Color.White)
+            .alpha(alpha.value),
     ) {
+        // 중앙 로고 + 태그라인
         Column(
             modifier            = Modifier
-                .alpha(alphaAnim.value)
-                .padding(horizontal = 40.dp),
+                .align(Alignment.Center)
+                .offset(y = (-40).dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
         ) {
-            Icon(
-                imageVector        = Icons.Filled.FlightTakeoff,
-                contentDescription = "SyncTrip logo",
-                tint               = Color.White,
-                modifier           = Modifier
-                    .size(80.dp)
-                    .scale(logoScale),
-            )
-
-            Spacer(Modifier.height(24.dp))
-
             Text(
-                text      = "SyncTrip",
-                style     = MaterialTheme.typography.displayLarge.copy(
-                    color         = Color.White,
-                    fontWeight    = FontWeight.Bold,
-                    letterSpacing = (-0.8).sp,
+                text  = "SyncTrip",
+                style = MaterialTheme.typography.displayMedium.copy(
+                    color      = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
                 ),
                 textAlign = TextAlign.Center,
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
 
             Text(
-                text      = "함께 떠나는 여행의 시작",
-                style     = MaterialTheme.typography.bodyLarge.copy(
-                    color = Color.White.copy(alpha = 0.75f),
+                text  = "여정의 설렘을 잇다",
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
                 textAlign = TextAlign.Center,
             )
         }
+
+        // 하단 비행기 로딩 인디케이터
+        PlaneLoadingIndicator(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 100.dp),
+            size = 80.dp,
+        )
     }
 }
 

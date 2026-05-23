@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.synctrip.app.data.models.*
+import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -42,8 +43,10 @@ fun PlaceSearchScreen(
     onQueryChange: (String) -> Unit,
     selectedCategory: PlaceCategory,
     onCategoryChange: (PlaceCategory) -> Unit,
-    places: List<PlaceSearchResult>,
+    places: List<ApiPlaceSearchResult>,
+    isLoading: Boolean = false,
     cartCount: Int,
+    onSearch: () -> Unit = {},
     onPlaceClick: (String) -> Unit,
     onCartToggle: (String) -> Unit,
     onViewCartClick: () -> Unit,
@@ -88,9 +91,11 @@ fun PlaceSearchScreen(
                     modifier      = Modifier.fillMaxWidth(),
                     placeholder   = { Text("장소 검색") },
                     leadingIcon   = { Icon(Icons.Outlined.Search, null) },
-                    shape         = RoundedCornerShape(12.dp),
-                    singleLine    = true,
-                    colors        = OutlinedTextFieldDefaults.colors(
+                    shape           = RoundedCornerShape(12.dp),
+                    singleLine      = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+                    colors          = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor   = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                     ),
@@ -102,19 +107,25 @@ fun PlaceSearchScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            LazyVerticalGrid(
-                columns               = GridCells.Fixed(2),
-                contentPadding        = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement   = Arrangement.spacedBy(12.dp),
-                modifier              = Modifier.weight(1f),
-            ) {
-                items(places, key = { it.id }) { place ->
-                    PlaceCard(
-                        place        = place,
-                        onPlaceClick = { onPlaceClick(place.id) },
-                        onCartToggle = { onCartToggle(place.id) },
-                    )
+            if (isLoading) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    PlaneLoadingIndicator()
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns               = GridCells.Fixed(2),
+                    contentPadding        = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement   = Arrangement.spacedBy(12.dp),
+                    modifier              = Modifier.weight(1f),
+                ) {
+                    items(places, key = { it.externalId }) { place ->
+                        PlaceCard(
+                            place        = place,
+                            onPlaceClick = { onPlaceClick(place.externalId) },
+                            onCartToggle = { onCartToggle(place.externalId) },
+                        )
+                    }
                 }
             }
         }
@@ -124,11 +135,12 @@ fun PlaceSearchScreen(
 @Composable
 private fun CategoryTabRow(selectedCategory: PlaceCategory, onCategoryChange: (PlaceCategory) -> Unit) {
     val tabs = mapOf(
-        PlaceCategory.ALL           to "전체",
-        PlaceCategory.ATTRACTION    to "관광지",
-        PlaceCategory.FOOD          to "음식점",
-        PlaceCategory.CAFE          to "카페",
-        PlaceCategory.ACCOMMODATION to "숙소",
+        PlaceCategory.ALL      to "전체",
+        PlaceCategory.FOOD     to "음식점",
+        PlaceCategory.CULTURE  to "관광지",
+        PlaceCategory.ACTIVITY to "액티비티",
+        PlaceCategory.SHOPPING to "쇼핑",
+        PlaceCategory.NATURE   to "자연",
     )
 
     ScrollableTabRow(
@@ -155,7 +167,7 @@ private fun CategoryTabRow(selectedCategory: PlaceCategory, onCategoryChange: (P
 }
 
 @Composable
-private fun PlaceCard(place: PlaceSearchResult, onPlaceClick: () -> Unit, onCartToggle: () -> Unit) {
+private fun PlaceCard(place: ApiPlaceSearchResult, onPlaceClick: () -> Unit, onCartToggle: () -> Unit) {
     Card(
         onClick   = onPlaceClick,
         shape     = RoundedCornerShape(12.dp),
@@ -164,8 +176,8 @@ private fun PlaceCard(place: PlaceSearchResult, onPlaceClick: () -> Unit, onCart
     ) {
         Column {
             Box(modifier = Modifier.height(120.dp)) {
-                if (place.imageUrl != null) {
-                    AsyncImage(model = place.imageUrl, contentDescription = place.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                if (place.thumbnailUrl != null) {
+                    AsyncImage(model = place.thumbnailUrl, contentDescription = place.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 } else {
                     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
                         Icon(Icons.Outlined.Place, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(32.dp))
@@ -177,7 +189,7 @@ private fun PlaceCard(place: PlaceSearchResult, onPlaceClick: () -> Unit, onCart
                     modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape),
                 ) {
                     Icon(
-                        imageVector        = if (place.isInCart) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
+                        imageVector        = if (place.isBookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
                         contentDescription = "장바구니",
                         tint               = Color.White,
                         modifier           = Modifier.size(18.dp),
@@ -187,12 +199,13 @@ private fun PlaceCard(place: PlaceSearchResult, onPlaceClick: () -> Unit, onCart
 
             Column(modifier = Modifier.padding(10.dp)) {
                 Text(place.name, style = MaterialTheme.typography.titleMedium, maxLines = 2)
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Star, null, tint = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.size(12.dp))
-                    Spacer(Modifier.width(2.dp))
-                    Text("${place.rating}", style = MaterialTheme.typography.labelMedium)
-                    Text(" (${place.reviewCount})", style = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+                if (place.rating != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Star, null, tint = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.size(12.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("%.1f".format(place.rating), style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
         }
@@ -470,9 +483,9 @@ private fun NotificationCard(item: NotificationItem, onClick: () -> Unit) {
 }
 
 private val previewPlaces = listOf(
-    PlaceSearchResult("p1", "N 서울타워", PlaceCategory.ATTRACTION, "용산구", 4.7f, 2300, null, null),
-    PlaceSearchResult("p2", "명동 미식 본점", PlaceCategory.FOOD, "중구", 4.5f, 880, null, 2, isInCart = true),
-    PlaceSearchResult("p3", "오픈 스카이 로스터리", PlaceCategory.CAFE, "마포구", 4.6f, 512, null, 1),
+    ApiPlaceSearchResult(null, PlaceApiSource.KAKAO, "p1", "N 서울타워",       ApiPlaceCategory.CULTURE,  37.55, 126.98, "용산구", 4.7f, null, false),
+    ApiPlaceSearchResult(null, PlaceApiSource.KAKAO, "p2", "명동 미식 본점",   ApiPlaceCategory.FOOD,     37.56, 126.98, "중구",   4.5f, null, true),
+    ApiPlaceSearchResult(null, PlaceApiSource.KAKAO, "p3", "한강 자연공원",    ApiPlaceCategory.NATURE,   37.52, 126.99, "영등포구", 4.3f, null, false),
 )
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)

@@ -57,6 +57,26 @@ class VoteViewModel : ViewModel() {
         }
     }
 
+    /**
+     * BlindVotingScreen에서 특정 장소를 선택해 투표.
+     * candidateId(placeId 문자열)로 pendingPlaces 중 해당 장소를 찾아 투표한다.
+     */
+    fun voteForPlace(placeId: Long, result: Int) {
+        val place = _uiState.value.pendingPlaces.firstOrNull { it.placeId == placeId } ?: return
+        viewModelScope.launch {
+            runCatching { VoteRepository.submitVote(currentBandId, place.placeId, result) }
+                .onSuccess {
+                    val remaining = _uiState.value.pendingPlaces.filter { it.placeId != placeId }
+                    _uiState.value = _uiState.value.copy(
+                        pendingPlaces = remaining,
+                        votedPlaces   = _uiState.value.votedPlaces + place,
+                    )
+                    if (remaining.isEmpty()) refreshStatus()
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+        }
+    }
+
     fun refreshStatus() {
         viewModelScope.launch {
             runCatching {

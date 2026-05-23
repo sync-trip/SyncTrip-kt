@@ -73,14 +73,14 @@
 
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
-| USR-007 | 장소 검색 UI | ⚠️ 부분 구현 | `ui/screens/PassportAndSearchScreens.kt` | UI 완성, API 미연결 |
-| USR-007 | 해외 장소 검색 API | ⚠️ 부분 구현 | `SyncTripApiService.searchPlaces()` | API 정의됨, UI 미연결 |
+| USR-007 | 장소 검색 UI | ✅ 구현 | `ui/screens/PassportAndSearchScreens.kt` + `NavGraph.kt` | 진입 시 자동 로드, 카테고리·키워드 변경 시 재호출. 탭 6개(전체/음식점/관광지/액티비티/쇼핑/자연) 백엔드 기준으로 정렬 |
+| USR-007 | 해외 장소 검색 API | ✅ 구현 | `BandRepository.searchPlaces()` + `BandViewModel.searchPlaces()` | 백엔드가 isOverseas 기준으로 카카오/구글 자동 분기 — Android 별도 분기 불필요 |
 | USR-007 | 여행지 인기/검색 API | ✅ 구현 | `NavGraph.kt` createTrip composable | `GET api/destinations/popular` 진입 시 로드. `GET api/destinations/search` 키보드 검색 버튼 클릭 시에만 호출(비용 절감). 실패/결과없음 스낵바 처리 |
 | USR-007 | 지도 뷰 | ❌ 미구현 | — | 지도 SDK 미연동 |
-| USR-008 | 장바구니 담기 API | ❌ 미구현 | — | `POST api/bands/{id}/picks` 엔드포인트 미추가 |
-| USR-008 | 장바구니 목록 API | ❌ 미구현 | — | `GET api/bands/{id}/picks` 엔드포인트 미추가 |
-| USR-008 | 장바구니 삭제 API | ❌ 미구현 | — | `DELETE api/bands/{id}/picks/{placeId}` 미추가 |
-| USR-008 | 장바구니 UI | ⚠️ 부분 구현 | `PlaceSearchScreen` | 버튼·카운터 UI 있음, API 미연결 |
+| USR-008 | 장바구니 담기 API | ✅ 구현 | `BandRepository.addPick()` + `BandViewModel.togglePick()` | 낙관적 업데이트 — UI 선반영 후 API, 실패 시 롤백 |
+| USR-008 | 장바구니 목록 API | ✅ 구현 | `BandRepository.getPicks()` + `BandViewModel.loadPicks()` | 진입 시 로드, 담기/삭제 후 갱신 |
+| USR-008 | 장바구니 삭제 API | ✅ 구현 | `BandRepository.deletePick()` + `BandViewModel.togglePick()` | externalId로 pick 존재 여부 확인 후 분기 |
+| USR-008 | 장바구니 UI | ✅ 구현 | `PlaceSearchScreen` | 북마크 버튼 상태(isBookmarked) + 카운터 배지 + BandViewModel 완전 연결 |
 
 ---
 
@@ -167,7 +167,7 @@
 | `ScheduleScreen` | `ScheduleScreen.kt` | ✅ | ❌ | getSchedule() 미연결 |
 | `BlindVotingScreen` | `VotingAndSettlementScreens.kt` | ✅ | ❌ | VoteViewModel 미연결 |
 | `SettlementScreen` | `VotingAndSettlementScreens.kt` | ✅ | ❌ | getSettlement() 미연결 |
-| `PlaceSearchScreen` | `PassportAndSearchScreens.kt` | ✅ | ❌ | 검색/장바구니 API 미연결 |
+| `PlaceSearchScreen` | `PassportAndSearchScreens.kt` | ✅ | ✅ | BandViewModel 연결 완료 — 진입 자동 로드, 카테고리/키워드 필터, 장바구니 토글 (낙관적 업데이트) |
 | `MyPassportScreen` | `PassportAndSearchScreens.kt` | ✅ | ❌ | DONE 밴드 필터 미연결 |
 | `NotificationScreen` | `PassportAndSearchScreens.kt` | ✅ | ❌ | getNotifications() 미연결 |
 | 가계부 입력 화면 | ❌ 없음 | ❌ | ❌ | 구 앱도 더미 |
@@ -180,9 +180,6 @@
 | 엔드포인트 | 용도 | 우선순위 |
 |---|---|---|
 | `DELETE api/bands/{bandId}` | 밴드 삭제 (방장) | 🟠 |
-| `GET api/bands/{bandId}/picks` | 담은 장소 목록 | 🔴 |
-| `POST api/bands/{bandId}/picks` | 장소 담기 | 🔴 |
-| `DELETE api/bands/{bandId}/picks/{placeId}` | 장소 삭제 | 🔴 |
 
 ---
 
@@ -193,7 +190,7 @@
 | 1 | 누락 API 엔드포인트 추가 | SyncTripApiService, DataModels |
 | 2 | CreateTripScreen → createBand API | CreateTripScreen |
 | 3 | ~~TripLobbyScreen 전체 연결~~ ✅ | NavGraph에 BandViewModel 연결, 멤버/Ready/초대코드/상태전환/picks 완성 |
-| 4 | PlaceSearchScreen 검색 + 장바구니 | PlaceSearchScreen |
+| 4 | ~~PlaceSearchScreen 검색 + 장바구니~~ ✅ | BandViewModel 연결, 카테고리 필터, 낙관적 장바구니 완성 |
 | 5 | BlindVotingScreen → VoteViewModel | BlindVotingScreen |
 | 6 | ScheduleScreen → getSchedule | ScheduleScreen |
 | 7 | AiLoadingScreen → generateSchedule + 폴링 | AiLoadingScreen |
@@ -226,7 +223,8 @@
 | 2026-05-23 | HomeScreen 우측 사이드 드로어 구현 (RTL 트릭). 드로어에 내 여권/알림/로그아웃 메뉴 추가. 로그아웃 확인 AlertDialog 추가. BackHandler로 드로어 열린 상태 뒤로가기 닫기 처리. BASE_URL 수정 (test-api.synctrip.com → test.sync-trip.app). USR-029 로그아웃 ✅ 완성. |
 | 2026-05-23 | 누락 API 14개 추가(DataModels + SyncTripApiService). DestinationResponse/PlacePickRequest/PlacePickListResponse 백엔드 DTO 기준으로 수정. CreateTripScreen → createBand API 연결 (여행지 검색, 날짜 피커, RELAXED/PACKED 스타일 토글). TripLobbyScreen 완전 재작성 (실 BandResponse 모델, 상태별 바텀바, 멤버 뱃지, 초대코드, MyStatusSection). NavGraph tripLobby 라우트 BandViewModel 연결 완료 (TokenDataStore userIdFlow, 시스템 공유 Intent). USR-006/009/014 ✅ 완성. |
 | 2026-05-23 | CreateTripScreen 2단계 플로우 재설계. 1단계: 여행지 목록(LazyColumn) + 검색 + 해외/국내 탭 + 카테고리 필터(인기/일본/동남아시아/유럽/미주-오세아니아). 2단계: 선택 여행지 확인 카드 + 밴드 이름 입력 + 날짜 선택 행 + 여행 스타일(이모지 카드). 하단 버튼 구 앱과 동일하게 "계속하기" / "이전"+"방 만들기" 로 변경. NavGraph bandName 상태 추가. |
+| 2026-05-23 | PlaceSearchScreen BandViewModel 완전 연결. PlaceCategory 탭 백엔드 ApiPlaceCategory 기준으로 정렬(전체/음식점/관광지/액티비티/쇼핑/자연). PlaceSearchScreen이 ApiPlaceSearchResult 직접 사용(중간 UI 모델 제거). isLoading 파라미터 + CircularProgressIndicator 추가. 키보드 Search 액션 onSearch 콜백 연결. NavGraph placeSearch/{bandId} 진입 시 자동 로드 + 카테고리·키워드 변경 시 재호출. 장바구니 토글 낙관적 업데이트(성공→loadPicks, 실패→롤백). USR-007/008 ✅ 완성. |
 
 ---
 
-**마지막 수정:** 2026-05-23 (TripLobbyScreen NavGraph 연결 완성) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+**마지막 수정:** 2026-05-23 (PlaceSearchScreen BandViewModel 연결 완성) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

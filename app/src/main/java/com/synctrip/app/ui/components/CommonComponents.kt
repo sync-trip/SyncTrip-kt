@@ -1,28 +1,97 @@
 package com.synctrip.app.ui.components
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.synctrip.app.data.models.TripBand
 import com.synctrip.app.ui.theme.*
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Plane Loading Indicator — 앱 전역 로딩 표시 (CircularProgressIndicator 대체)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 비행기가 점선 원 위를 공전하는 커스텀 로딩 인디케이터.
+ *
+ * @param size      인디케이터 전체 크기 (기본 80dp, 버튼 내 인라인은 32dp 권장)
+ * @param showCircle 점선 원 표시 여부 — 버튼처럼 좁은 공간에서는 false로 비행기만 표시
+ */
+@Composable
+fun PlaneLoadingIndicator(
+    modifier: Modifier = Modifier,
+    size: Dp = 80.dp,
+    showCircle: Boolean = true,
+) {
+    val color = MaterialTheme.colorScheme.primary
+    val angle by rememberInfiniteTransition(label = "plane-orbit").animateFloat(
+        initialValue  = 0f,
+        targetValue   = 360f,
+        animationSpec = infiniteRepeatable(
+            animation  = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "plane-angle",
+    )
+
+    Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
+        // 점선 원 궤도
+        if (showCircle) {
+            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                drawCircle(
+                    color  = color.copy(alpha = 0.35f),
+                    radius = this.size.minDimension / 2f - 12.dp.toPx(),
+                    style  = Stroke(
+                        width      = 1.5.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(7f, 6f), 0f),
+                        cap        = StrokeCap.Round,
+                    ),
+                )
+            }
+        }
+
+        // 외부 Box를 angle만큼 CW 회전 → CenterEnd의 아이콘이 원 궤도를 공전
+        // 아이콘 자체에 135° 추가 회전 → FlightTakeoff 자연 방향(NE=45°)을 보정해
+        // 항상 진행 방향(CW 접선)을 향하도록 함: 45° + 135° = 180° (3시 방향에서 아래쪽 = CW 접선) ✓
+        Box(
+            modifier         = Modifier.size(size).rotate(angle),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Icon(
+                imageVector        = Icons.Filled.FlightTakeoff,
+                contentDescription = null,
+                tint               = color,
+                modifier           = Modifier
+                    .size(if (showCircle) 18.dp else size * 0.55f)
+                    .rotate(135f),
+            )
+        }
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bottom Navigation Bar

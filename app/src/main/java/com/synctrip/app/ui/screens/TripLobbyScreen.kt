@@ -19,6 +19,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.synctrip.app.data.models.*
+import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
 
 /**
@@ -554,7 +555,7 @@ private fun LobbyBottomBar(
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape    = RoundedCornerShape(12.dp),
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        PlaneLoadingIndicator(size = 28.dp, showCircle = false)
                         Spacer(Modifier.width(8.dp))
                         Text("AI 일정 생성 중…")
                     }

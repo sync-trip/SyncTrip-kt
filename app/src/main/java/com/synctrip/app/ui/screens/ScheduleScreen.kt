@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.synctrip.app.data.models.*
+import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -806,7 +807,7 @@ private fun AltOptionCard(
 private fun ScheduleLoadingContent(modifier: Modifier = Modifier) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            PlaneLoadingIndicator()
             Spacer(Modifier.height(16.dp))
             Text("일정을 불러오는 중…",
                 style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))

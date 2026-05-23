@@ -94,7 +94,7 @@ fun LoginScreen(
 - **네비게이션:** Navigation Compose (`navigation/NavGraph.kt`)
 
 ### Spring Boot 백엔드
-- **경로:** `C:\IntelliJprojects\SyncTrip-Spring`
+- **경로:** `C:\projects\SyncTrip-Spring`
 - **언어/프레임워크:** Java + Spring Boot
 - **DB:** MySQL 8.0.16+ (Docker 로컬 환경)
 - **인증:** JWT (Access Token + Refresh Token)
@@ -160,3 +160,45 @@ app/src/main/java/com/synctrip/app/
 | `PlaceSearchResult` (백엔드용) | `ApiPlaceSearchResult` | 이름 충돌 방지로 리네임됨 |
 | `NotificationType` (백엔드용) | `ApiNotificationType` | 이름 충돌 방지로 리네임됨 |
 | `Icons.Outlined.NightlifeSharp` | `Icons.Outlined.Nightlife` | Sharp 변형은 Outlined set에 없음 |
+| `PlaceCategory.ATTRACTION` / `.CAFE` / `.ACCOMMODATION` | `PlaceCategory.CULTURE` / `PlaceCategory.FOOD` / `PlaceCategory.NATURE` 등 | 백엔드 ApiPlaceCategory 기준으로 재정의됨 |
+| `place.imageUrl` / `place.isInCart` (PlaceCard에서) | `place.thumbnailUrl` / `place.isBookmarked` | PlaceCard는 ApiPlaceSearchResult 사용 |
+
+---
+
+## 8. 장소 탐색 화면 규칙
+
+### PlaceSearchScreen 타입 규칙
+- **`places` 파라미터는 반드시 `List<ApiPlaceSearchResult>`** — `PlaceSearchResult`(UI 중간 모델) 경유 금지
+- 카드 이미지: `thumbnailUrl` / 북마크 여부: `isBookmarked` / 장소 식별자: `externalId`
+
+### 카테고리 탭 순서 (변경 금지)
+
+| 탭 라벨 | `PlaceCategory` 값 | 백엔드 전달값 |
+|---|---|---|
+| 전체 | `ALL` | `null` (파라미터 생략) |
+| 음식점 | `FOOD` | `"FOOD"` |
+| 관광지 | `CULTURE` | `"CULTURE"` |
+| 액티비티 | `ACTIVITY` | `"ACTIVITY"` |
+| 쇼핑 | `SHOPPING` | `"SHOPPING"` |
+| 자연 | `NATURE` | `"NATURE"` |
+
+### NavGraph `placeSearch/{bandId}` 연결 패턴
+```kotlin
+// 진입 시 — picks와 장소 목록 동시 로드
+LaunchedEffect(bandId) {
+    bandViewModel.loadPicks(bandId)
+    bandViewModel.searchPlaces(bandId)
+}
+
+// 카테고리 변경 — ALL이면 null 전달
+onCategoryChange = { cat ->
+    bandViewModel.searchPlaces(
+        bandId   = bandId,
+        keyword  = query.takeIf { it.isNotBlank() },
+        category = if (cat == PlaceCategory.ALL) null else cat.name,
+    )
+}
+
+// 장바구니 토글 — externalId 기준, ViewModel 낙관적 업데이트 포함
+onCartToggle = { externalId -> bandViewModel.togglePick(bandId, externalId) }
+```

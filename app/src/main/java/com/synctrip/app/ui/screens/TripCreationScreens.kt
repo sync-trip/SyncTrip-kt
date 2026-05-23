@@ -31,6 +31,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import com.synctrip.app.data.models.*
+import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
 import java.time.LocalDate
 import java.time.YearMonth
@@ -171,10 +172,10 @@ fun CreateTripScreen(
                             ),
                         ) {
                             if (isLoading) {
-                                CircularProgressIndicator(
-                                    modifier    = Modifier.size(20.dp),
-                                    color       = MaterialTheme.colorScheme.onPrimary,
-                                    strokeWidth = 2.dp,
+                                PlaneLoadingIndicator(
+                                    modifier    = Modifier,
+                                    size        = 28.dp,
+                                    showCircle  = false,
                                 )
                             } else {
                                 Text("방 만들기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
