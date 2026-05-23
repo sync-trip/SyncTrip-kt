@@ -99,7 +99,7 @@ interface SyncTripApiService {
         @Query("keyword") keyword: String? = null,
         @Query("category") category: String? = null,
         @Query("radiusMeters") radiusMeters: Int = 5000,
-    ): List<PlaceSearchResult>
+    ): List<ApiPlaceSearchResult>
 
     // ── Expense ───────────────────────────────────────────────────────────────
 

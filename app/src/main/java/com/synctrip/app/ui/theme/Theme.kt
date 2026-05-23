@@ -63,6 +63,12 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 @Composable
+fun SyncTripTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit,
+) = SynctripTheme(darkTheme = darkTheme, content = content)
+
+@Composable
 fun SynctripTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,

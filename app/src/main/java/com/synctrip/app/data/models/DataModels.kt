@@ -1,7 +1,256 @@
 package com.synctrip.app.data.models
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Auth  (POST /auth/kakao/login, POST /auth/google/login)
+// UI – User & Auth
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class UserProfile(
+    val id: String,
+    val nickname: String,
+    val profileImageUrl: String?,
+    val homeTown: String?,
+    val totalTrips: Int = 0,
+    val passportStamps: List<PassportStamp> = emptyList(),
+)
+
+data class LoginRequest(
+    val provider: String,           // "KAKAO" | "GOOGLE" | "EMAIL"
+    val accessToken: String?,
+    val email: String? = null,
+    val password: String? = null,
+)
+
+data class AuthResponse(
+    val jwtToken: String,
+    val refreshToken: String,
+    val user: UserProfile,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI – Home Dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class RecommendedContent(
+    val id: String,
+    val title: String,
+    val imageUrl: String,
+    val category: String,
+    val destination: String,
+)
+
+data class TripBand(
+    val id: String,
+    val destination: String,
+    val heroImageUrl: String,
+    val startDate: String,
+    val endDate: String,
+    val status: TripStatus,
+    val members: List<TripMember>,
+    val completionPercent: Int,
+)
+
+enum class TripStatus { PLANNING, ACTIVE, COMPLETED }
+
+data class TripMember(
+    val id: String,
+    val nickname: String,
+    val profileImageUrl: String?,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI – Trip Lobby
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class TripLobby(
+    val tripId: String,
+    val destination: String,
+    val heroImageUrl: String,
+    val dateRange: String,
+    val members: List<TripMember>,
+    val tasks: List<LobbyTask>,
+    val overallProgress: Int,
+)
+
+data class LobbyTask(
+    val id: String,
+    val title: String,
+    val progress: Int,
+    val isComplete: Boolean,
+    val taskType: LobbyTaskType,
+)
+
+enum class LobbyTaskType { VOTING, BOOKING, SCHEDULE, SETTLEMENT, OTHER }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI – Create Trip
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class CreateTripRequest(
+    val destination: String,
+    val startDate: String,
+    val endDate: String,
+    val travelStyles: List<TravelStyle>,
+    val inviteEmails: List<String> = emptyList(),
+)
+
+enum class TravelStyle { NATURE, URBAN, FOOD, CULTURE, ADVENTURE, RELAXATION, NIGHTLIFE }
+
+data class DestinationSuggestion(
+    val name: String,
+    val country: String,
+    val imageUrl: String,
+    val airportCode: String,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI – AI Itinerary Generation
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class AiGenerationStatus(
+    val jobId: String,
+    val progressPercent: Int,
+    val currentStep: String,
+    val isComplete: Boolean,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI – Itinerary
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class TripItinerary(
+    val tripId: String,
+    val title: String,
+    val destination: String,
+    val heroImageUrl: String,
+    val days: List<ItineraryDay>,
+)
+
+data class ItineraryDay(
+    val dayNumber: Int,
+    val title: String,
+    val events: List<ItineraryEvent>,
+)
+
+data class ItineraryEvent(
+    val id: String,
+    val time: String,
+    val title: String,
+    val description: String?,
+    val placeId: String?,
+    val category: EventCategory,
+    val durationMinutes: Int?,
+)
+
+enum class EventCategory { TRANSPORT, ACCOMMODATION, FOOD, ACTIVITY, REST }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI – Blind Voting
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class VotingSession(
+    val sessionId: String,
+    val tripId: String,
+    val title: String,
+    val deadline: String,
+    val candidates: List<VoteCandidate>,
+    val totalVotes: Int,
+    val hasVoted: Boolean,
+    val myVoteId: String?,
+)
+
+data class VoteCandidate(
+    val id: String,
+    val label: String,
+    val imageUrl: String?,
+    val description: String?,
+    val pricePerNight: Long?,
+    val voteCount: Int,
+    val votePercent: Float,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI – Settlement
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class Settlement(
+    val tripId: String,
+    val tripTitle: String,
+    val totalAmount: Long,
+    val currency: String,
+    val myBalance: Long,
+    val summary: List<SettlementItem>,
+    val pendingTransfers: List<PendingTransfer>,
+)
+
+data class SettlementItem(
+    val id: String,
+    val category: String,
+    val description: String,
+    val amount: Long,
+    val paidBy: String,
+)
+
+data class PendingTransfer(
+    val fromNickname: String,
+    val toNickname: String,
+    val amount: Long,
+    val isResolved: Boolean,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI – Place Search
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class PlaceSearchResult(
+    val id: String,
+    val name: String,
+    val category: PlaceCategory,
+    val address: String,
+    val rating: Float,
+    val reviewCount: Int,
+    val imageUrl: String?,
+    val priceLevel: Int?,
+    val isInCart: Boolean = false,
+)
+
+enum class PlaceCategory { ALL, ATTRACTION, FOOD, CAFE, ACCOMMODATION }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI – My Passport
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class PassportStamp(
+    val id: String,
+    val cityCode: String,
+    val cityName: String,
+    val visitDate: String,
+    val iconName: String,
+    val accentColor: StampColor,
+)
+
+enum class StampColor { PRIMARY, SECONDARY, ERROR, TERTIARY, FIXED }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI – Notifications
+// ─────────────────────────────────────────────────────────────────────────────
+
+data class NotificationItem(
+    val id: String,
+    val type: NotificationType,
+    val title: String,
+    val body: String,
+    val timeLabel: String,
+    val isRead: Boolean,
+)
+
+enum class NotificationType { VOTING, SETTLEMENT, SCHEDULE_CHANGE, FLIGHT_UPDATE, GENERAL }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Backend API Models
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Backend – Auth  (POST /auth/kakao/login, POST /auth/google/login)
 // ─────────────────────────────────────────────────────────────────────────────
 
 data class LoginResponse(
@@ -19,21 +268,20 @@ data class GoogleLoginRequest(val idToken: String)
 data class TokenRefreshRequest(val refreshToken: String)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Band  (GET /api/bands, POST /api/bands, etc.)
+// Backend – Band  (GET /api/bands, POST /api/bands, etc.)
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum class BandStatus { PLANNING, VOTING, GENERATING, TRAVELLING, DONE }
 
 enum class BandRole { OWNER, MEMBER }
 
-// BandTravelStyle — renamed to avoid conflict with future UI-level enums
 enum class BandTravelStyle { RELAXED, PACKED }
 
 data class BandResponse(
     val id: Long,
     val name: String,
     val destination: String,
-    val startDate: String,          // "yyyy-MM-dd"
+    val startDate: String,
     val endDate: String,
     val inviteCode: String?,
     val status: BandStatus,
@@ -50,7 +298,7 @@ data class BandMemberResponse(
     val profileImageUrl: String?,
     val role: BandRole,
     val isReady: Boolean,
-    val joinedAt: String,           // ISO-8601 LocalDateTime
+    val joinedAt: String,
     val bookmarkCount: Int,
 )
 
@@ -90,12 +338,11 @@ data class BandReadyResponse(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Schedule  (GET /api/bands/{bandId}/schedule)
+// Backend – Schedule  (GET /api/bands/{bandId}/schedule)
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum class PlaceApiSource { KAKAO, GOOGLE }
 
-// ApiPlaceCategory — renamed to avoid conflict with any UI-level PlaceCategory
 enum class ApiPlaceCategory { FOOD, CULTURE, ACTIVITY, SHOPPING, NATURE, ETC }
 
 data class ScheduleResponse(
@@ -107,14 +354,14 @@ data class ScheduleResponse(
 
 data class ScheduleDayResponse(
     val dayNumber: Int,
-    val date: String,               // "yyyy-MM-dd"
+    val date: String,
     val slots: List<ScheduleSlotResponse>,
 )
 
 data class ScheduleSlotResponse(
     val scheduleId: Long,
     val slotOrder: Int,
-    val startTime: String,          // "HH:mm"
+    val startTime: String,
     val durationMinutes: Int?,
     val travelTimeFromPrev: Int?,
     val place: SchedulePlaceInfo,
@@ -158,7 +405,7 @@ data class PlanBResponse(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Vote  (GET /api/bands/{bandId}/votes/places, POST /api/bands/{bandId}/votes)
+// Backend – Vote
 // ─────────────────────────────────────────────────────────────────────────────
 
 data class VotePlaceResponse(
@@ -172,12 +419,12 @@ data class VotePlaceResponse(
     val rating: Float?,
     val thumbnailUrl: String?,
     val myBookmark: Boolean,
-    val myVoteResult: Int?,         // 1=LIKE, -1=DISLIKE, null=미투표
+    val myVoteResult: Int?,
 )
 
 data class VoteRequest(
     val placeId: Long,
-    val result: Int,                // 1=LIKE, -1=DISLIKE
+    val result: Int,
 )
 
 data class VoteResponse(
@@ -200,10 +447,11 @@ data class GroupVoteStatusResponse(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Place Search  (GET /api/bands/{bandId}/places/search)
+// Backend – Place Search  (GET /api/bands/{bandId}/places/search)
+// Prefixed "Api" to distinguish from the UI-level PlaceSearchResult above.
 // ─────────────────────────────────────────────────────────────────────────────
 
-data class PlaceSearchResult(
+data class ApiPlaceSearchResult(
     val placeId: Long?,
     val apiSource: PlaceApiSource,
     val externalId: String,
@@ -218,7 +466,7 @@ data class PlaceSearchResult(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Expense  (GET/POST /api/bands/{bandId}/expenses)
+// Backend – Expense
 // ─────────────────────────────────────────────────────────────────────────────
 
 data class ExpenseResponse(
@@ -244,7 +492,7 @@ data class ExpenseCreateRequest(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Settlement  (GET /api/bands/{bandId}/settlement)
+// Backend – Settlement  (GET /api/bands/{bandId}/settlement)
 // ─────────────────────────────────────────────────────────────────────────────
 
 data class SettlementResponse(
@@ -260,7 +508,7 @@ data class MemberSettlementSummary(
     val profileImageUrl: String?,
     val totalPaid: Double,
     val totalShare: Double,
-    val balance: Double,            // positive = receives, negative = owes
+    val balance: Double,
 )
 
 data class SettlementTransaction(
@@ -272,16 +520,17 @@ data class SettlementTransaction(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Notification  (GET /api/notifications)
+// Backend – Notification  (GET /api/notifications)
+// Prefixed "Api" to distinguish from the UI-level NotificationType above.
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum class NotificationType {
+enum class ApiNotificationType {
     MEMBER_READY, MEMBER_JOINED, VOTE_STARTED, SCHEDULE_UPDATED, SETTLEMENT_REQUEST
 }
 
 data class NotificationResponse(
     val id: Long,
-    val type: NotificationType,
+    val type: ApiNotificationType,
     val content: String,
     val isRead: Boolean,
     val createdAt: String,
