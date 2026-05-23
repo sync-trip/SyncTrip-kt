@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FlightTakeoff
+import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,6 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -37,8 +41,9 @@ import com.synctrip.app.ui.theme.*
 
 /**
  * 비행기가 점선 원 위를 공전하는 커스텀 로딩 인디케이터.
+ * 구 앱 PlaneLoadingView와 동일한 방식: 삼각함수로 아이콘 위치를 계산해 원 위에 정확히 배치.
  *
- * @param size      인디케이터 전체 크기 (기본 80dp, 버튼 내 인라인은 32dp 권장)
+ * @param size       인디케이터 전체 크기 (기본 80dp)
  * @param showCircle 점선 원 표시 여부 — 버튼처럼 좁은 공간에서는 false로 비행기만 표시
  */
 @Composable
@@ -52,44 +57,50 @@ fun PlaneLoadingIndicator(
         initialValue  = 0f,
         targetValue   = 360f,
         animationSpec = infiniteRepeatable(
-            animation  = tween(2000, easing = LinearEasing),
+            animation  = tween(2500, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "plane-angle",
     )
 
+    // 구 앱 PlaneLoadingView와 동일: iconHalf * 1.5 만큼 안쪽으로 궤도 설정
+    val iconSizeDp = if (showCircle) 22.dp else size * 0.55f
+    val density    = LocalDensity.current
+    // 아이콘 중심이 놓일 궤도 반지름 (px)
+    val orbitRadius = with(density) { size.toPx() / 2f - iconSizeDp.toPx() / 2f * 1.5f }
+
     Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
-        // 점선 원 궤도
+        // 점선 원 — 궤도 반지름과 동일한 위치에 그려서 비행기가 정확히 원 위를 돎
         if (showCircle) {
             androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                val dashPx = 7.dp.toPx()
                 drawCircle(
                     color  = color.copy(alpha = 0.35f),
-                    radius = this.size.minDimension / 2f - 12.dp.toPx(),
+                    radius = orbitRadius,
                     style  = Stroke(
-                        width      = 1.5.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(7f, 6f), 0f),
+                        width      = 2.5.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashPx, dashPx), 0f),
                         cap        = StrokeCap.Round,
                     ),
                 )
             }
         }
 
-        // 외부 Box를 angle만큼 CW 회전 → CenterEnd의 아이콘이 원 궤도를 공전
-        // 아이콘 자체에 135° 추가 회전 → FlightTakeoff 자연 방향(NE=45°)을 보정해
-        // 항상 진행 방향(CW 접선)을 향하도록 함: 45° + 135° = 180° (3시 방향에서 아래쪽 = CW 접선) ✓
-        Box(
-            modifier         = Modifier.size(size).rotate(angle),
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            Icon(
-                imageVector        = Icons.Filled.FlightTakeoff,
-                contentDescription = null,
-                tint               = color,
-                modifier           = Modifier
-                    .size(if (showCircle) 18.dp else size * 0.55f)
-                    .rotate(135f),
-            )
-        }
+        // 구 앱 동일 방식: cos/sin으로 위치 계산 + graphicsLayer로 정밀 배치
+        // Icons.Filled.Flight는 동쪽(→)을 향하므로 접선 방향 = angle + 90°
+        Icon(
+            imageVector        = Icons.Filled.Flight,
+            contentDescription = null,
+            tint               = color,
+            modifier           = Modifier
+                .size(iconSizeDp)
+                .graphicsLayer {
+                    val rad = Math.toRadians((angle - 90.0))
+                    translationX = (orbitRadius * cos(rad)).toFloat()
+                    translationY = (orbitRadius * sin(rad)).toFloat()
+                    rotationZ    = angle + 100f
+                },
+        )
     }
 }
 
@@ -173,12 +184,30 @@ fun TripTicketCard(
                     .fillMaxWidth()
                     .height(140.dp),
             ) {
-                AsyncImage(
-                    model              = band.heroImageUrl,
-                    contentDescription = band.destination,
-                    contentScale       = ContentScale.Crop,
-                    modifier           = Modifier.fillMaxSize(),
-                )
+                if (band.heroImageUrl.isNotBlank()) {
+                    AsyncImage(
+                        model              = band.heroImageUrl,
+                        contentDescription = band.destination,
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    // 서버에서 이미지 URL을 내려주지 않을 때 여행지 이름 기반 그라디언트 플레이스홀더
+                    val gradientColors = destinationGradient(band.destination)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Brush.linearGradient(gradientColors)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Filled.Flight,
+                            contentDescription = null,
+                            tint               = Color.White.copy(alpha = 0.5f),
+                            modifier           = Modifier.size(48.dp),
+                        )
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -385,4 +414,25 @@ fun SectionHeader(
         )
         action?.invoke()
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 내부 유틸
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 여행지 이름의 해시값을 이용해 일관된 그라디언트 색상 쌍을 반환.
+ * 서버에서 이미지 URL이 없을 때 카드 배경으로 사용한다.
+ */
+private fun destinationGradient(destination: String): List<Color> {
+    val palettes = listOf(
+        listOf(Color(0xFF1A6B5A), Color(0xFF0D3B30)),
+        listOf(Color(0xFF1B4B8A), Color(0xFF0A2550)),
+        listOf(Color(0xFF6B2D6B), Color(0xFF3B0D3B)),
+        listOf(Color(0xFF8A4B1B), Color(0xFF502A0A)),
+        listOf(Color(0xFF1B6B8A), Color(0xFF0A3B50)),
+        listOf(Color(0xFF5A1B6B), Color(0xFF2D0A3B)),
+    )
+    val index = Math.abs(destination.hashCode()) % palettes.size
+    return palettes[index]
 }

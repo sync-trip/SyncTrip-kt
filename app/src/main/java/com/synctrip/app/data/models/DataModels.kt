@@ -293,6 +293,7 @@ data class BandResponse(
     val travelStyle: BandTravelStyle,
     val accommodationName: String?,
     val memberCount: Int,
+    val thumbnailUrl: String? = null,
 )
 
 data class BandMemberResponse(
@@ -318,6 +319,7 @@ data class BandCreateRequest(
     val accommodationName: String? = null,
     val accommodationLat: Double? = null,
     val accommodationLng: Double? = null,
+    val thumbnailUrl: String? = null,
 )
 
 data class BandJoinRequest(val inviteCode: String)

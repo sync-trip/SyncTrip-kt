@@ -238,6 +238,7 @@ fun SyncTripNavGraph() {
                                 countryCode    = dest.countryCode,
                                 overseas       = dest.overseas,
                                 travelStyle    = travelStyle,
+                                thumbnailUrl   = dest.thumbnailUrl,
                             )
                         ) { newBand ->
                             // 생성 성공 → 로비로 이동 (createTrip은 백스택에서 제거)
@@ -528,7 +529,7 @@ private fun AiLoadingSimulated(onComplete: () -> Unit) {
 private fun BandResponse.toTripBand() = TripBand(
     id                = id.toString(),
     destination       = destination,
-    heroImageUrl      = "",   // 서버에 이미지 URL 없음
+    heroImageUrl      = thumbnailUrl ?: "",   // 여행지 생성 시 저장된 썸네일, 없으면 그라디언트 플레이스홀더
     startDate         = startDate,
     endDate           = endDate,
     status            = when (status) {

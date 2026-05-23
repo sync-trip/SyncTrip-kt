@@ -137,14 +137,6 @@ fun HomeScreen(
                             .padding(innerPadding)
                             .padding(bottom = 16.dp),
                     ) {
-                        Text(
-                            text     = "SyncTrip",
-                            style    = MaterialTheme.typography.displayLarge.copy(
-                                color = MaterialTheme.colorScheme.onBackground,
-                            ),
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                        )
-
                         Spacer(Modifier.height(8.dp))
 
                         SectionHeader(

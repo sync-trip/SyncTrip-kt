@@ -229,7 +229,8 @@
 | 2026-05-23 | PlaceSearchScreen BandViewModel 완전 연결. PlaceCategory 탭 백엔드 ApiPlaceCategory 기준으로 정렬(전체/음식점/관광지/액티비티/쇼핑/자연). PlaceSearchScreen이 ApiPlaceSearchResult 직접 사용(중간 UI 모델 제거). isLoading 파라미터 + CircularProgressIndicator 추가. 키보드 Search 액션 onSearch 콜백 연결. NavGraph placeSearch/{bandId} 진입 시 자동 로드 + 카테고리·키워드 변경 시 재호출. 장바구니 토글 낙관적 업데이트(성공→loadPicks, 실패→롤백). USR-007/008 ✅ 완성. |
 | 2026-05-24 | 투표 화면 크래시 수정 — `blindVoting/{bandId}` NavGraph 라우트 누락 추가. SwipeVotingScreen 신규 구현 (카드 이탈 애니메이션, 카테고리/별점 배지, 좋아요/싫어요 버튼, 진행률 배지). VoteViewModel에 `voteForPlace(placeId, result)` 추가. USR-010 ✅ 완성. |
 | 2026-05-24 | AiLoadingScreen 진행률 0% 고정 버그 수정 — `AiLoadingSimulated` 헬퍼 추가 (6단계 시뮬레이션 ~5초). `aiLoading/{bandId}` 라우트 추가 (완료 후 `schedule/$bandId` 이동). 투표 완료 → aiLoading 자동 이동 연결. |
+| 2026-05-24 | HomeScreen 상단 대형 SyncTrip 타이틀 제거. TripTicketCard 썸네일: `BandResponse.thumbnailUrl` 연동 (없으면 여행지명 기반 그라디언트+비행기 아이콘 플레이스홀더). `PlaneLoadingIndicator` 구 앱(`PlaneLoadingView`) 수치 일치 — 2500ms·2.5dp·7dp 점선. `BandCreateRequest.thumbnailUrl` 추가로 여행 생성 시 썸네일 서버 전달. |
 
 ---
 
-**마지막 수정:** 2026-05-24 (AiLoadingScreen 버그 수정 + SwipeVotingScreen 구현) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+**마지막 수정:** 2026-05-24 (밴드 썸네일 연동 + 로딩 인디케이터 개선) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
