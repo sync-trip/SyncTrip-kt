@@ -213,7 +213,8 @@ data class PlaceSearchResult(
     val isInCart: Boolean = false,
 )
 
-enum class PlaceCategory { ALL, ATTRACTION, FOOD, CAFE, ACCOMMODATION }
+// 백엔드 ApiPlaceCategory와 1:1 매핑 (ALL은 필터 없음 = 전체)
+enum class PlaceCategory { ALL, FOOD, CULTURE, ACTIVITY, SHOPPING, NATURE }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UI – My Passport
