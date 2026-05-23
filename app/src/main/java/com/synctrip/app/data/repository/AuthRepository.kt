@@ -33,6 +33,14 @@ object AuthRepository {
         TokenDataStore.clear(context)
     }
 
+    /** 회원탈퇴 — 서버 Soft Delete 후 로컬 토큰 삭제 */
+    suspend fun withdraw(context: Context) {
+        ApiClient.api.withdraw()
+        ApiClient.accessToken  = null
+        ApiClient.refreshToken = null
+        TokenDataStore.clear(context)
+    }
+
     /** 앱 시작 시 DataStore에서 토큰 복구 */
     fun restoreToken(context: Context): kotlinx.coroutines.flow.Flow<String?> =
         TokenDataStore.accessTokenFlow(context)

@@ -176,8 +176,11 @@ fun SyncTripNavGraph(
             var selectedNavItem by remember { mutableStateOf(BottomNavDestination.Home) }
             val snackbarState   = remember { SnackbarHostState() }
 
-            // 화면 진입 시 밴드 목록 로드
-            LaunchedEffect(Unit) { bandViewModel.loadBands() }
+            // 화면 진입 시 밴드 목록 + 유저 프로필 로드
+            LaunchedEffect(Unit) {
+                bandViewModel.loadBands()
+                bandViewModel.loadMyProfile()
+            }
 
             // BottomSheet 수동 코드 입력 에러 → 스낵바 표시
             LaunchedEffect(bandUiState.error) {
@@ -190,6 +193,8 @@ fun SyncTripNavGraph(
             HomeScreen(
                 recommendedContent   = emptyList(),
                 myTripBands          = bandUiState.bands.reversed().map { it.toTripBand() },
+                userName             = bandUiState.userProfile?.name ?: "",
+                userProfileImageUrl  = bandUiState.userProfile?.profileImageUrl,
                 selectedNavItem      = selectedNavItem,
                 snackbarHostState    = snackbarState,
                 onNavItemSelected    = { dest ->
@@ -218,6 +223,19 @@ fun SyncTripNavGraph(
                     navController.navigate("login") {
                         popUpTo("home") { inclusive = true }
                     }
+                },
+                onWithdrawClick      = {
+                    authViewModel.withdraw(
+                        context   = context,
+                        onSuccess = {
+                            navController.navigate("login") {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        },
+                        onFailure = { msg ->
+                            scope.launch { snackbarState.showSnackbar(msg) }
+                        },
+                    )
                 },
             )
         }

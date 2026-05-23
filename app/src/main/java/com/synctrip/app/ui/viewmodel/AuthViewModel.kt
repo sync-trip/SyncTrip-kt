@@ -61,6 +61,18 @@ class AuthViewModel : ViewModel() {
         }
     }
 
+    /** 회원탈퇴 — 성공 시 onSuccess, 실패 시 onFailure("탈퇴 처리 실패...") 호출 */
+    fun withdraw(context: Context, onSuccess: () -> Unit, onFailure: (String) -> Unit) {
+        viewModelScope.launch {
+            runCatching { AuthRepository.withdraw(context) }
+                .onSuccess {
+                    _uiState.value = AuthUiState.Idle
+                    onSuccess()
+                }
+                .onFailure { onFailure("탈퇴 처리 실패. 다시 시도해주세요.") }
+        }
+    }
+
     fun resetState() {
         _uiState.value = AuthUiState.Idle
     }

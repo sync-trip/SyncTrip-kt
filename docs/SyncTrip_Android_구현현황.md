@@ -35,18 +35,19 @@
 
 ## 1. 인증 / 회원 관리
 
-| USR | 기능명 | 상태 | 구현 위치 | 비고 |
-|---|---|---|---|---|
-| USR-001 | 카카오 로그인 | ✅ 구현 | `auth/KakaoAuthManager.kt` + `AuthViewModel` | SDK → 서버 JWT → DataStore 저장 완전 연결 |
-| USR-001 | 구글 로그인 | ✅ 구현 | `auth/GoogleAuthManager.kt` + `AuthViewModel` | Credential Manager → 서버 JWT → DataStore 저장 |
-| USR-001 | 로그인 화면 UI | ✅ 구현 | `ui/screens/LoginScreen.kt` | 카카오(노란버튼) / 구글 / 이메일(개발용) 버튼 |
-| USR-001 | JWT DataStore 저장 | ✅ 구현 | `core/TokenDataStore.kt` | access + refresh + userId 영속 저장 |
-| USR-001 | 401 토큰 자동 갱신 | ✅ 구현 | `network/ApiClient.kt` | OkHttp Authenticator — refresh 후 재시도 |
-| USR-001 | 앱 시작 자동 로그인 | ✅ 구현 | `navigation/NavGraph.kt` Splash | DataStore 토큰 복구 → 토큰 있으면 Home 직행 |
-| USR-001 | 백엔드 로그인 API | ✅ 구현 | `AuthRepository` | `kakaoLogin()` / `googleLogin()` 연결 완료 |
-| USR-002 | 프로필 수정 화면 | ❌ 미구현 | — | 화면 없음 |
-| USR-002 | 회원 탈퇴 | ❌ 미구현 | — | API 정의됨, UI 없음 |
+| USR | 기능명 | 상태 | 구현 위치 | 비고                                            |
+|---|---|---|---|-----------------------------------------------|
+| USR-001 | 카카오 로그인 | ✅ 구현 | `auth/KakaoAuthManager.kt` + `AuthViewModel` | SDK → 서버 JWT → DataStore 저장 완전 연결             |
+| USR-001 | 구글 로그인 | ✅ 구현 | `auth/GoogleAuthManager.kt` + `AuthViewModel` | Credential Manager → 서버 JWT → DataStore 저장    |
+| USR-001 | 로그인 화면 UI | ✅ 구현 | `ui/screens/LoginScreen.kt` | 카카오(노란버튼) / 구글 / 이메일(개발용) 버튼                  |
+| USR-001 | JWT DataStore 저장 | ✅ 구현 | `core/TokenDataStore.kt` | access + refresh + userId 영속 저장               |
+| USR-001 | 401 토큰 자동 갱신 | ✅ 구현 | `network/ApiClient.kt` | OkHttp Authenticator — refresh 후 재시도          |
+| USR-001 | 앱 시작 자동 로그인 | ✅ 구현 | `navigation/NavGraph.kt` Splash | DataStore 토큰 복구 → 토큰 있으면 Home 직행              |
+| USR-001 | 백엔드 로그인 API | ✅ 구현 | `AuthRepository` | `kakaoLogin()` / `googleLogin()` 연결 완료        |
+| USR-002 | 프로필 수정 화면 | ❌ 미구현 | — | 화면 없음                                         |
+| USR-002 | 회원 탈퇴 | ❌ 미구현 | — | API 정의됨, UI 없음                                |
 | USR-029 | 로그아웃 | ✅ 구현 | `HomeScreen.kt` 사이드 드로어 + `AuthViewModel.logout()` | 드로어 로그아웃 버튼 → 확인 다이얼로그 → 토큰 삭제 → 로그인 이동 완전 연결 |
+| USR-002 | 회원탈퇴 UI | ✅ 구현 | `HomeScreen.kt` 드로어 하단 | "회원탈퇴" 텍스트 버튼 + 확인 다이얼로그 구현. API 연결 완료        |
 
 ---
 
@@ -161,7 +162,7 @@
 |---|---|---|---|---|
 | `SplashScreen` | `SplashScreen.kt` | ✅ | ✅ | DataStore 토큰 복구 → 자동 로그인 |
 | `LoginScreen` | `LoginScreen.kt` | ✅ | ✅ | 카카오/구글 AuthViewModel 연결 완료 |
-| `HomeScreen` | `HomeScreen.kt` | ✅ | ✅ | BandViewModel 밴드 목록 + 우측 사이드 드로어(여권/알림/로그아웃) + 로그아웃 확인 다이얼로그 + BackHandler 완성 |
+| `HomeScreen` | `HomeScreen.kt` | ✅ | ✅ | BandViewModel 밴드 목록 + 우측 사이드 드로어 리디자인(프로필·D-day배너·퀵액션·로그아웃·회원탈퇴) + 유저 프로필 API 연결 |
 | `CreateTripScreen` | `TripCreationScreens.kt` | ✅ | ⚠️ | 2단계 플로우. 여행지 인기/검색 API 연결. 트리플 스타일 커스텀 캘린더(일/토 빨간색·범위선택·오늘 라벨). createBand() 연결됨, 로비 이동 완료 |
 | `AiLoadingScreen` | `TripCreationScreens.kt` + `NavGraph.kt` | ✅ | ⚠️ | 시뮬레이션 진행률 적용(단계별 ~5초). 투표 완료 시 bandId 전달, 완료 후 ScheduleScreen 이동. 실 폴링 미연결 |
 | `ItineraryScreen` | `TripCreationScreens.kt` | ✅ | ❌ | 완성된 일정 표시 미연결 |
@@ -234,7 +235,8 @@
 | 2026-05-24 | HomeScreen 상단 대형 SyncTrip 타이틀 제거. TripTicketCard 썸네일: `BandResponse.thumbnailUrl` 연동 (없으면 여행지명 기반 그라디언트+비행기 아이콘 플레이스홀더). `PlaneLoadingIndicator` 구 앱(`PlaneLoadingView`) 수치 일치 — 2500ms·2.5dp·7dp 점선. `BandCreateRequest.thumbnailUrl` 추가로 여행 생성 시 썸네일 서버 전달. |
 | 2026-05-24 | USR-004 ✅ 초대코드 참여 UI + 딥링크 구현. HomeScreen "코드로 참여" TextButton → ModalBottomSheet 8자리 코드 입력. AndroidManifest `synctrip://band/join` + `https://test.sync-trip.app/invite` intent-filter 추가, `launchMode="singleTop"`. MainActivity `onNewIntent` 처리. 딥링크 진입 시 AlertDialog 확인 후 자동 참여. 공유 텍스트 `inviteShareLink` 링크 우선 사용 ("SyncTrip에서 같이 여행 계획해요! 👇\n{link}"). HTTP 에러 코드별 스낵바 메시지(404/409/410). |
 | 2026-05-24 | 딥링크 AlertDialog NavHost 밖으로 이동 — 어느 화면(TripLobby 등)에서도 수신 즉시 표시. 홈 밴드 카드 순서 최신순 정렬(`.reversed()`). USR-006 초대 화면 분리 — `InviteScreen.kt` 신규, TripLobby `+초대` 버튼 → `invite/{bandId}` 라우트, InviteCodeSection 로비에서 제거, 진입 시 코드 자동 발급·클립보드 복사·링크 공유. |
+| 2026-05-24 | 사이드 드로어 전면 리디자인 — 프로필 섹션(닉네임+원형 이미지), D-day 배너(가장 가까운 여행·탭하면 로비 이동), 퀵액션 카드(내 여권/코드참여), 로그아웃, 회원탈퇴(작은 텍스트+확인 다이얼로그). `GET api/users/me` 연결 — `BandViewModel.loadMyProfile()` + `BandUiState.userProfile` 추가. 홈 진입 시 자동 조회. |
 
 ---
 
-**마지막 수정:** 2026-05-24 (초대 화면 분리 + 딥링크 AlertDialog 위치 수정) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+**마지막 수정:** 2026-05-24 (사이드 드로어 리디자인 + 유저 프로필 API 연결) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

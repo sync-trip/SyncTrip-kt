@@ -22,12 +22,23 @@ data class BandUiState(
     val error: String?                         = null,
     // 장바구니 최대 개수 초과 시 다이얼로그 트리거
     val pickLimitReached: Boolean              = false,
+    // 로그인한 유저 프로필 (드로어 표시용)
+    val userProfile: UserProfileResponse?      = null,
 )
 
 class BandViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(BandUiState())
     val uiState: StateFlow<BandUiState> = _uiState
+
+    /** 로그인한 유저 프로필 조회 — 드로어 닉네임/프로필 이미지 표시 */
+    fun loadMyProfile() {
+        viewModelScope.launch {
+            runCatching { BandRepository.getMyProfile() }
+                .onSuccess { _uiState.value = _uiState.value.copy(userProfile = it) }
+                .onFailure { /* 프로필 오류는 조용히 무시 — 드로어에 기본값 표시 */ }
+        }
+    }
 
     fun loadBands() {
         viewModelScope.launch {

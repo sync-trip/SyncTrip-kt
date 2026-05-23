@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,15 +58,30 @@ fun HomeScreen(
     onPassportClick: () -> Unit,
     onJoinWithCode: (String) -> Unit,
     onLogout: () -> Unit,
+    onWithdrawClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     hasUnreadNotifications: Boolean = false,
+    userName: String = "",
+    userProfileImageUrl: String? = null,
 ) {
     val drawerState      = rememberDrawerState(DrawerValue.Closed)
     val scope            = rememberCoroutineScope()
-    var showLogoutDialog by remember { mutableStateOf(false) }
-    var showJoinSheet    by remember { mutableStateOf(false) }
-    var joinCodeInput    by remember { mutableStateOf("") }
+    var showLogoutDialog   by remember { mutableStateOf(false) }
+    var showWithdrawDialog by remember { mutableStateOf(false) }
+    var showJoinSheet      by remember { mutableStateOf(false) }
+    var joinCodeInput      by remember { mutableStateOf("") }
+
+    // 가장 가까운 미래 여행 — D-day 배너에 사용
+    val upcomingBand = remember(myTripBands) {
+        myTripBands
+            .filter { it.status != TripStatus.COMPLETED }
+            .minByOrNull { band ->
+                runCatching {
+                    java.time.LocalDate.parse(band.startDate).toEpochDay()
+                }.getOrDefault(Long.MAX_VALUE)
+            }
+    }
 
     // 드로어가 열린 상태에서 뒤로가기 → 앱 종료 대신 드로어 닫기
     BackHandler(enabled = drawerState.isOpen) {
@@ -85,6 +101,23 @@ fun HomeScreen(
             },
             dismissButton    = {
                 TextButton(onClick = { showLogoutDialog = false }) { Text("취소") }
+            },
+        )
+    }
+
+    // 회원탈퇴 확인 다이얼로그
+    if (showWithdrawDialog) {
+        AlertDialog(
+            onDismissRequest = { showWithdrawDialog = false },
+            title            = { Text("회원탈퇴") },
+            text             = { Text("정말 탈퇴하시겠어요?") },
+            confirmButton    = {
+                TextButton(onClick = { showWithdrawDialog = false; onWithdrawClick() }) {
+                    Text("탈퇴하기", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton    = {
+                TextButton(onClick = { showWithdrawDialog = false }) { Text("취소") }
             },
         )
     }
@@ -137,9 +170,16 @@ fun HomeScreen(
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     ModalDrawerSheet(modifier = Modifier.width(280.dp)) {
                         HomeDrawerContent(
+                            userName             = userName,
+                            userProfileImageUrl  = userProfileImageUrl,
+                            upcomingBand         = upcomingBand,
+                            onClose              = { scope.launch { drawerState.close() } },
+                            onBandClick          = { bandId -> scope.launch { drawerState.close() }; onTripBandClick(bandId) },
                             onPassportClick      = { scope.launch { drawerState.close() }; onPassportClick() },
                             onNotificationsClick = { scope.launch { drawerState.close() }; onNotificationsClick() },
+                            onJoinWithCode       = { scope.launch { drawerState.close() }; showJoinSheet = true },
                             onLogout             = { scope.launch { drawerState.close() }; showLogoutDialog = true },
+                            onWithdraw           = { scope.launch { drawerState.close() }; showWithdrawDialog = true },
                         )
                     }
                 }
@@ -247,93 +287,207 @@ fun HomeScreen(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 홈 화면의 사이드 드로어 내용.
- * 여권, 알림 바로가기와 로그아웃 버튼을 포함한다.
+ * 홈 화면 사이드 드로어.
+ * 프로필 섹션 + 가장 가까운 여행 D-day 배너 + 퀵 액션 + 로그아웃으로 구성.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeDrawerContent(
+    userName: String,
+    userProfileImageUrl: String?,
+    upcomingBand: TripBand?,
+    onClose: () -> Unit,
+    onBandClick: (bandId: String) -> Unit,
     onPassportClick: () -> Unit,
     onNotificationsClick: () -> Unit,
+    onJoinWithCode: () -> Unit,
     onLogout: () -> Unit,
+    onWithdraw: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxHeight()) {
-        // 드로어 헤더
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .padding(horizontal = 24.dp, vertical = 32.dp),
+
+        // ── 상단 바 — 닫기 + 알림 ────────────────────────────────────────
+        Row(
+            modifier              = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically,
         ) {
-            Column {
-                Icon(
-                    imageVector        = Icons.Outlined.TravelExplore,
-                    contentDescription = null,
-                    tint               = MaterialTheme.colorScheme.primary,
-                    modifier           = Modifier.size(40.dp),
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text  = "SyncTrip",
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        color      = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.Bold,
-                    ),
-                )
-                Text(
-                    text  = "함께하는 여행 계획",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                    ),
-                )
+            IconButton(onClick = onClose) {
+                Icon(Icons.Outlined.Close, "닫기", tint = MaterialTheme.colorScheme.onSurface)
+            }
+            IconButton(onClick = onNotificationsClick) {
+                Icon(Icons.Outlined.Notifications, "알림", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
         Spacer(Modifier.height(8.dp))
 
-        DrawerMenuItem(
-            icon    = Icons.Outlined.BookmarkBorder,
-            label   = "내 여권",
-            onClick = onPassportClick,
-        )
-        DrawerMenuItem(
-            icon    = Icons.Outlined.Notifications,
-            label   = "알림",
-            onClick = onNotificationsClick,
-        )
+        // ── 프로필 섹션 ───────────────────────────────────────────────────
+        Row(
+            modifier              = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically,
+        ) {
+            Text(
+                text  = userName.ifBlank { "SyncTrip 유저" },
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+            )
+            Box(
+                modifier         = Modifier
+                    .size(60.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (userProfileImageUrl != null) {
+                    AsyncImage(
+                        model              = userProfileImageUrl,
+                        contentDescription = "프로필",
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Text(
+                        text  = userName.firstOrNull()?.uppercase() ?: "S",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            color      = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ── D-day 배너 — 가장 가까운 여행 ────────────────────────────────
+        if (upcomingBand != null) {
+            val dDayText = remember(upcomingBand.startDate) {
+                runCatching {
+                    val days = java.time.temporal.ChronoUnit.DAYS.between(
+                        java.time.LocalDate.now(),
+                        java.time.LocalDate.parse(upcomingBand.startDate),
+                    )
+                    when {
+                        days > 0L  -> "D-$days"
+                        days == 0L -> "D-DAY"
+                        else       -> "여행 중"
+                    }
+                }.getOrDefault("")
+            }
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                color    = MaterialTheme.colorScheme.primary,
+                onClick  = { onBandClick(upcomingBand.id) },
+            ) {
+                Row(
+                    modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Outlined.FlightTakeoff, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        Text(
+                            text  = upcomingBand.destination,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                color      = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                        )
+                    }
+                    if (dDayText.isNotEmpty()) {
+                        Text(
+                            text  = dDayText,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                color      = Color.White,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+
+        // ── 퀵 액션 ──────────────────────────────────────────────────────
+        Row(
+            modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            DrawerQuickItem(
+                icon     = Icons.Outlined.CardTravel,
+                label    = "내 여권",
+                modifier = Modifier.weight(1f),
+                onClick  = onPassportClick,
+            )
+            DrawerQuickItem(
+                icon     = Icons.Outlined.PersonAdd,
+                label    = "코드 참여",
+                modifier = Modifier.weight(1f),
+                onClick  = onJoinWithCode,
+            )
+        }
 
         Spacer(Modifier.weight(1f))
-
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
 
-        DrawerMenuItem(
-            icon    = Icons.Outlined.Logout,
-            label   = "로그아웃",
-            onClick = onLogout,
-            tint    = MaterialTheme.colorScheme.error,
+        NavigationDrawerItem(
+            icon     = { Icon(Icons.Outlined.Logout, null, tint = MaterialTheme.colorScheme.error) },
+            label    = {
+                Text(
+                    "로그아웃",
+                    style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.error),
+                )
+            },
+            selected = false,
+            onClick  = onLogout,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
         )
-        Spacer(Modifier.height(16.dp))
+        TextButton(
+            onClick  = onWithdraw,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+        ) {
+            Text(
+                text  = "회원탈퇴",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                ),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
-private fun DrawerMenuItem(
+private fun DrawerQuickItem(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
-    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier: Modifier = Modifier,
 ) {
-    NavigationDrawerItem(
-        icon     = { Icon(icon, contentDescription = null, tint = tint) },
-        label    = {
-            Text(
-                text  = label,
-                style = MaterialTheme.typography.bodyLarge.copy(color = tint),
-            )
-        },
-        selected = false,
+    Card(
+        modifier = modifier,
+        shape    = RoundedCornerShape(12.dp),
+        colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         onClick  = onClick,
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-    )
+    ) {
+        Column(
+            modifier            = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium)
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -506,19 +660,21 @@ private val previewContent = listOf(
 private fun HomeScreenPreview() {
     SynctripTheme {
         HomeScreen(
-            recommendedContent   = previewContent,
-            myTripBands          = previewBands,
-            selectedNavItem      = BottomNavDestination.Home,
-            onNavItemSelected    = {},
-            onSearchClick        = {},
-            onNotificationsClick = {},
-            onContentCardClick   = {},
-            onTripBandClick      = {},
-            onCreateTripClick    = {},
-            onPassportClick      = {},
-            onJoinWithCode       = {},
-            onLogout             = {},
+            recommendedContent     = previewContent,
+            myTripBands            = previewBands,
+            selectedNavItem        = BottomNavDestination.Home,
+            onNavItemSelected      = {},
+            onSearchClick          = {},
+            onNotificationsClick   = {},
+            onContentCardClick     = {},
+            onTripBandClick        = {},
+            onCreateTripClick      = {},
+            onPassportClick        = {},
+            onJoinWithCode         = {},
+            onLogout               = {},
             hasUnreadNotifications = true,
+            userName               = "구민우",
+            userProfileImageUrl    = null,
         )
     }
 }

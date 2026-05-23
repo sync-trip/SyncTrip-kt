@@ -142,6 +142,10 @@ interface SyncTripApiService {
     @PUT("api/users/me")
     suspend fun updateProfile(@Body body: UserProfileUpdateRequest): UserProfileResponse
 
+    /** 회원 탈퇴 — Soft Delete. 성공 시 204 No Content */
+    @DELETE("auth/kakao/withdraw")
+    suspend fun withdraw()
+
     // ── Destination ───────────────────────────────────────────────────────────
 
     /** 인기 여행지 목록 (하드코딩 28개) */

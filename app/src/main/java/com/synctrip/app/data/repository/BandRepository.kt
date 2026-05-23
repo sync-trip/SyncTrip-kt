@@ -58,4 +58,8 @@ object BandRepository {
 
     suspend fun deleteBand(bandId: Long) =
         ApiClient.api.deleteBand(bandId)
+
+    /** 로그인한 유저 프로필 조회 */
+    suspend fun getMyProfile(): UserProfileResponse =
+        ApiClient.api.getMyProfile()
 }
