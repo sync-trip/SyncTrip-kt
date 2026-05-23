@@ -132,4 +132,75 @@ interface SyncTripApiService {
 
     @POST("api/users/fcm-token")
     suspend fun registerFcmToken(@Body body: FcmTokenRequest)
+
+    // ── User Profile ──────────────────────────────────────────────────────────
+
+    @GET("api/users/me")
+    suspend fun getMyProfile(): UserProfileResponse
+
+    /** 실제 HTTP 메서드는 PUT (백엔드 UserController 기준) */
+    @PUT("api/users/me")
+    suspend fun updateProfile(@Body body: UserProfileUpdateRequest): UserProfileResponse
+
+    // ── Destination ───────────────────────────────────────────────────────────
+
+    /** 인기 여행지 목록 (하드코딩 28개) */
+    @GET("api/destinations/popular")
+    suspend fun getPopularDestinations(): List<DestinationResponse>
+
+    /** 여행지 검색 (Google Places + Spring Cache) */
+    @GET("api/destinations/search")
+    suspend fun searchDestinations(@Query("query") query: String): List<DestinationResponse>
+
+    // ── Place Picks (장바구니) ─────────────────────────────────────────────────
+
+    /** 장바구니 목록 — {currentCount, maxCount, items} 래퍼로 반환됨 */
+    @GET("api/bands/{bandId}/picks")
+    suspend fun getPicks(@Path("bandId") bandId: Long): PlacePickListResponse
+
+    @POST("api/bands/{bandId}/picks")
+    suspend fun addPick(
+        @Path("bandId") bandId: Long,
+        @Body body: PlacePickRequest,
+    ): PlacePickResponse
+
+    @DELETE("api/bands/{bandId}/picks/{placeId}")
+    suspend fun deletePick(
+        @Path("bandId") bandId: Long,
+        @Path("placeId") placeId: Long,
+    )
+
+    // ── Band Delete ───────────────────────────────────────────────────────────
+
+    /** 밴드 삭제 — 방장 전용, Soft Delete */
+    @DELETE("api/bands/{bandId}")
+    suspend fun deleteBand(@Path("bandId") bandId: Long)
+
+    // ── Notification (추가 엔드포인트) ────────────────────────────────────────
+
+    @GET("api/notifications/unread-count")
+    suspend fun getUnreadNotificationCount(): UnreadCountResponse
+
+    @PATCH("api/notifications/read-all")
+    suspend fun markAllNotificationsRead()
+
+    @DELETE("api/notifications/{id}")
+    suspend fun deleteNotification(@Path("id") notificationId: Long)
+
+    // ── Notification Settings ─────────────────────────────────────────────────
+
+    @GET("api/users/notification-settings")
+    suspend fun getNotificationSettings(): NotificationSettingsResponse
+
+    /** 한 번에 타입 하나씩 on/off — {type, enabled} 형식 */
+    @PATCH("api/users/notification-settings")
+    suspend fun updateNotificationSettings(
+        @Body body: NotificationSettingUpdateRequest,
+    ): NotificationSettingsResponse
+
+    // ── Settlement Request ────────────────────────────────────────────────────
+
+    /** 정산 요청 알림 발송 */
+    @POST("api/bands/{bandId}/settlement/request")
+    suspend fun requestSettlement(@Path("bandId") bandId: Long)
 }

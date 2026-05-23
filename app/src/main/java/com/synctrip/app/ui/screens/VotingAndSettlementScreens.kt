@@ -346,11 +346,11 @@ private fun ExpenseItemRow(item: SettlementItem) {
 private val previewSession = VotingSession(
     sessionId  = "vs1",
     tripId     = "t1",
-    title      = "숙소 블라인드 투표",
+    title      = "장소 블라인드 투표",
     deadline   = "2024-08-01 23:59",
     candidates = listOf(
-        VoteCandidate("c1", "숙소 후보 A", null, "시부야역 도보 5분, 조식 포함", 120_000L, 3, 0.6f),
-        VoteCandidate("c2", "숙소 후보 B", null, "신주쿠 뷰, 온천 포함", 95_000L, 1, 0.2f),
+        VoteCandidate("c1", "장소 후보 A", null, "시부야역 도보 5분, 조식 포함", 120_000L, 3, 0.6f),
+        VoteCandidate("c2", "장소 후보 B", null, "신주쿠 뷰, 온천 포함", 95_000L, 1, 0.2f),
     ),
     totalVotes = 5, hasVoted = true, myVoteId = "c1",
 )

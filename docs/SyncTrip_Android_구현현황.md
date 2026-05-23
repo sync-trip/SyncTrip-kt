@@ -1,5 +1,5 @@
 # SyncTrip Android 클라이언트 구현 현황
-**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-23
+**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-23 (2차)
 
 > 이 문서는 기능이 구현되거나 수정될 때마다 업데이트합니다.  
 > 기준: `SyncTrip_인수인계문서_v6.md` USR-001 ~ USR-031 + 기존 SyncTrip-Android 앱 기능 동등성
@@ -55,16 +55,16 @@
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
 | USR-003 | 밴드 목록 조회 | ✅ 구현 | `HomeScreen` + `BandViewModel` | `GET api/bands` 실 데이터 연결 |
-| USR-003 | 그룹 생성 UI (다단계) | ⚠️ 부분 구현 | `ui/screens/TripCreationScreens.kt` | UI 완성, `createBand()` API 미연결 |
+| USR-003 | 그룹 생성 UI (다단계) | ⚠️ 부분 구현 | `ui/screens/TripCreationScreens.kt` | UI 완성, `createBand()` API 연결됨. 여행지 검색 연결. 트리플 스타일 커스텀 캘린더 범위 선택 적용 |
 | USR-003 | 숙소 입력 | ❌ 미구현 | — | CreateTripScreen에 필드 없음 |
 | USR-004 | 초대 코드 참여 UI | ❌ 미구현 | — | HomeScreen에 참여 버튼/BottomSheet 없음 |
 | USR-004 | 딥링크 (`synctrip://`) 처리 | ❌ 미구현 | — | AndroidManifest intent-filter 없음 |
 | USR-004 | 밴드 참여 API | ✅ 구현 | `BandRepository.joinBand()` | API 연결됨, UI 미완 |
 | USR-005 | 최대 인원 제한 표시 | ❌ 미구현 | — | 409 에러 UI 없음 |
-| USR-006 | 초대 코드 생성 API | ✅ 구현 | `BandViewModel.getInviteCode()` | API 연결됨, 공유 UI 미완 |
-| USR-009 | Ready 상태 전환 버튼 | ⚠️ 부분 구현 | `BandViewModel.setReady()` | API 연결됨, TripLobbyScreen UI 미연결 |
-| USR-014 | 상태 전환 (방장) | ⚠️ 부분 구현 | `BandRepository.advanceBandStatus()` | API 연결됨, UI 미연결 |
-| USR-028 | 밴드 삭제 | ❌ 미구현 | — | API 엔드포인트 미추가 |
+| USR-006 | 초대 코드 생성 API | ✅ 구현 | `BandViewModel.getInviteCode()` | 로비에서 버튼 클릭 시 발급, 시스템 공유 시트로 공유 |
+| USR-009 | Ready 상태 전환 버튼 | ✅ 구현 | `BandViewModel.setReady()` | TripLobbyScreen MyStatusSection — 장바구니 1개 이상 조건 적용 |
+| USR-014 | 상태 전환 (방장) | ✅ 구현 | `BandViewModel.advanceBandStatus()` | TripLobbyScreen 방장 전용 버튼, 미ready 경고 AlertDialog |
+| USR-028 | 밴드 삭제 | ❌ 미구현 | — | `BandRepository.deleteBand()` 추가됨, UI 없음 |
 | USR-028 | 여행 종료 처리 표시 | ❌ 미구현 | — | DONE 전환 시 UI 없음 |
 
 ---
@@ -75,7 +75,7 @@
 |---|---|---|---|---|
 | USR-007 | 장소 검색 UI | ⚠️ 부분 구현 | `ui/screens/PassportAndSearchScreens.kt` | UI 완성, API 미연결 |
 | USR-007 | 해외 장소 검색 API | ⚠️ 부분 구현 | `SyncTripApiService.searchPlaces()` | API 정의됨, UI 미연결 |
-| USR-007 | 여행지 인기/검색 API | ❌ 미구현 | — | `api/destinations/*` 엔드포인트 미추가 |
+| USR-007 | 여행지 인기/검색 API | ✅ 구현 | `NavGraph.kt` createTrip composable | `GET api/destinations/popular` 진입 시 로드. `GET api/destinations/search` 키보드 검색 버튼 클릭 시에만 호출(비용 절감). 실패/결과없음 스낵바 처리 |
 | USR-007 | 지도 뷰 | ❌ 미구현 | — | 지도 SDK 미연동 |
 | USR-008 | 장바구니 담기 API | ❌ 미구현 | — | `POST api/bands/{id}/picks` 엔드포인트 미추가 |
 | USR-008 | 장바구니 목록 API | ❌ 미구현 | — | `GET api/bands/{id}/picks` 엔드포인트 미추가 |
@@ -160,10 +160,10 @@
 | `SplashScreen` | `SplashScreen.kt` | ✅ | ✅ | DataStore 토큰 복구 → 자동 로그인 |
 | `LoginScreen` | `LoginScreen.kt` | ✅ | ✅ | 카카오/구글 AuthViewModel 연결 완료 |
 | `HomeScreen` | `HomeScreen.kt` | ✅ | ✅ | BandViewModel 밴드 목록 + 우측 사이드 드로어(여권/알림/로그아웃) + 로그아웃 확인 다이얼로그 + BackHandler 완성 |
-| `CreateTripScreen` | `TripCreationScreens.kt` | ✅ | ❌ | createBand() 미연결 |
+| `CreateTripScreen` | `TripCreationScreens.kt` | ✅ | ⚠️ | 2단계 플로우. 여행지 인기/검색 API 연결. 트리플 스타일 커스텀 캘린더(일/토 빨간색·범위선택·오늘 라벨). createBand() 연결됨, 로비 이동 완료 |
 | `AiLoadingScreen` | `TripCreationScreens.kt` | ✅ | ❌ | generateSchedule() + 폴링 미연결 |
 | `ItineraryScreen` | `TripCreationScreens.kt` | ✅ | ❌ | 완성된 일정 표시 미연결 |
-| `TripLobbyScreen` | `TripLobbyScreen.kt` | ✅ | ❌ | 멤버/Ready/초대코드/상태전환 미연결 |
+| `TripLobbyScreen` | `TripLobbyScreen.kt` | ✅ | ✅ | BandViewModel 연결 완료 — 멤버/Ready/초대코드/상태전환/picks 실 API |
 | `ScheduleScreen` | `ScheduleScreen.kt` | ✅ | ❌ | getSchedule() 미연결 |
 | `BlindVotingScreen` | `VotingAndSettlementScreens.kt` | ✅ | ❌ | VoteViewModel 미연결 |
 | `SettlementScreen` | `VotingAndSettlementScreens.kt` | ✅ | ❌ | getSettlement() 미연결 |
@@ -179,8 +179,6 @@
 
 | 엔드포인트 | 용도 | 우선순위 |
 |---|---|---|
-| `GET api/destinations/popular` | 여행지 인기 목록 (CreateTrip 1단계) | 🔴 |
-| `GET api/destinations/search` | 여행지 검색 | 🔴 |
 | `DELETE api/bands/{bandId}` | 밴드 삭제 (방장) | 🟠 |
 | `GET api/bands/{bandId}/picks` | 담은 장소 목록 | 🔴 |
 | `POST api/bands/{bandId}/picks` | 장소 담기 | 🔴 |
@@ -194,7 +192,7 @@
 |---|---|---|
 | 1 | 누락 API 엔드포인트 추가 | SyncTripApiService, DataModels |
 | 2 | CreateTripScreen → createBand API | CreateTripScreen |
-| 3 | TripLobbyScreen 전체 연결 | 멤버목록/Ready/초대코드/상태전환/picks |
+| 3 | ~~TripLobbyScreen 전체 연결~~ ✅ | NavGraph에 BandViewModel 연결, 멤버/Ready/초대코드/상태전환/picks 완성 |
 | 4 | PlaceSearchScreen 검색 + 장바구니 | PlaceSearchScreen |
 | 5 | BlindVotingScreen → VoteViewModel | BlindVotingScreen |
 | 6 | ScheduleScreen → getSchedule | ScheduleScreen |
@@ -226,7 +224,9 @@
 | 2026-05-23 | 문서 최초 작성. USR-001~031 전체 Android 구현 현황 정리 |
 | 2026-05-23 | 아키텍처 레이어 전체 구현. TokenDataStore, Repository 4개, ViewModel 3개 추가. ApiClient 401 자동갱신 인터셉터. Splash 자동로그인, Login 실 Auth 연결, HomeScreen BandViewModel 연결. 누락 API 목록 추가. |
 | 2026-05-23 | HomeScreen 우측 사이드 드로어 구현 (RTL 트릭). 드로어에 내 여권/알림/로그아웃 메뉴 추가. 로그아웃 확인 AlertDialog 추가. BackHandler로 드로어 열린 상태 뒤로가기 닫기 처리. BASE_URL 수정 (test-api.synctrip.com → test.sync-trip.app). USR-029 로그아웃 ✅ 완성. |
+| 2026-05-23 | 누락 API 14개 추가(DataModels + SyncTripApiService). DestinationResponse/PlacePickRequest/PlacePickListResponse 백엔드 DTO 기준으로 수정. CreateTripScreen → createBand API 연결 (여행지 검색, 날짜 피커, RELAXED/PACKED 스타일 토글). TripLobbyScreen 완전 재작성 (실 BandResponse 모델, 상태별 바텀바, 멤버 뱃지, 초대코드, MyStatusSection). NavGraph tripLobby 라우트 BandViewModel 연결 완료 (TokenDataStore userIdFlow, 시스템 공유 Intent). USR-006/009/014 ✅ 완성. |
+| 2026-05-23 | CreateTripScreen 2단계 플로우 재설계. 1단계: 여행지 목록(LazyColumn) + 검색 + 해외/국내 탭 + 카테고리 필터(인기/일본/동남아시아/유럽/미주-오세아니아). 2단계: 선택 여행지 확인 카드 + 밴드 이름 입력 + 날짜 선택 행 + 여행 스타일(이모지 카드). 하단 버튼 구 앱과 동일하게 "계속하기" / "이전"+"방 만들기" 로 변경. NavGraph bandName 상태 추가. |
 
 ---
 
-**마지막 수정:** 2026-05-23 (HomeScreen 드로어/로그아웃 완성) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+**마지막 수정:** 2026-05-23 (TripLobbyScreen NavGraph 연결 완성) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

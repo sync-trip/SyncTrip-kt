@@ -9,13 +9,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 data class BandUiState(
-    val bands: List<BandResponse>     = emptyList(),
-    val selectedBand: BandResponse?   = null,
+    val bands: List<BandResponse>         = emptyList(),
+    val selectedBand: BandResponse?       = null,
     val members: List<BandMemberResponse> = emptyList(),
     val inviteCode: BandInviteCodeResponse? = null,
-    val readyStatus: BandReadyResponse? = null,
-    val isLoading: Boolean            = false,
-    val error: String?                = null,
+    val readyStatus: BandReadyResponse?   = null,
+    val picks: PlacePickListResponse?     = null,
+    val isLoading: Boolean                = false,
+    val error: String?                    = null,
 )
 
 class BandViewModel : ViewModel() {
@@ -82,6 +83,31 @@ class BandViewModel : ViewModel() {
             runCatching { BandRepository.setReady(bandId) }
                 .onSuccess { _uiState.value = _uiState.value.copy(readyStatus = it) }
                 .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+        }
+    }
+
+    fun loadPicks(bandId: Long) {
+        viewModelScope.launch {
+            runCatching { BandRepository.getPicks(bandId) }
+                .onSuccess { _uiState.value = _uiState.value.copy(picks = it) }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+        }
+    }
+
+    fun advanceBandStatus(bandId: Long, onSuccess: (BandResponse) -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            runCatching { BandRepository.advanceBandStatus(bandId) }
+                .onSuccess { updated ->
+                    // bands 목록에서 해당 밴드 상태 갱신
+                    _uiState.value = _uiState.value.copy(
+                        isLoading    = false,
+                        selectedBand = updated,
+                        bands        = _uiState.value.bands.map { if (it.id == bandId) updated else it },
+                    )
+                    onSuccess(updated)
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
         }
     }
 

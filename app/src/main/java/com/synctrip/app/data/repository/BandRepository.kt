@@ -25,4 +25,13 @@ object BandRepository {
 
     suspend fun cancelReady(bandId: Long): BandReadyResponse =
         ApiClient.api.cancelReady(bandId)
+
+    suspend fun advanceBandStatus(bandId: Long): BandResponse =
+        ApiClient.api.advanceBandStatus(bandId)
+
+    suspend fun getPicks(bandId: Long): PlacePickListResponse =
+        ApiClient.api.getPicks(bandId)
+
+    suspend fun deleteBand(bandId: Long) =
+        ApiClient.api.deleteBand(bandId)
 }

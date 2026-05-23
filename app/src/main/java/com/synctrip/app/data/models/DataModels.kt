@@ -527,13 +527,134 @@ data class SettlementTransaction(
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum class ApiNotificationType {
-    MEMBER_READY, MEMBER_JOINED, VOTE_STARTED, SCHEDULE_UPDATED, SETTLEMENT_REQUEST
+    MEMBER_READY, MEMBER_JOINED, VOTE_STARTED, SCHEDULE_UPDATED, SETTLEMENT_REQUEST,
+    TRIP_ENDED,  // 2026-05-23 백엔드 추가
 }
 
+/**
+ * 알림 목록 응답. bandId·title 포함 (백엔드 NotificationResponse Record 기준).
+ */
 data class NotificationResponse(
     val id: Long,
+    val bandId: Long?,
     val type: ApiNotificationType,
+    val title: String,
     val content: String,
     val isRead: Boolean,
     val createdAt: String,
+)
+
+/** GET /api/notifications/unread-count → {"count": N} */
+data class UnreadCountResponse(val count: Long)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Backend – Destination  (GET /api/destinations/popular, /api/destinations/search)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 여행지 탐색 응답 (DestinationResponse Record).
+ * 필드명은 백엔드 Java Record와 1:1 — lat/lng/overseas 주의.
+ */
+data class DestinationResponse(
+    val name: String,
+    val country: String,
+    val countryCode: String,
+    val lat: Double,
+    val lng: Double,
+    val overseas: Boolean,
+    val region: String?,
+    val description: String?,
+    val thumbnailUrl: String?,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Backend – Place Pick (장바구니)
+// GET  /api/bands/{bandId}/picks  → PlacePickListResponse
+// POST /api/bands/{bandId}/picks  → PlacePickRequest
+// DELETE /api/bands/{bandId}/picks/{placeId}
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 장바구니 담기 요청 (PlacePickRequest Record).
+ * 검색 결과의 전체 장소 정보를 전달해야 한다 — placeId 단독 전달 불가.
+ */
+data class PlacePickRequest(
+    val apiSource: PlaceApiSource,
+    val externalId: String,
+    val name: String,
+    val category: ApiPlaceCategory,
+    val latitude: Double,
+    val longitude: Double,
+    val address: String?,
+    val rating: Float?,
+    val thumbnailUrl: String?,
+    val openingHoursJson: String? = null,
+    val estimatedDuration: Int? = null,
+)
+
+/** 장바구니 단건 응답 (PlacePickResponse Record). */
+data class PlacePickResponse(
+    val placeBookmarkId: Long,
+    val placeId: Long,
+    val apiSource: PlaceApiSource,
+    val externalId: String,
+    val name: String,
+    val category: ApiPlaceCategory,
+    val densityPoint: Int,
+    val latitude: Double,
+    val longitude: Double,
+    val address: String?,
+    val rating: Float?,
+    val thumbnailUrl: String?,
+    val openingHoursJson: String?,
+    val estimatedDuration: Int,
+    val createdAt: String,
+)
+
+/** GET /api/bands/{bandId}/picks 래퍼 (PlacePickListResponse Record). */
+data class PlacePickListResponse(
+    val currentCount: Int,
+    val maxCount: Int,
+    val items: List<PlacePickResponse>,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Backend – User Profile  (GET /api/users/me, PUT /api/users/me)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** UserProfileResponse Record. oauthProvider 필드명 주의. */
+data class UserProfileResponse(
+    val id: Long,
+    val email: String?,
+    val name: String,
+    val profileImageUrl: String?,
+    val oauthProvider: String,
+)
+
+/** PUT /api/users/me 요청. name은 @NotBlank 필수값. */
+data class UserProfileUpdateRequest(
+    val name: String,
+    val profileImageUrl: String? = null,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Backend – Notification Settings  (GET/PATCH /api/users/notification-settings)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** NotificationSettingResponse Record — tripEnded 없음 주의. */
+data class NotificationSettingsResponse(
+    val voteStarted: Boolean,
+    val scheduleUpdated: Boolean,
+    val settlementRequest: Boolean,
+    val memberReady: Boolean,
+    val memberJoined: Boolean,
+)
+
+/**
+ * PATCH /api/users/notification-settings 요청 (NotificationSettingRequest Record).
+ * 한 번에 하나의 타입만 on/off — {type, enabled} 형식.
+ */
+data class NotificationSettingUpdateRequest(
+    val type: ApiNotificationType,
+    val enabled: Boolean,
 )
