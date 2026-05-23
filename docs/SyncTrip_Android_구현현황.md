@@ -57,11 +57,12 @@
 | USR-003 | 밴드 목록 조회 | ✅ 구현 | `HomeScreen` + `BandViewModel` | `GET api/bands` 실 데이터 연결 |
 | USR-003 | 그룹 생성 UI (다단계) | ⚠️ 부분 구현 | `ui/screens/TripCreationScreens.kt` | UI 완성, `createBand()` API 연결됨. 여행지 검색 연결. 트리플 스타일 커스텀 캘린더 범위 선택 적용 |
 | USR-003 | 숙소 입력 | ❌ 미구현 | — | CreateTripScreen에 필드 없음 |
-| USR-004 | 초대 코드 참여 UI | ❌ 미구현 | — | HomeScreen에 참여 버튼/BottomSheet 없음 |
-| USR-004 | 딥링크 (`synctrip://`) 처리 | ❌ 미구현 | — | AndroidManifest intent-filter 없음 |
-| USR-004 | 밴드 참여 API | ✅ 구현 | `BandRepository.joinBand()` | API 연결됨, UI 미완 |
-| USR-005 | 최대 인원 제한 표시 | ❌ 미구현 | — | 409 에러 UI 없음 |
-| USR-006 | 초대 코드 생성 API | ✅ 구현 | `BandViewModel.getInviteCode()` | 로비에서 버튼 클릭 시 발급, 시스템 공유 시트로 공유 |
+| USR-004 | 초대 코드 참여 UI | ✅ 구현 | `HomeScreen` BottomSheet | "코드로 참여" 버튼 → 8자리 코드 입력 BottomSheet → joinBand API |
+| USR-004 | 딥링크 (`synctrip://`) 처리 | ✅ 구현 | `AndroidManifest.xml` + `MainActivity.kt` | synctrip://band/join + https://test.sync-trip.app/invite 두 scheme. onNewIntent 처리. AlertDialog 확인 후 참여 |
+| USR-004 | 밴드 참여 API | ✅ 구현 | `BandRepository.joinBand()` | API 연결 완료 |
+| USR-005 | 최대 인원 제한 표시 | ⚠️ 부분 구현 | 스낵바 에러 메시지 | 409 → "이미 참여 중인 방이에요" 스낵바. 별도 UI 없음 |
+| USR-006 | 초대 코드 생성 API | ✅ 구현 | `BandViewModel.getInviteCode()` | InviteScreen 진입 시 자동 발급. 공유 시 inviteShareLink 링크 텍스트 사용 |
+| USR-006 | 초대 화면 분리 | ✅ 구현 | `InviteScreen.kt` + `NavGraph.kt` `invite/{bandId}` | TripLobby `+초대` 버튼 → 전용 InviteScreen. 코드 표시 + 클립보드 복사 + 링크 공유. InviteCodeSection 로비에서 제거 |
 | USR-009 | Ready 상태 전환 버튼 | ✅ 구현 | `BandViewModel.setReady()` | TripLobbyScreen MyStatusSection — 장바구니 1개 이상 조건 적용 |
 | USR-014 | 상태 전환 (방장) | ✅ 구현 | `BandViewModel.advanceBandStatus()` | TripLobbyScreen 방장 전용 버튼, 미ready 경고 AlertDialog |
 | USR-028 | 밴드 삭제 | ❌ 미구현 | — | `BandRepository.deleteBand()` 추가됨, UI 없음 |
@@ -164,7 +165,8 @@
 | `CreateTripScreen` | `TripCreationScreens.kt` | ✅ | ⚠️ | 2단계 플로우. 여행지 인기/검색 API 연결. 트리플 스타일 커스텀 캘린더(일/토 빨간색·범위선택·오늘 라벨). createBand() 연결됨, 로비 이동 완료 |
 | `AiLoadingScreen` | `TripCreationScreens.kt` + `NavGraph.kt` | ✅ | ⚠️ | 시뮬레이션 진행률 적용(단계별 ~5초). 투표 완료 시 bandId 전달, 완료 후 ScheduleScreen 이동. 실 폴링 미연결 |
 | `ItineraryScreen` | `TripCreationScreens.kt` | ✅ | ❌ | 완성된 일정 표시 미연결 |
-| `TripLobbyScreen` | `TripLobbyScreen.kt` | ✅ | ✅ | BandViewModel 연결 완료 — 멤버/Ready/초대코드/상태전환/picks 실 API |
+| `TripLobbyScreen` | `TripLobbyScreen.kt` | ✅ | ✅ | BandViewModel 연결 완료 — 멤버/Ready/상태전환/picks 실 API. InviteCodeSection 제거, +초대→InviteScreen |
+| `InviteScreen` | `InviteScreen.kt` | ✅ | ✅ | 신규. 코드 자동 발급, 클립보드 복사 Toast, 링크 공유 Intent |
 | `ScheduleScreen` | `ScheduleScreen.kt` | ✅ | ❌ | getSchedule() 미연결 |
 | `SwipeVotingScreen` | `VotingAndSettlementScreens.kt` | ✅ | ✅ | VoteViewModel 완전 연결. 카드 이탈 애니메이션, 카테고리/별점 배지, 진행률 표시 |
 | `BlindVotingScreen` | `VotingAndSettlementScreens.kt` | ✅ | ❌ | 레거시 — 현재 미사용. VoteViewModel 미연결 |
@@ -230,7 +232,9 @@
 | 2026-05-24 | 투표 화면 크래시 수정 — `blindVoting/{bandId}` NavGraph 라우트 누락 추가. SwipeVotingScreen 신규 구현 (카드 이탈 애니메이션, 카테고리/별점 배지, 좋아요/싫어요 버튼, 진행률 배지). VoteViewModel에 `voteForPlace(placeId, result)` 추가. USR-010 ✅ 완성. |
 | 2026-05-24 | AiLoadingScreen 진행률 0% 고정 버그 수정 — `AiLoadingSimulated` 헬퍼 추가 (6단계 시뮬레이션 ~5초). `aiLoading/{bandId}` 라우트 추가 (완료 후 `schedule/$bandId` 이동). 투표 완료 → aiLoading 자동 이동 연결. |
 | 2026-05-24 | HomeScreen 상단 대형 SyncTrip 타이틀 제거. TripTicketCard 썸네일: `BandResponse.thumbnailUrl` 연동 (없으면 여행지명 기반 그라디언트+비행기 아이콘 플레이스홀더). `PlaneLoadingIndicator` 구 앱(`PlaneLoadingView`) 수치 일치 — 2500ms·2.5dp·7dp 점선. `BandCreateRequest.thumbnailUrl` 추가로 여행 생성 시 썸네일 서버 전달. |
+| 2026-05-24 | USR-004 ✅ 초대코드 참여 UI + 딥링크 구현. HomeScreen "코드로 참여" TextButton → ModalBottomSheet 8자리 코드 입력. AndroidManifest `synctrip://band/join` + `https://test.sync-trip.app/invite` intent-filter 추가, `launchMode="singleTop"`. MainActivity `onNewIntent` 처리. 딥링크 진입 시 AlertDialog 확인 후 자동 참여. 공유 텍스트 `inviteShareLink` 링크 우선 사용 ("SyncTrip에서 같이 여행 계획해요! 👇\n{link}"). HTTP 에러 코드별 스낵바 메시지(404/409/410). |
+| 2026-05-24 | 딥링크 AlertDialog NavHost 밖으로 이동 — 어느 화면(TripLobby 등)에서도 수신 즉시 표시. 홈 밴드 카드 순서 최신순 정렬(`.reversed()`). USR-006 초대 화면 분리 — `InviteScreen.kt` 신규, TripLobby `+초대` 버튼 → `invite/{bandId}` 라우트, InviteCodeSection 로비에서 제거, 진입 시 코드 자동 발급·클립보드 복사·링크 공유. |
 
 ---
 
-**마지막 수정:** 2026-05-24 (밴드 썸네일 연동 + 로딩 인디케이터 개선) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+**마지막 수정:** 2026-05-24 (초대 화면 분리 + 딥링크 AlertDialog 위치 수정) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

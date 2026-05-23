@@ -42,6 +42,7 @@ import kotlinx.coroutines.launch
  * 추천 여행지 + 내 여행 밴드 목록을 보여주고,
  * 우측 상단 햄버거 메뉴로 사이드 드로어를 열 수 있다.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     recommendedContent: List<RecommendedContent>,
@@ -54,13 +55,17 @@ fun HomeScreen(
     onTripBandClick: (String) -> Unit,
     onCreateTripClick: () -> Unit,
     onPassportClick: () -> Unit,
+    onJoinWithCode: (String) -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     hasUnreadNotifications: Boolean = false,
 ) {
     val drawerState      = rememberDrawerState(DrawerValue.Closed)
     val scope            = rememberCoroutineScope()
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showJoinSheet    by remember { mutableStateOf(false) }
+    var joinCodeInput    by remember { mutableStateOf("") }
 
     // 드로어가 열린 상태에서 뒤로가기 → 앱 종료 대신 드로어 닫기
     BackHandler(enabled = drawerState.isOpen) {
@@ -82,6 +87,44 @@ fun HomeScreen(
                 TextButton(onClick = { showLogoutDialog = false }) { Text("취소") }
             },
         )
+    }
+
+    // 초대 코드 입력 BottomSheet
+    if (showJoinSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showJoinSheet = false; joinCodeInput = "" },
+        ) {
+            Column(
+                modifier            = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    text  = "초대 코드로 참여",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                )
+                OutlinedTextField(
+                    value         = joinCodeInput,
+                    onValueChange = { if (it.length <= 8) joinCodeInput = it.uppercase() },
+                    label         = { Text("초대 코드") },
+                    placeholder   = { Text("8자리 코드 입력") },
+                    singleLine    = true,
+                    modifier      = Modifier.fillMaxWidth(),
+                )
+                Button(
+                    onClick  = {
+                        onJoinWithCode(joinCodeInput)
+                        showJoinSheet = false
+                        joinCodeInput = ""
+                    },
+                    enabled  = joinCodeInput.length == 8,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape    = RoundedCornerShape(12.dp),
+                ) { Text("참여하기") }
+            }
+        }
     }
 
     // RTL로 감싸면 ModalNavigationDrawer가 오른쪽에서 열림
@@ -119,6 +162,7 @@ fun HomeScreen(
                             onDestinationSelected = onNavItemSelected,
                         )
                     },
+                    snackbarHost        = { SnackbarHost(snackbarHostState) },
                     floatingActionButton = {
                         ExtendedFloatingActionButton(
                             onClick        = onCreateTripClick,
@@ -164,6 +208,11 @@ fun HomeScreen(
                         SectionHeader(
                             title    = "내 여행 밴드",
                             modifier = Modifier.padding(horizontal = 20.dp),
+                            action   = {
+                                TextButton(onClick = { showJoinSheet = true }) {
+                                    Text("코드로 참여")
+                                }
+                            },
                         )
 
                         Spacer(Modifier.height(12.dp))
@@ -467,6 +516,7 @@ private fun HomeScreenPreview() {
             onTripBandClick      = {},
             onCreateTripClick    = {},
             onPassportClick      = {},
+            onJoinWithCode       = {},
             onLogout             = {},
             hasUnreadNotifications = true,
         )

@@ -32,13 +32,11 @@ fun TripLobbyScreen(
     band: BandResponse,
     members: List<BandMemberResponse>,
     picks: PlacePickListResponse?,          // null = 로드 전
-    inviteCode: BandInviteCodeResponse?,
     currentUserId: Long,
     isLoading: Boolean,
     onBackClick: () -> Unit,
     onReadyClick: () -> Unit,
-    onGetInviteCodeClick: () -> Unit,
-    onShareInviteCode: (String) -> Unit,
+    onInviteClick: () -> Unit,
     onAdvanceStatus: () -> Unit,
     onGoToPlaceSearch: () -> Unit,
     onGoToVoting: () -> Unit,
@@ -106,17 +104,8 @@ fun TripLobbyScreen(
             // ── 멤버 목록 ─────────────────────────────────────────────────────
             MembersSection(
                 members       = members,
-                onInviteClick = onGetInviteCodeClick,
+                onInviteClick = onInviteClick,
             )
-
-            // ── 초대 코드 섹션 (PLANNING 단계만) ──────────────────────────────
-            if (band.status == BandStatus.PLANNING) {
-                InviteCodeSection(
-                    inviteCode   = inviteCode,
-                    onGetCode    = onGetInviteCodeClick,
-                    onShare      = onShareInviteCode,
-                )
-            }
 
             // ── 내 준비 현황 (PLANNING 단계만) ────────────────────────────────
             if (band.status == BandStatus.PLANNING) {
@@ -340,78 +329,6 @@ private fun MemberAvatar(member: BandMemberResponse) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 초대 코드 섹션
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun InviteCodeSection(
-    inviteCode: BandInviteCodeResponse?,
-    onGetCode: () -> Unit,
-    onShare: (String) -> Unit,
-) {
-    Card(
-        shape  = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)),
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.Share, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
-                Text("초대 코드", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
-            }
-
-            if (inviteCode != null) {
-                // 코드 표시
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                ) {
-                    Row(
-                        modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment     = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text  = inviteCode.inviteCode,
-                            style = MaterialTheme.typography.headlineSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color      = MaterialTheme.colorScheme.primary,
-                            ),
-                        )
-                        IconButton(onClick = { onShare(inviteCode.inviteCode) }) {
-                            Icon(Icons.Outlined.ContentCopy, "복사", tint = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-                OutlinedButton(
-                    onClick  = { onShare(inviteCode.inviteCode) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape    = RoundedCornerShape(12.dp),
-                ) {
-                    Icon(Icons.Outlined.Share, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("카카오·링크로 공유")
-                }
-            } else {
-                Text(
-                    text  = "초대 코드를 발급해서 친구를 초대하세요",
-                    style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                )
-                Button(
-                    onClick  = onGetCode,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape    = RoundedCornerShape(12.dp),
-                ) {
-                    Icon(Icons.Outlined.Add, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("초대 코드 발급")
-                }
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 내 준비 현황 섹션
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -604,20 +521,18 @@ private fun TripLobbyScreenPreview() {
     val previewPicks = PlacePickListResponse(currentCount = 3, maxCount = 5, items = emptyList())
     SynctripTheme {
         TripLobbyScreen(
-            band             = previewBand,
-            members          = previewMembers,
-            picks            = previewPicks,
-            inviteCode       = BandInviteCodeResponse(1L, "SYNC1234", "2024-09-02T00:00:00", null, null),
-            currentUserId    = 1L,
-            isLoading        = false,
-            onBackClick      = {},
-            onReadyClick     = {},
-            onGetInviteCodeClick = {},
-            onShareInviteCode = {},
-            onAdvanceStatus  = {},
+            band              = previewBand,
+            members           = previewMembers,
+            picks             = previewPicks,
+            currentUserId     = 1L,
+            isLoading         = false,
+            onBackClick       = {},
+            onReadyClick      = {},
+            onInviteClick     = {},
+            onAdvanceStatus   = {},
             onGoToPlaceSearch = {},
-            onGoToVoting     = {},
-            onGoToSchedule   = {},
+            onGoToVoting      = {},
+            onGoToSchedule    = {},
         )
     }
 }

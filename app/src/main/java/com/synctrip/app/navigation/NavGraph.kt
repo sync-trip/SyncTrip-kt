@@ -1,6 +1,9 @@
 package com.synctrip.app.navigation
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
@@ -20,6 +23,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.synctrip.app.core.TokenDataStore
 import com.synctrip.app.data.models.*
+import com.synctrip.app.data.repository.BandRepository
 import com.synctrip.app.network.ApiClient
 import com.synctrip.app.ui.components.BottomNavDestination
 import com.synctrip.app.ui.screens.*
@@ -32,8 +36,56 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
-fun SyncTripNavGraph() {
+fun SyncTripNavGraph(
+    pendingDeepLinkCode: String? = null,
+    onDeepLinkConsumed: () -> Unit = {},
+) {
     val navController = rememberNavController()
+    val scope         = rememberCoroutineScope()
+
+    // 딥링크 초대 코드 상태 — NavHost 밖에 선언해야 어느 화면에서도 다이얼로그 표시 가능
+    var pendingJoinCode by remember { mutableStateOf<String?>(null) }
+    var joinError       by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(pendingDeepLinkCode) {
+        if (!pendingDeepLinkCode.isNullOrEmpty()) {
+            pendingJoinCode = pendingDeepLinkCode
+            joinError = null
+            onDeepLinkConsumed()
+        }
+    }
+
+    if (pendingJoinCode != null) {
+        AlertDialog(
+            onDismissRequest = { pendingJoinCode = null; joinError = null },
+            title            = { Text("초대 링크로 참여") },
+            text             = {
+                if (joinError != null)
+                    Text("초대 코드: ${pendingJoinCode!!}\n이 여행 방에 참여할까요?\n\n⚠️ $joinError")
+                else
+                    Text("초대 코드: ${pendingJoinCode!!}\n이 여행 방에 참여할까요?")
+            },
+            confirmButton    = {
+                TextButton(onClick = {
+                    val code = pendingJoinCode!!
+                    scope.launch {
+                        runCatching { BandRepository.joinBand(code) }
+                            .onSuccess { band ->
+                                pendingJoinCode = null
+                                joinError = null
+                                navController.navigate("tripLobby/${band.id}")
+                            }
+                            .onFailure { e ->
+                                joinError = e.message ?: "참여 실패"
+                            }
+                    }
+                }) { Text("참여하기") }
+            },
+            dismissButton    = {
+                TextButton(onClick = { pendingJoinCode = null; joinError = null }) { Text("취소") }
+            },
+        )
+    }
 
     NavHost(navController = navController, startDestination = "splash") {
 
@@ -122,14 +174,24 @@ fun SyncTripNavGraph() {
             val authViewModel   = viewModel<AuthViewModel>()
             val bandUiState     by bandViewModel.uiState.collectAsState()
             var selectedNavItem by remember { mutableStateOf(BottomNavDestination.Home) }
+            val snackbarState   = remember { SnackbarHostState() }
 
             // 화면 진입 시 밴드 목록 로드
             LaunchedEffect(Unit) { bandViewModel.loadBands() }
 
+            // BottomSheet 수동 코드 입력 에러 → 스낵바 표시
+            LaunchedEffect(bandUiState.error) {
+                bandUiState.error?.let { err ->
+                    snackbarState.showSnackbar(err)
+                    bandViewModel.clearError()
+                }
+            }
+
             HomeScreen(
                 recommendedContent   = emptyList(),
-                myTripBands          = bandUiState.bands.map { it.toTripBand() },
+                myTripBands          = bandUiState.bands.reversed().map { it.toTripBand() },
                 selectedNavItem      = selectedNavItem,
+                snackbarHostState    = snackbarState,
                 onNavItemSelected    = { dest ->
                     selectedNavItem = dest
                     when (dest) {
@@ -144,6 +206,12 @@ fun SyncTripNavGraph() {
                 onTripBandClick      = { bandId -> navController.navigate("tripLobby/$bandId") },
                 onCreateTripClick    = { navController.navigate("createTrip") },
                 onPassportClick      = { navController.navigate("passport") },
+                onJoinWithCode       = { code ->
+                    bandViewModel.joinBand(code) { band ->
+                        bandViewModel.loadBands()
+                        navController.navigate("tripLobby/${band.id}")
+                    }
+                },
                 // 로그아웃: 토큰 삭제 후 로그인 화면으로 이동 (백 스택 초기화)
                 onLogout             = {
                     authViewModel.logout(context)
@@ -317,20 +385,11 @@ fun SyncTripNavGraph() {
                         band              = band,
                         members           = bandUiState.members,
                         picks             = bandUiState.picks,
-                        inviteCode        = bandUiState.inviteCode,
                         currentUserId     = currentUserId,
                         isLoading         = bandUiState.isLoading,
                         onBackClick       = { navController.popBackStack() },
                         onReadyClick      = { bandViewModel.setReady(bandIdLong) },
-                        onGetInviteCodeClick = { bandViewModel.getInviteCode(bandIdLong) },
-                        onShareInviteCode = { code ->
-                            // 시스템 공유 시트로 초대 코드 공유
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "SyncTrip 여행에 초대합니다! 초대 코드: $code")
-                            }
-                            context.startActivity(Intent.createChooser(intent, "초대 코드 공유"))
-                        },
+                        onInviteClick     = { navController.navigate("invite/$bandIdLong") },
                         onAdvanceStatus   = {
                             bandViewModel.advanceBandStatus(bandIdLong) { updated ->
                                 // VOTING 상태가 되면 투표 화면으로 자동 이동
@@ -345,6 +404,46 @@ fun SyncTripNavGraph() {
                     )
                 }
             }
+        }
+
+        // 초대 화면 — +초대 버튼에서 진입, 코드 복사/공유 제공
+        composable("invite/{bandId}") { backStackEntry ->
+            val bandId        = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
+            val context       = LocalContext.current
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState       by bandViewModel.uiState.collectAsState()
+
+            // 진입 시 밴드 정보·멤버·초대 코드 로드
+            LaunchedEffect(bandId) {
+                bandViewModel.loadBands()
+                bandViewModel.loadMembers(bandId)
+                bandViewModel.getInviteCode(bandId)
+            }
+
+            val band = uiState.bands.find { it.id == bandId }
+
+            InviteScreen(
+                bandName    = band?.name ?: "",
+                memberCount = uiState.members.count { it.role == BandRole.MEMBER },
+                inviteCode  = uiState.inviteCode,
+                onBackClick = { navController.popBackStack() },
+                onCopyCode  = { code ->
+                    val clipboard = context.getSystemService(ClipboardManager::class.java)
+                    clipboard.setPrimaryClip(ClipData.newPlainText("invite_code", code))
+                    Toast.makeText(context, "초대 코드를 복사했어요", Toast.LENGTH_SHORT).show()
+                },
+                onShareLink = { code, link ->
+                    val shareText = if (!link.isNullOrEmpty())
+                        "SyncTrip에서 같이 여행 계획해요! 👇\n$link"
+                    else
+                        "SyncTrip 여행에 초대합니다! 초대 코드: $code"
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "초대 링크 공유"))
+                },
+            )
         }
 
         // bandId 없이 진입하는 경우(홈 탐색 탭)를 위한 fallback 라우트
