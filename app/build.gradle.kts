@@ -29,7 +29,7 @@ android {
 
     buildTypes {
         getByName("debug") {
-            buildConfigField("String", "BASE_URL", "\"https://test-api.synctrip.com/\"")
+            buildConfigField("String", "BASE_URL", "\"https://test.sync-trip.app/\"")
         }
         getByName("release") {
             buildConfigField("String", "BASE_URL", "\"https://api.synctrip.com/\"")
@@ -81,6 +81,9 @@ dependencies {
 
     // ── Coroutines ───────────────────────────────────────────────────────────
     implementation(libs.coroutines.android)
+
+    // ── DataStore (JWT 토큰 저장) ─────────────────────────────────────────────
+    implementation(libs.datastore.preferences)
 
     // ── Google – 로그인 (Credential Manager) ─────────────────────────────────
     implementation(libs.credentials)

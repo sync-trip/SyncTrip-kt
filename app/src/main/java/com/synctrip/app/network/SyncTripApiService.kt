@@ -127,4 +127,9 @@ interface SyncTripApiService {
 
     @PATCH("api/notifications/{id}/read")
     suspend fun markNotificationRead(@Path("id") notificationId: Long)
+
+    // ── FCM ───────────────────────────────────────────────────────────────────
+
+    @POST("api/users/fcm-token")
+    suspend fun registerFcmToken(@Body body: FcmTokenRequest)
 }

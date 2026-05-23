@@ -2,6 +2,7 @@ package com.synctrip.app.auth
 
 import android.content.Context
 import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
@@ -20,9 +21,9 @@ object GoogleAuthManager {
         val credentialManager = CredentialManager.create(context)
 
         val googleIdOption = GetGoogleIdOption.Builder()
-            .setFilterByAuthorizedAccounts(false)   // 기존 계정 + 새 계정 모두 표시
+            .setFilterByAuthorizedAccounts(false)
             .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-            .setAutoSelectEnabled(false)             // 자동 선택 비활성화
+            .setAutoSelectEnabled(false)
             .build()
 
         val request = GetCredentialRequest.Builder()
@@ -30,9 +31,22 @@ object GoogleAuthManager {
             .build()
 
         val result = credentialManager.getCredential(context = context, request = request)
-        val credential = result.credential
 
-        val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-        return googleIdTokenCredential.idToken
+        // Credential Manager는 GoogleIdTokenCredential 또는 CustomCredential로 반환됨
+        return when (val credential = result.credential) {
+            is GoogleIdTokenCredential ->
+                credential.idToken
+
+            is CustomCredential -> {
+                if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                    GoogleIdTokenCredential.createFrom(credential.data).idToken
+                        ?: throw IllegalStateException("Google ID Token이 null입니다")
+                } else {
+                    throw IllegalStateException("지원하지 않는 credential 타입: ${credential.type}")
+                }
+            }
+
+            else -> throw IllegalStateException("알 수 없는 credential 타입")
+        }
     }
 }

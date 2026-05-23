@@ -263,9 +263,11 @@ data class LoginResponse(
 
 data class KakaoLoginRequest(val accessToken: String)
 
-data class GoogleLoginRequest(val idToken: String)
+data class GoogleLoginRequest(@com.google.gson.annotations.SerializedName("id_token") val idToken: String)
 
 data class TokenRefreshRequest(val refreshToken: String)
+
+data class FcmTokenRequest(val fcmToken: String)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Backend – Band  (GET /api/bands, POST /api/bands, etc.)
