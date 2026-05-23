@@ -2,7 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- ── 네트워크 권한 ──────────────────────────────────────────────────── -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- ── 위치 권한 (지도 현재 위치 표시용) ──────────────────────────────── -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <application
+        android:name=".SyncTripApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -11,6 +19,35 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Synctrip">
+
+        <!-- ── Google Maps API 키 ─────────────────────────────────────────── -->
+        <!-- 값은 local.properties의 GOOGLE_MAPS_API_KEY에서 secrets 플러그인이 주입 -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${GOOGLE_MAPS_API_KEY}" />
+
+        <!-- ── 카카오 Native App Key ──────────────────────────────────────── -->
+        <!-- 카카오 SDK 초기화에 필요. KakaoSdk.init()에서도 BuildConfig.KAKAO_NATIVE_KEY 사용 -->
+        <meta-data
+            android:name="com.kakao.sdk.AppKey"
+            android:value="${KAKAO_NATIVE_KEY}" />
+
+        <!-- ── 카카오 로그인 – OAuth 리다이렉트 처리 Activity ──────────────── -->
+        <activity
+            android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- scheme: "kakao" + Native App Key -->
+                <data
+                    android:host="oauth"
+                    android:scheme="kakao${KAKAO_NATIVE_KEY}" />
+            </intent-filter>
+        </activity>
+
+        <!-- ── 메인 Activity ──────────────────────────────────────────────── -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -18,10 +55,10 @@
             android:theme="@style/Theme.Synctrip">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
     </application>
 
 </manifest>
