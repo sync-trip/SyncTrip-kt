@@ -1,5 +1,5 @@
 # SyncTrip Android 클라이언트 구현 현황
-**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-23 (2차)
+**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-24
 
 > 이 문서는 기능이 구현되거나 수정될 때마다 업데이트합니다.  
 > 기준: `SyncTrip_인수인계문서_v6.md` USR-001 ~ USR-031 + 기존 SyncTrip-Android 앱 기능 동등성
@@ -88,12 +88,13 @@
 
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
-| USR-010 | 스와이프 투표 UI | ⚠️ 부분 구현 | `VotingAndSettlementScreens.kt` → `BlindVotingScreen` | UI 완성, VoteViewModel 미연결 |
-| USR-010 | 투표 API 연결 | ⚠️ 부분 구현 | `VoteViewModel.swipe()` | ViewModel 완성, NavGraph 미연결 |
+| USR-010 | 스와이프 투표 UI | ✅ 구현 | `VotingAndSettlementScreens.kt` → `SwipeVotingScreen` | 카드 1장씩 표시, 좋아요/싫어요 버튼, 카드 이탈 애니메이션, 진행률 배지 |
+| USR-010 | 투표 API 연결 | ✅ 구현 | `VoteViewModel.voteForPlace()` + `NavGraph blindVoting/{bandId}` | VoteViewModel 완전 연결. placeId 기반 투표 함수 추가. 완료 시 aiLoading 자동 이동 |
+| USR-010 | 투표 화면 진입 라우트 | ✅ 구현 | `NavGraph.kt` `blindVoting/{bandId}` | 누락된 NavGraph 라우트 추가. 크래시 수정. |
 | USR-010 | 내가 담은 장소 자동 좋아요 | ❌ 미구현 | — | 구 앱에서 구현됨, 미이식 |
 | USR-011 | 카테고리별 순위 풀 표시 | ❌ 미구현 | — | 투표 결과 목록 UI 없음 |
 | USR-012 | Density 기반 슬롯 편입 | — | 백엔드 전담 | Android 클라이언트 별도 구현 불필요 |
-| USR-013 | 최종 결과 확인 | ⚠️ 부분 구현 | `BlindVotingScreen` | 결과 바 UI 있음, 실 데이터 미연결 |
+| USR-013 | 최종 결과 확인 | ⚠️ 부분 구현 | `BlindVotingScreen` (레거시) | 결과 바 UI 있음, 실 데이터 미연결 |
 | USR-010 | WebSocket 실시간 투표 | ❌ 미구현 | — | STOMP 클라이언트 없음 |
 
 ---
@@ -103,7 +104,7 @@
 | 단계 | Android 담당 | 상태 | 비고 |
 |---|---|---|---|
 | Step 1~3 | 결과 화면 표시 | ⚠️ 부분 구현 | `ScheduleScreen.kt` UI 있음, `getSchedule()` 미연결 |
-| AI 생성 로딩 화면 | `AiLoadingScreen` UI | ⚠️ 부분 구현 | UI 완성, `generateSchedule()` + 폴링 미연결 |
+| AI 생성 로딩 화면 | `AiLoadingScreen` + `AiLoadingSimulated` | ⚠️ 부분 구현 | UI 완성. 실제 폴링 대신 단계별 시뮬레이션(~5초) 적용. 투표→로딩→일정 화면 네비게이션 연결. `generateSchedule()` 실 폴링은 미구현 |
 
 ---
 
@@ -161,11 +162,12 @@
 | `LoginScreen` | `LoginScreen.kt` | ✅ | ✅ | 카카오/구글 AuthViewModel 연결 완료 |
 | `HomeScreen` | `HomeScreen.kt` | ✅ | ✅ | BandViewModel 밴드 목록 + 우측 사이드 드로어(여권/알림/로그아웃) + 로그아웃 확인 다이얼로그 + BackHandler 완성 |
 | `CreateTripScreen` | `TripCreationScreens.kt` | ✅ | ⚠️ | 2단계 플로우. 여행지 인기/검색 API 연결. 트리플 스타일 커스텀 캘린더(일/토 빨간색·범위선택·오늘 라벨). createBand() 연결됨, 로비 이동 완료 |
-| `AiLoadingScreen` | `TripCreationScreens.kt` | ✅ | ❌ | generateSchedule() + 폴링 미연결 |
+| `AiLoadingScreen` | `TripCreationScreens.kt` + `NavGraph.kt` | ✅ | ⚠️ | 시뮬레이션 진행률 적용(단계별 ~5초). 투표 완료 시 bandId 전달, 완료 후 ScheduleScreen 이동. 실 폴링 미연결 |
 | `ItineraryScreen` | `TripCreationScreens.kt` | ✅ | ❌ | 완성된 일정 표시 미연결 |
 | `TripLobbyScreen` | `TripLobbyScreen.kt` | ✅ | ✅ | BandViewModel 연결 완료 — 멤버/Ready/초대코드/상태전환/picks 실 API |
 | `ScheduleScreen` | `ScheduleScreen.kt` | ✅ | ❌ | getSchedule() 미연결 |
-| `BlindVotingScreen` | `VotingAndSettlementScreens.kt` | ✅ | ❌ | VoteViewModel 미연결 |
+| `SwipeVotingScreen` | `VotingAndSettlementScreens.kt` | ✅ | ✅ | VoteViewModel 완전 연결. 카드 이탈 애니메이션, 카테고리/별점 배지, 진행률 표시 |
+| `BlindVotingScreen` | `VotingAndSettlementScreens.kt` | ✅ | ❌ | 레거시 — 현재 미사용. VoteViewModel 미연결 |
 | `SettlementScreen` | `VotingAndSettlementScreens.kt` | ✅ | ❌ | getSettlement() 미연결 |
 | `PlaceSearchScreen` | `PassportAndSearchScreens.kt` | ✅ | ✅ | BandViewModel 연결 완료 — 진입 자동 로드, 카테고리/키워드 필터, 장바구니 토글 (낙관적 업데이트) |
 | `MyPassportScreen` | `PassportAndSearchScreens.kt` | ✅ | ❌ | DONE 밴드 필터 미연결 |
@@ -191,9 +193,10 @@
 | 2 | CreateTripScreen → createBand API | CreateTripScreen |
 | 3 | ~~TripLobbyScreen 전체 연결~~ ✅ | NavGraph에 BandViewModel 연결, 멤버/Ready/초대코드/상태전환/picks 완성 |
 | 4 | ~~PlaceSearchScreen 검색 + 장바구니~~ ✅ | BandViewModel 연결, 카테고리 필터, 낙관적 장바구니 완성 |
-| 5 | BlindVotingScreen → VoteViewModel | BlindVotingScreen |
-| 6 | ScheduleScreen → getSchedule | ScheduleScreen |
-| 7 | AiLoadingScreen → generateSchedule + 폴링 | AiLoadingScreen |
+| 5 | ~~SwipeVotingScreen + VoteViewModel 연결~~ ✅ | `blindVoting/{bandId}` 라우트, SwipeVotingScreen, VoteViewModel |
+| 6 | ~~AiLoadingScreen 진행률 시뮬레이션 + 투표→일정 네비게이션~~ ✅ | NavGraph aiLoading/{bandId} |
+| 7 | ScheduleScreen → getSchedule | ScheduleScreen |
+| 8 | AiLoadingScreen → generateSchedule + 실 폴링 | AiLoadingScreen |
 | 8 | MyPassportScreen → DONE 밴드 | MyPassportScreen |
 | 9 | HomeScreen 밴드 참여 UI (초대코드) | HomeScreen |
 | 10 | FCM 서비스 + 토큰 등록 | SyncTripFirebaseService |
@@ -224,7 +227,9 @@
 | 2026-05-23 | 누락 API 14개 추가(DataModels + SyncTripApiService). DestinationResponse/PlacePickRequest/PlacePickListResponse 백엔드 DTO 기준으로 수정. CreateTripScreen → createBand API 연결 (여행지 검색, 날짜 피커, RELAXED/PACKED 스타일 토글). TripLobbyScreen 완전 재작성 (실 BandResponse 모델, 상태별 바텀바, 멤버 뱃지, 초대코드, MyStatusSection). NavGraph tripLobby 라우트 BandViewModel 연결 완료 (TokenDataStore userIdFlow, 시스템 공유 Intent). USR-006/009/014 ✅ 완성. |
 | 2026-05-23 | CreateTripScreen 2단계 플로우 재설계. 1단계: 여행지 목록(LazyColumn) + 검색 + 해외/국내 탭 + 카테고리 필터(인기/일본/동남아시아/유럽/미주-오세아니아). 2단계: 선택 여행지 확인 카드 + 밴드 이름 입력 + 날짜 선택 행 + 여행 스타일(이모지 카드). 하단 버튼 구 앱과 동일하게 "계속하기" / "이전"+"방 만들기" 로 변경. NavGraph bandName 상태 추가. |
 | 2026-05-23 | PlaceSearchScreen BandViewModel 완전 연결. PlaceCategory 탭 백엔드 ApiPlaceCategory 기준으로 정렬(전체/음식점/관광지/액티비티/쇼핑/자연). PlaceSearchScreen이 ApiPlaceSearchResult 직접 사용(중간 UI 모델 제거). isLoading 파라미터 + CircularProgressIndicator 추가. 키보드 Search 액션 onSearch 콜백 연결. NavGraph placeSearch/{bandId} 진입 시 자동 로드 + 카테고리·키워드 변경 시 재호출. 장바구니 토글 낙관적 업데이트(성공→loadPicks, 실패→롤백). USR-007/008 ✅ 완성. |
+| 2026-05-24 | 투표 화면 크래시 수정 — `blindVoting/{bandId}` NavGraph 라우트 누락 추가. SwipeVotingScreen 신규 구현 (카드 이탈 애니메이션, 카테고리/별점 배지, 좋아요/싫어요 버튼, 진행률 배지). VoteViewModel에 `voteForPlace(placeId, result)` 추가. USR-010 ✅ 완성. |
+| 2026-05-24 | AiLoadingScreen 진행률 0% 고정 버그 수정 — `AiLoadingSimulated` 헬퍼 추가 (6단계 시뮬레이션 ~5초). `aiLoading/{bandId}` 라우트 추가 (완료 후 `schedule/$bandId` 이동). 투표 완료 → aiLoading 자동 이동 연결. |
 
 ---
 
-**마지막 수정:** 2026-05-23 (PlaceSearchScreen BandViewModel 연결 완성) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+**마지막 수정:** 2026-05-24 (AiLoadingScreen 버그 수정 + SwipeVotingScreen 구현) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
