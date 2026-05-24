@@ -342,6 +342,13 @@ data class BandReadyResponse(
     val bandStatus: BandStatus,
 )
 
+/** POST /api/bands/{bandId}/status/advance 응답 — 상태 전환 전/후 값 포함 */
+data class BandStatusTransitionResponse(
+    val bandId: Long,
+    val previousStatus: BandStatus,
+    val currentStatus: BandStatus,
+)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Backend – Schedule  (GET /api/bands/{bandId}/schedule)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -366,7 +373,7 @@ data class ScheduleDayResponse(
 data class ScheduleSlotResponse(
     val scheduleId: Long,
     val slotOrder: Int,
-    val startTime: String,
+    val startTime: String?,  // 자유 시간 슬롯은 null
     val durationMinutes: Int?,
     val travelTimeFromPrev: Int?,
     val place: SchedulePlaceInfo,

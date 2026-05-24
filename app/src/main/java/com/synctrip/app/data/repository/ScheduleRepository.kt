@@ -17,6 +17,12 @@ object ScheduleRepository {
     suspend fun swapSlot(bandId: Long, scheduleId: Long, newPlaceId: Long) =
         ApiClient.api.swapScheduleSlot(bandId, ScheduleSwapRequest(scheduleId, newPlaceId))
 
+    suspend fun startEditing(bandId: Long) =
+        ApiClient.api.startEditing(bandId)
+
+    suspend fun finishEditing(bandId: Long) =
+        ApiClient.api.finishEditing(bandId)
+
     suspend fun getPlanB(bandId: Long, targetPlaceId: Long): List<PlanBResponse> =
         ApiClient.api.getPlanB(bandId, PlanBRequest(targetPlaceId))
 }

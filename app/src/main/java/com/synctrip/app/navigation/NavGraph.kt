@@ -30,6 +30,8 @@ import com.synctrip.app.ui.screens.*
 import com.synctrip.app.ui.viewmodel.AuthUiState
 import com.synctrip.app.ui.viewmodel.AuthViewModel
 import com.synctrip.app.ui.viewmodel.BandViewModel
+import com.synctrip.app.ui.viewmodel.NotificationViewModel
+import com.synctrip.app.ui.viewmodel.ScheduleViewModel
 import com.synctrip.app.ui.viewmodel.VoteViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -349,36 +351,82 @@ fun SyncTripNavGraph(
             )
         }
 
-        // 투표 완료 후 진입하는 경우 — 완료 후 해당 밴드 일정 화면으로
+        // 투표 완료 → 허브로 돌아감. 허브의 scheduleReadyEvent가 일정 탭 자동 전환 처리
         composable("aiLoading/{bandId}") { backStackEntry ->
             val bandId = backStackEntry.arguments?.getString("bandId") ?: ""
             AiLoadingSimulated(
                 onComplete = {
-                    navController.navigate("schedule/$bandId") {
-                        popUpTo("aiLoading/$bandId") { inclusive = true }
-                    }
+                    // 허브(tripLobby)가 백스택에 있으므로 popBackStack으로 복귀
+                    navController.popBackStack()
                 },
             )
         }
 
+        // ──────────────────────────────────────────────────────────────────────
+        // 밴드 방 허브 — 하단 탭(밴드·일정·정산·사진)을 통해 모든 기능 접근
+        // ──────────────────────────────────────────────────────────────────────
         composable("tripLobby/{bandId}") { backStackEntry ->
             val context       = LocalContext.current
             val bandViewModel = viewModel<BandViewModel>()
+            val scheduleViewModel = viewModel<ScheduleViewModel>()
             val bandUiState   by bandViewModel.uiState.collectAsState()
+            val scheduleUiState by scheduleViewModel.uiState.collectAsState()
             val snackbarState = remember { SnackbarHostState() }
 
-            // URL 경로에서 bandId 파싱
             val bandIdLong = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: 0L
-
-            // 현재 로그인 유저 ID (DataStore에서 읽음)
             var currentUserId by remember { mutableStateOf(0L) }
 
-            // 화면 진입 시 밴드 목록·멤버·장바구니 로드 및 유저 ID 확인
+            // 허브 탭 선택 상태 — NavGraph에서 관리해야 scheduleReadyEvent와 연동 가능
+            var selectedTab by remember { mutableStateOf(BandHubTab.BAND) }
+
+            // 진입 시 기본 데이터 로드
             LaunchedEffect(bandIdLong) {
                 currentUserId = TokenDataStore.userIdFlow(context).first() ?: 0L
                 bandViewModel.loadBands()
                 bandViewModel.loadMembers(bandIdLong)
                 bandViewModel.loadPicks(bandIdLong)
+            }
+
+            val band = bandUiState.bands.find { it.id == bandIdLong }
+
+            // 밴드 상태 변화 감지 — GENERATING 폴링 시작, TRAVELLING/DONE 일정 탭 자동 전환
+            LaunchedEffect(band?.status) {
+                when (band?.status) {
+                    BandStatus.GENERATING -> bandViewModel.startGeneratingPoll(bandIdLong)
+                    BandStatus.TRAVELLING, BandStatus.DONE -> {
+                        // 이미 일정 탭에 있으면 탭 전환 생략
+                        if (selectedTab == BandHubTab.BAND) {
+                            selectedTab = BandHubTab.SCHEDULE
+                        }
+                    }
+                    else -> {}
+                }
+            }
+
+            // scheduleReadyEvent 수신 → 일정 탭 전환 + 데이터 즉시 로드
+            // SharedFlow(replay=0)이므로 허브 재진입 시 과거 이벤트 재수신 없음
+            LaunchedEffect(Unit) {
+                bandViewModel.scheduleReadyEvent.collect {
+                    selectedTab = BandHubTab.SCHEDULE
+                    scheduleViewModel.loadSchedule(bandIdLong)
+                }
+            }
+
+            // 탭 전환 시 필요 데이터 지연 로드
+            LaunchedEffect(selectedTab) {
+                when (selectedTab) {
+                    BandHubTab.SCHEDULE   -> {
+                        if (scheduleUiState.schedule == null) {
+                            scheduleViewModel.loadSchedule(bandIdLong)
+                        }
+                    }
+                    BandHubTab.SETTLEMENT -> {
+                        if (bandUiState.settlement == null) {
+                            bandViewModel.loadSettlement(bandIdLong)
+                        }
+                    }
+                    else -> {}
+                }
             }
 
             // 에러 스낵바
@@ -389,38 +437,59 @@ fun SyncTripNavGraph(
                 }
             }
 
-            // 밴드 목록에서 현재 bandId에 해당하는 밴드 찾기
-            val band = bandUiState.bands.find { it.id == bandIdLong }
+            // 허브 이탈 시 폴링 중단
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose { bandViewModel.stopGeneratingPoll() }
+            }
 
-            Scaffold(snackbarHost = { SnackbarHost(snackbarState) }) { _ ->
-                if (band == null) {
-                    // 밴드 로딩 중이거나 찾을 수 없을 때 중앙 스피너 표시
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        PlaneLoadingIndicator()
-                    }
-                } else {
-                    TripLobbyScreen(
-                        band              = band,
-                        members           = bandUiState.members,
-                        picks             = bandUiState.picks,
-                        currentUserId     = currentUserId,
-                        isLoading         = bandUiState.isLoading,
-                        onBackClick       = { navController.popBackStack() },
-                        onReadyClick      = { bandViewModel.setReady(bandIdLong) },
-                        onInviteClick     = { navController.navigate("invite/$bandIdLong") },
-                        onAdvanceStatus   = {
-                            bandViewModel.advanceBandStatus(bandIdLong) { updated ->
-                                // VOTING 상태가 되면 투표 화면으로 자동 이동
-                                if (updated.status == BandStatus.VOTING) {
-                                    navController.navigate("blindVoting/$bandIdLong")
-                                }
-                            }
-                        },
-                        onGoToPlaceSearch = { navController.navigate("placeSearch/$bandIdLong") },
-                        onGoToVoting      = { navController.navigate("blindVoting/$bandIdLong") },
-                        onGoToSchedule    = { navController.navigate("schedule/$bandIdLong") },
-                    )
+            if (band == null) {
+                // 밴드 로딩 전 임시 스피너
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    PlaneLoadingIndicator()
                 }
+            } else {
+                TripBandHubScreen(
+                    band              = band,
+                    members           = bandUiState.members,
+                    picks             = bandUiState.picks,
+                    currentUserId     = currentUserId,
+                    isBandLoading     = bandUiState.isLoading,
+                    schedule          = scheduleUiState.schedule,
+                    altOptions        = scheduleUiState.altOptions,
+                    isScheduleLoading = scheduleUiState.isLoading,
+                    isEditing         = scheduleUiState.isEditing,
+                    settlement        = bandUiState.settlement,
+                    selectedTab       = selectedTab,
+                    onTabSelected     = { tab -> selectedTab = tab },
+                    snackbarHostState = snackbarState,
+                    onBackClick       = { navController.popBackStack() },
+                    onReadyClick      = { bandViewModel.setReady(bandIdLong) },
+                    onInviteClick     = { navController.navigate("invite/$bandIdLong") },
+                    onAdvanceStatus   = {
+                        bandViewModel.advanceBandStatus(bandIdLong) { transition ->
+                            when (transition.currentStatus) {
+                                BandStatus.VOTING     -> navController.navigate("blindVoting/$bandIdLong")
+                                BandStatus.GENERATING -> navController.navigate("aiLoading/$bandIdLong")
+                                else                  -> {}
+                            }
+                        }
+                    },
+                    onGoToPlaceSearch = { navController.navigate("placeSearch/$bandIdLong") },
+                    onGoToVoting      = { navController.navigate("blindVoting/$bandIdLong") },
+                    onLoadAlts        = { scheduleViewModel.loadAlts(bandIdLong) },
+                    onSwapSlot        = { sid, pid -> scheduleViewModel.swapSlot(bandIdLong, sid, pid) },
+                    onStartEditing    = { scheduleViewModel.startEditing(bandIdLong) },
+                    onFinishEditing   = { scheduleViewModel.finishEditing(bandIdLong) },
+                    onSettleClick     = {},
+                    onDeleteBand      = {
+                        bandViewModel.deleteBand(bandIdLong) {
+                            // 삭제 성공 → 밴드 목록(홈)으로 복귀
+                            navController.navigate("home") {
+                                popUpTo("tripLobby/$bandIdLong") { inclusive = true }
+                            }
+                        }
+                    },
+                )
             }
         }
 
@@ -475,10 +544,9 @@ fun SyncTripNavGraph(
                 selectedCategory = selectedCategory,
                 onCategoryChange = { selectedCategory = it },
                 places           = emptyList(),
-                cartCount        = 0,
+                picks            = emptyList(),
                 onPlaceClick     = {},
                 onCartToggle     = {},
-                onViewCartClick  = {},
                 onBackClick      = { navController.popBackStack() },
             )
         }
@@ -518,10 +586,10 @@ fun SyncTripNavGraph(
                 },
                 places           = uiState.searchResults,
                 isLoading        = uiState.isSearchLoading,
-                cartCount        = uiState.picks?.items?.size ?: 0,
+                picks            = uiState.picks?.items ?: emptyList(),
+                maxPickCount     = uiState.picks?.maxCount ?: 5,
                 onPlaceClick     = {},
                 onCartToggle     = { externalId -> bandViewModel.togglePick(bandId, externalId) },
-                onViewCartClick  = { navController.popBackStack() },
                 onBackClick      = { navController.popBackStack() },
             )
 
@@ -544,9 +612,10 @@ fun SyncTripNavGraph(
             val voteViewModel: VoteViewModel = viewModel()
             val uiState       by voteViewModel.uiState.collectAsState()
 
-            // 화면 진입 시 투표 대상 장소 로드
+            // 화면 진입 시 투표 장소 로드 + WebSocket 연결
             LaunchedEffect(bandId) {
                 voteViewModel.loadVotePlaces(bandId)
+                voteViewModel.connectWebSocket(ApiClient.accessToken ?: "", bandId)
             }
 
             // pendingPlaces 소진 또는 서버 응답 isComplete = 모두 투표 완료
@@ -583,12 +652,78 @@ fun SyncTripNavGraph(
         }
 
         composable("notifications") {
+            val vm: NotificationViewModel = viewModel()
+            val uiState by vm.uiState.collectAsState()
+            LaunchedEffect(Unit) { vm.loadNotifications() }
             NotificationScreen(
-                groups        = emptyMap(),
-                onMarkAllRead = {},
-                onItemClick   = {},
+                groups        = uiState.groups,
+                onMarkAllRead = { vm.markAllRead() },
+                onItemClick   = { id -> vm.markRead(id) },
                 onBackClick   = { navController.popBackStack() },
             )
+        }
+
+        // 일정 화면 — AI 로딩 완료 후 자동 이동, 로비 "일정 보기" 버튼에서도 진입
+        composable("schedule/{bandId}") { backStackEntry ->
+            val bandId = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
+            val scheduleViewModel: ScheduleViewModel = viewModel()
+            val bandViewModel: BandViewModel = viewModel()
+            val scheduleState by scheduleViewModel.uiState.collectAsState()
+            val bandState by bandViewModel.uiState.collectAsState()
+            val snackbarState = remember { SnackbarHostState() }
+
+            LaunchedEffect(bandId) {
+                bandViewModel.loadBands()
+                scheduleViewModel.loadSchedule(bandId)
+            }
+
+            LaunchedEffect(scheduleState.error) {
+                scheduleState.error?.let {
+                    snackbarState.showSnackbar(it)
+                    scheduleViewModel.clearError()
+                }
+            }
+
+            val destination = bandState.bands.find { it.id == bandId }?.destination ?: "일정"
+
+            Scaffold(snackbarHost = { SnackbarHost(snackbarState) }) { _ ->
+                ScheduleScreen(
+                    destination     = destination,
+                    schedule        = scheduleState.schedule,
+                    altOptions      = scheduleState.altOptions,
+                    isLoading       = scheduleState.isLoading,
+                    isEditing       = scheduleState.isEditing,
+                    canEdit         = false,
+                    onStartEditing  = { scheduleViewModel.startEditing(bandId) },
+                    onFinishEditing = { scheduleViewModel.finishEditing(bandId) },
+                    onSwapSlot      = { sid, pid -> scheduleViewModel.swapSlot(bandId, sid, pid) },
+                    onLoadAlts      = { scheduleViewModel.loadAlts(bandId) },
+                    onBackClick     = { navController.popBackStack() },
+                    onShareClick    = {},
+                )
+            }
+        }
+
+        // 정산 화면 — DONE 상태 밴드에서 진입
+        composable("settlement/{bandId}") { backStackEntry ->
+            val bandId = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState by bandViewModel.uiState.collectAsState()
+
+            LaunchedEffect(bandId) { bandViewModel.loadSettlement(bandId) }
+
+            val settlement = uiState.settlement
+            if (settlement != null) {
+                SettlementScreen(
+                    settlement    = settlement,
+                    onSettleClick = {},
+                    onBackClick   = { navController.popBackStack() },
+                )
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    PlaneLoadingIndicator()
+                }
+            }
         }
     }
 }
@@ -608,7 +743,7 @@ private fun AiLoadingSimulated(onComplete: () -> Unit) {
     val steps = listOf(
         Triple(15,  "투표 결과 분석 중…",    900L),
         Triple(35,  "장소 동선 최적화 중…",  1100L),
-        Triple(58,  "숙소 및 식당 배정 중…", 1000L),
+        Triple(58,  "일정 배정 중…",         1000L),
         Triple(78,  "세부 일정 조율 중…",    900L),
         Triple(92,  "마지막 손질 중…",       800L),
         Triple(100, "일정 생성 완료!",        600L),

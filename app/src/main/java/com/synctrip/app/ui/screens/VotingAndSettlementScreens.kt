@@ -735,6 +735,57 @@ private fun ExpenseItemRow(item: SettlementItem) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// SettlementContent — Scaffold 없는 순수 콘텐츠 (TripBandHubScreen 임베드용)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 정산 탭 콘텐츠.
+ * SettlementScreen과 동일한 목록 UI지만 Scaffold 없이 콘텐츠만 포함한다.
+ * TripBandHubScreen의 정산 탭에서 호출한다.
+ */
+@Composable
+internal fun SettlementContent(
+    settlement: Settlement?,
+    onSettleClick: (transferId: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 데이터 미로드 시 중앙 로딩 스피너
+    if (settlement == null) {
+        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            PlaneLoadingIndicator()
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier            = modifier.fillMaxSize(),
+        contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            Text(
+                settlement.tripTitle,
+                style = MaterialTheme.typography.displayLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+            )
+        }
+        item { TotalAmountCard(settlement = settlement) }
+        item { MyBalanceCard(balance = settlement.myBalance, currency = settlement.currency) }
+        item {
+            Text("정산 현황", style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.onSurface))
+        }
+        items(settlement.pendingTransfers) { transfer ->
+            TransferCard(transfer = transfer, onSettleClick = onSettleClick)
+        }
+        item {
+            Text("상세 지출 내역", style = MaterialTheme.typography.titleLarge)
+        }
+        items(settlement.summary) { item ->
+            ExpenseItemRow(item = item)
+        }
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Previews
 // ═════════════════════════════════════════════════════════════════════════════
 

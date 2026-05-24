@@ -43,7 +43,7 @@ interface SyncTripApiService {
     suspend fun cancelReady(@Path("bandId") bandId: Long): BandReadyResponse
 
     @POST("api/bands/{bandId}/status/advance")
-    suspend fun advanceBandStatus(@Path("bandId") bandId: Long): BandResponse
+    suspend fun advanceBandStatus(@Path("bandId") bandId: Long): BandStatusTransitionResponse
 
     // ── Schedule ─────────────────────────────────────────────────────────────
 

@@ -1,5 +1,15 @@
 package com.synctrip.app.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,10 +25,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -32,11 +49,14 @@ import coil3.compose.AsyncImage
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
+import kotlinx.coroutines.launch
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 1. Place Search Screen
 // ═════════════════════════════════════════════════════════════════════════════
 
+/** 장소 탐색 화면 — 하단 장바구니 바(구 앱 cartCard 스타일)와 바텀시트로 장바구니 확인 */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaceSearchScreen(
     query: String,
@@ -45,18 +65,20 @@ fun PlaceSearchScreen(
     onCategoryChange: (PlaceCategory) -> Unit,
     places: List<ApiPlaceSearchResult>,
     isLoading: Boolean = false,
-    cartCount: Int,
+    picks: List<PlacePickResponse> = emptyList(),
+    maxPickCount: Int = 5,
     onSearch: () -> Unit = {},
     onPlaceClick: (String) -> Unit,
     onCartToggle: (String) -> Unit,
-    onViewCartClick: () -> Unit,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showCartSheet by remember { mutableStateOf(false) }
+    val cartCount = picks.size
+
     Scaffold(
-        modifier = modifier,
-        topBar   = {
-            @OptIn(ExperimentalMaterial3Api::class)
+        modifier  = modifier,
+        topBar    = {
             TopAppBar(
                 title = {
                     Text(
@@ -70,14 +92,15 @@ fun PlaceSearchScreen(
                 navigationIcon = {
                     IconButton(onClick = onBackClick) { Icon(Icons.Outlined.ArrowBack, "뒤로") }
                 },
-                actions = {
-                    BadgedBox(badge = { if (cartCount > 0) Badge { Text("$cartCount") } }) {
-                        IconButton(onClick = onViewCartClick) {
-                            Icon(Icons.Outlined.ShoppingCart, "장바구니", tint = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+            )
+        },
+        // 구 앱 cartCard 스타일 — 하단에 N/5 카운트 표시
+        bottomBar = {
+            CartBottomBar(
+                cartCount    = cartCount,
+                maxPickCount = maxPickCount,
+                onClick      = { showCartSheet = true },
             )
         },
     ) { innerPadding ->
@@ -111,6 +134,34 @@ fun PlaceSearchScreen(
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     PlaneLoadingIndicator()
                 }
+            } else if (places.isEmpty()) {
+                // 검색 전 또는 결과 없음 — 안내 문구 표시
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Outlined.Search,
+                            contentDescription = null,
+                            tint               = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier           = Modifier.size(56.dp),
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "검색하여 장소를 담아봐요!",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            ),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "원하는 장소를 검색하고 장바구니에 담아보세요.",
+                            style     = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                            ),
+                            textAlign = TextAlign.Center,
+                            modifier  = Modifier.padding(horizontal = 32.dp),
+                        )
+                    }
+                }
             } else {
                 LazyVerticalGrid(
                     columns               = GridCells.Fixed(2),
@@ -128,6 +179,17 @@ fun PlaceSearchScreen(
                     }
                 }
             }
+        }
+    }
+
+    // 장바구니 바텀시트 — 담은 장소 목록 + 개별 삭제
+    if (showCartSheet) {
+        ModalBottomSheet(onDismissRequest = { showCartSheet = false }) {
+            CartBottomSheetContent(
+                picks        = picks,
+                maxPickCount = maxPickCount,
+                onDeletePick = { externalId -> onCartToggle(externalId) },
+            )
         }
     }
 }
@@ -168,6 +230,30 @@ private fun CategoryTabRow(selectedCategory: PlaceCategory, onCategoryChange: (P
 
 @Composable
 private fun PlaceCard(place: ApiPlaceSearchResult, onPlaceClick: () -> Unit, onCartToggle: () -> Unit) {
+    // 북마크 아이콘 스프링 바운스 애니메이션
+    val iconScale = remember { Animatable(1f) }
+    val scope = rememberCoroutineScope()
+
+    // isBookmarked 변경 시 스프링 반동 효과
+    LaunchedEffect(place.isBookmarked) {
+        if (place.isBookmarked) {
+            // 담기 → 통통 튀어오름
+            iconScale.animateTo(1.45f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh))
+            iconScale.animateTo(1f,    spring(dampingRatio = Spring.DampingRatioLowBouncy))
+        } else {
+            // 제거 → 살짝 찌그러졌다 복귀
+            iconScale.animateTo(0.75f, spring(stiffness = Spring.StiffnessMedium))
+            iconScale.animateTo(1f,    spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+        }
+    }
+
+    // 버튼 배경색 smooth 전환 — 미담김: 반투명 검정 / 담김: primary 색상
+    val buttonBgColor by animateColorAsState(
+        targetValue   = if (place.isBookmarked) MaterialTheme.colorScheme.primary.copy(alpha = 0.88f)
+                        else Color.Black.copy(alpha = 0.42f),
+        label         = "cartButtonBg",
+    )
+
     Card(
         onClick   = onPlaceClick,
         shape     = RoundedCornerShape(12.dp),
@@ -185,14 +271,24 @@ private fun PlaceCard(place: ApiPlaceSearchResult, onPlaceClick: () -> Unit, onC
                 }
 
                 IconButton(
-                    onClick  = onCartToggle,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape),
+                    onClick  = {
+                        onCartToggle()
+                        // 클릭 시 즉각 반응감 — LaunchedEffect와 별도로 퀵 탭 피드백
+                        scope.launch {
+                            iconScale.animateTo(1.2f, spring(stiffness = Spring.StiffnessHigh))
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(32.dp)
+                        .background(buttonBgColor, CircleShape),
                 ) {
                     Icon(
                         imageVector        = if (place.isBookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
                         contentDescription = "장바구니",
                         tint               = Color.White,
-                        modifier           = Modifier.size(18.dp),
+                        modifier           = Modifier.size(18.dp).scale(iconScale.value),
                     )
                 }
             }
@@ -208,6 +304,154 @@ private fun PlaceCard(place: ApiPlaceSearchResult, onPlaceClick: () -> Unit, onC
                     }
                 }
             }
+        }
+    }
+}
+
+/** 화면 하단 장바구니 바 — 구 앱 cartCard 디자인 참고, N/5 카운트 표시 */
+@Composable
+private fun CartBottomBar(cartCount: Int, maxPickCount: Int, onClick: () -> Unit) {
+    Surface(
+        modifier        = Modifier.fillMaxWidth(),
+        shadowElevation = 8.dp,
+        color           = MaterialTheme.colorScheme.surface,
+    ) {
+        Row(
+            modifier          = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                // 시스템 네비게이션 바 높이만큼 하단 패딩 추가 — 겹침 방지
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.ShoppingCart,
+                contentDescription = null,
+                tint               = MaterialTheme.colorScheme.primary,
+                modifier           = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "담은 장소",
+                style    = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            // 카운트 변경 시 숫자가 위로 슬라이드하며 교체됨
+            AnimatedContent(
+                targetState  = cartCount,
+                transitionSpec = {
+                    if (targetState > initialState) {
+                        // 담기 → 숫자 아래에서 올라옴
+                        (slideInVertically { it } + fadeIn()).togetherWith(slideOutVertically { -it } + fadeOut())
+                    } else {
+                        // 삭제 → 숫자 위에서 내려옴
+                        (slideInVertically { -it } + fadeIn()).togetherWith(slideOutVertically { it } + fadeOut())
+                    }
+                },
+                label = "cartCount",
+            ) { count ->
+                Text(
+                    "$count / $maxPickCount",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        color      = if (count >= maxPickCount) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+            }
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier           = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/** 장바구니 바텀시트 본문 — 담은 장소 목록 + 개별 삭제 버튼 */
+@Composable
+private fun CartBottomSheetContent(
+    picks: List<PlacePickResponse>,
+    maxPickCount: Int,
+    onDeletePick: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp),
+    ) {
+        Text(
+            "담은 장소 (${picks.size} / $maxPickCount)",
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+        )
+        Spacer(Modifier.height(16.dp))
+
+        if (picks.isEmpty()) {
+            Box(
+                modifier         = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "아직 담은 장소가 없어요",
+                    style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                )
+            }
+        } else {
+            picks.forEach { pick ->
+                CartPickListItem(pick = pick, onDelete = { onDeletePick(pick.externalId) })
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+/** 장바구니 바텀시트 내 개별 장소 행 — 썸네일, 이름, 카테고리, 삭제 버튼 */
+@Composable
+private fun CartPickListItem(pick: PlacePickResponse, onDelete: () -> Unit) {
+    Row(
+        modifier          = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier         = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (pick.thumbnailUrl != null) {
+                AsyncImage(
+                    model              = pick.thumbnailUrl,
+                    contentDescription = pick.name,
+                    contentScale       = ContentScale.Crop,
+                    modifier           = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    Icons.Outlined.Place,
+                    contentDescription = null,
+                    tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier           = Modifier.size(24.dp),
+                )
+            }
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(pick.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+            Text(
+                pick.address ?: pick.category.name,
+                style   = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                maxLines = 1,
+            )
+        }
+
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Outlined.Close, contentDescription = "삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -493,16 +737,16 @@ private val previewPlaces = listOf(
 private fun PlaceSearchPreview() {
     SynctripTheme {
         PlaceSearchScreen(
-            query             = "",
-            onQueryChange     = {},
-            selectedCategory  = PlaceCategory.ALL,
-            onCategoryChange  = {},
-            places            = previewPlaces,
-            cartCount         = 1,
-            onPlaceClick      = {},
-            onCartToggle      = {},
-            onViewCartClick   = {},
-            onBackClick       = {},
+            query            = "",
+            onQueryChange    = {},
+            selectedCategory = PlaceCategory.ALL,
+            onCategoryChange = {},
+            places           = previewPlaces,
+            picks            = emptyList(),
+            maxPickCount     = 5,
+            onPlaceClick     = {},
+            onCartToggle     = {},
+            onBackClick      = {},
         )
     }
 }

@@ -181,12 +181,12 @@ fun ScheduleScreen(
         )
     }
 
-    // 대체 장소 선택 바텀시트
+    // 대체 장소 선택 바텀시트 — 같은 카테고리의 후보만 표시
     val swapSlot = detailSlot
     if (showSwapSheet && swapSlot != null) {
         SlotSwapBottomSheet(
             slot = swapSlot,
-            options = altOptions,
+            options = altOptions.filter { it.category == swapSlot.place.category },
             onDismiss = {
                 showSwapSheet = false
                 detailSlot = null
@@ -402,7 +402,7 @@ private fun ScheduleSlotItem(
 @Composable
 private fun TimelineNode(
     category: ApiPlaceCategory,
-    time: String,
+    time: String?,
     modifier: Modifier = Modifier,
 ) {
     val dotColor = category.color()
@@ -427,7 +427,7 @@ private fun TimelineNode(
         }
         Spacer(Modifier.height(3.dp))
         Text(
-            text = time,
+            text = time ?: "--:--",
             style = MaterialTheme.typography.labelSmall.copy(
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
@@ -630,7 +630,7 @@ private fun PlaceDetailBottomSheet(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(Modifier.height(12.dp))
 
-            DetailRow(Icons.Outlined.Schedule, "시작 시간", slot.startTime)
+            slot.startTime?.let { DetailRow(Icons.Outlined.Schedule, "시작 시간", it) }
             slot.durationMinutes?.let { DetailRow(Icons.Outlined.Timer, "예상 소요", "약 ${it}분") }
             (slot.travelTimeFromPrev ?: 0).takeIf { it > 0 }?.let {
                 DetailRow(Icons.Outlined.DirectionsWalk, "이동 시간", "이전 장소에서 약 ${it}분")
@@ -829,7 +829,7 @@ private fun ScheduleEmptyContent(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
             Spacer(Modifier.height(8.dp))
             Text(
-                "투표가 완료되면 AI가 자동으로\n최적의 여행 일정을 생성합니다",
+                "투표가 완료되면 자동으로\n최적의 여행 일정을 생성합니다",
                 style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                 textAlign = TextAlign.Center,
             )
@@ -873,6 +873,103 @@ private fun ApiPlaceCategory.label(): String = when (this) {
 private fun String.toShortDate(): String {
     val parts = split("-")
     return if (parts.size >= 3) "${parts[1].trimStart('0')}/${parts[2].trimStart('0')}" else this
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ScheduleContent — Scaffold·TopAppBar 없는 순수 콘텐츠 (TripBandHubScreen 임베드용)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 일정 탭 콘텐츠.
+ * ScheduleScreen과 동일한 UI지만 Scaffold/TopAppBar 없이 콘텐츠만 포함한다.
+ * TripBandHubScreen의 일정 탭에서 호출한다.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ScheduleContent(
+    schedule: ScheduleResponse?,
+    altOptions: List<ScheduleAltResponse>,
+    isLoading: Boolean,
+    isEditing: Boolean,
+    canEdit: Boolean,
+    onStartEditing: () -> Unit,
+    onFinishEditing: () -> Unit,
+    onSwapSlot: (scheduleId: Long, newPlaceId: Long) -> Unit,
+    onLoadAlts: (scheduleId: Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var selectedDayIndex by remember { mutableIntStateOf(0) }
+    var detailSlot by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
+    var showSwapSheet by remember { mutableStateOf(false) }
+
+    val days = schedule?.days ?: emptyList()
+
+    Column(modifier = modifier.fillMaxSize()) {
+        // 날짜 탭
+        if (days.isNotEmpty()) {
+            DayTabRow(
+                days          = days,
+                selectedIndex = selectedDayIndex,
+                onDaySelected = { selectedDayIndex = it },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+
+        // 편집 중 배너
+        if (isEditing) EditingBanner()
+
+        // 주요 콘텐츠 (로딩·빈상태·타임라인)
+        when {
+            isLoading                          -> ScheduleLoadingContent(modifier = Modifier.weight(1f))
+            schedule == null || days.isEmpty() -> ScheduleEmptyContent(modifier = Modifier.weight(1f))
+            else -> {
+                val dayIndex = selectedDayIndex.coerceIn(0, days.lastIndex)
+                SlotTimeline(
+                    slots       = days[dayIndex].slots,
+                    isEditing   = isEditing,
+                    onSlotClick  = { slot -> detailSlot = slot },
+                    onSwapClick  = { slot ->
+                        detailSlot = slot
+                        onLoadAlts(slot.scheduleId)
+                        showSwapSheet = true
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+
+    // 장소 상세 바텀시트
+    val activeDetailSlot = detailSlot
+    if (activeDetailSlot != null && !showSwapSheet) {
+        PlaceDetailBottomSheet(
+            slot        = activeDetailSlot,
+            isEditing   = isEditing,
+            onDismiss   = { detailSlot = null },
+            onSwapClick = {
+                onLoadAlts(activeDetailSlot.scheduleId)
+                showSwapSheet = true
+            },
+        )
+    }
+
+    // 대체 장소 선택 바텀시트 — 같은 카테고리의 후보만 표시
+    val swapSlot = detailSlot
+    if (showSwapSheet && swapSlot != null) {
+        SlotSwapBottomSheet(
+            slot      = swapSlot,
+            options   = altOptions.filter { it.category == swapSlot.place.category },
+            onDismiss = {
+                showSwapSheet = false
+                detailSlot    = null
+            },
+            onSelectAlt = { newPlaceId ->
+                onSwapSlot(swapSlot.scheduleId, newPlaceId)
+                showSwapSheet = false
+                detailSlot    = null
+            },
+        )
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -4,8 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.synctrip.app.data.models.*
 import com.synctrip.app.data.repository.BandRepository
+import com.synctrip.app.data.repository.ScheduleRepository
+import com.synctrip.app.network.ApiClient
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
@@ -24,12 +32,68 @@ data class BandUiState(
     val pickLimitReached: Boolean              = false,
     // 로그인한 유저 프로필 (드로어 표시용)
     val userProfile: UserProfileResponse?      = null,
+    // 정산 화면 데이터
+    val settlement: Settlement?                = null,
 )
 
 class BandViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(BandUiState())
     val uiState: StateFlow<BandUiState> = _uiState
+
+    // 구 앱과 동일한 폴링 방식 — GENERATING 상태일 때 3초마다 밴드 상태 조회
+    private var pollingJob: Job? = null
+
+    /**
+     * 일정 생성 완료 이벤트 (SharedFlow, replay=0).
+     * 폴링이 GENERATING→다른 상태 전환을 감지하면 한 번 발행 — NavGraph가 collect해 일정 화면으로 이동.
+     * replay=0이므로 로비 재진입 시 과거 이벤트가 재수신되지 않아 무한루프 방지.
+     */
+    private val _scheduleReadyEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val scheduleReadyEvent: SharedFlow<Unit> = _scheduleReadyEvent.asSharedFlow()
+
+    /** GENERATING 상태에서 호출 — 3초마다 밴드 상태 폴링, 전환 감지 시 scheduleReadyEvent 발행 */
+    fun startGeneratingPoll(bandId: Long) {
+        if (pollingJob?.isActive == true) return
+        pollingJob = viewModelScope.launch {
+            while (true) {
+                delay(3000L)
+                runCatching { BandRepository.getBands() }
+                    .onSuccess { bands ->
+                        val updated = bands.find { it.id == bandId } ?: return@onSuccess
+                        if (updated.status != BandStatus.GENERATING) {
+                            // 1차: 밴드 상태가 바뀐 경우
+                            _uiState.update { state ->
+                                state.copy(bands = state.bands.map { if (it.id == bandId) updated else it })
+                            }
+                            _scheduleReadyEvent.tryEmit(Unit)
+                            pollingJob?.cancel()
+                        } else {
+                            // 2차 fallback (구 앱 동일): 상태가 아직 GENERATING이어도
+                            // 일정 데이터가 이미 존재하면 생성 완료로 처리
+                            checkScheduleExistsAsBackup(bandId)
+                        }
+                    }
+            }
+        }
+    }
+
+    /** 구 앱 checkScheduleReady() 동일 — 일정 API 호출해 days가 있으면 완료 이벤트 발행 */
+    private suspend fun checkScheduleExistsAsBackup(bandId: Long) {
+        runCatching { ScheduleRepository.getSchedule(bandId) }
+            .onSuccess { schedule ->
+                if (schedule.days.isNotEmpty()) {
+                    _scheduleReadyEvent.tryEmit(Unit)
+                    pollingJob?.cancel()
+                }
+            }
+    }
+
+    /** 화면 이탈 시 폴링 중단 */
+    fun stopGeneratingPoll() {
+        pollingJob?.cancel()
+        pollingJob = null
+    }
 
     /** 로그인한 유저 프로필 조회 — 드로어 닉네임/프로필 이미지 표시 */
     fun loadMyProfile() {
@@ -214,18 +278,45 @@ class BandViewModel : ViewModel() {
         }
     }
 
-    fun advanceBandStatus(bandId: Long, onSuccess: (BandResponse) -> Unit) {
+    fun advanceBandStatus(bandId: Long, onSuccess: (BandStatusTransitionResponse) -> Unit) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             runCatching { BandRepository.advanceBandStatus(bandId) }
-                .onSuccess { updated ->
-                    // bands 목록에서 해당 밴드 상태 갱신
+                .onSuccess { transition ->
+                    // bands 목록에서 해당 밴드의 status만 업데이트 — BandStatusTransitionResponse로 교체 불가
                     _uiState.value = _uiState.value.copy(
                         isLoading    = false,
-                        selectedBand = updated,
-                        bands        = _uiState.value.bands.map { if (it.id == bandId) updated else it },
+                        selectedBand = _uiState.value.selectedBand?.copy(status = transition.currentStatus),
+                        bands        = _uiState.value.bands.map { b ->
+                            if (b.id == bandId) b.copy(status = transition.currentStatus) else b
+                        },
                     )
-                    onSuccess(updated)
+                    onSuccess(transition)
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+        }
+    }
+
+    /** GET /api/bands/{bandId}/settlement → UI Settlement 모델로 변환 */
+    fun loadSettlement(bandId: Long) {
+        viewModelScope.launch {
+            runCatching { ApiClient.api.getSettlement(bandId) }
+                .onSuccess { resp ->
+                    val ui = resp.toUiSettlement(bandId)
+                    _uiState.update { it.copy(settlement = ui) }
+                }
+                .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+        }
+    }
+
+    /** 밴드 삭제 — 방장 전용, 성공 시 onSuccess 호출 */
+    fun deleteBand(bandId: Long, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            runCatching { BandRepository.deleteBand(bandId) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    onSuccess()
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
         }
@@ -234,4 +325,30 @@ class BandViewModel : ViewModel() {
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
+
+    /** SettlementResponse(백엔드) → Settlement(UI) 변환 */
+    private fun SettlementResponse.toUiSettlement(bandId: Long) = Settlement(
+        tripId    = bandId.toString(),
+        tripTitle = "정산",
+        totalAmount = totalExpense.toLong(),
+        currency  = baseCurrency,
+        myBalance = memberSummaries.firstOrNull()?.balance?.toLong() ?: 0L,
+        summary   = memberSummaries.map { m ->
+            SettlementItem(
+                id          = m.userId.toString(),
+                category    = "지출",
+                description = "${m.name} 정산",
+                amount      = m.totalPaid.toLong(),
+                paidBy      = m.name,
+            )
+        },
+        pendingTransfers = transactions.map { t ->
+            PendingTransfer(
+                fromNickname = t.fromName,
+                toNickname   = t.toName,
+                amount       = t.amount.toLong(),
+                isResolved   = false,
+            )
+        },
+    )
 }

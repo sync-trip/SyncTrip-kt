@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.secrets)
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -97,6 +98,10 @@ dependencies {
     // ── Kakao ────────────────────────────────────────────────────────────────
     implementation(libs.kakao.user)
     implementation(libs.kakao.maps)
+
+    // ── Firebase ─────────────────────────────────────────────────────────────
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
 
     // ── Test ─────────────────────────────────────────────────────────────────
     testImplementation(libs.junit)

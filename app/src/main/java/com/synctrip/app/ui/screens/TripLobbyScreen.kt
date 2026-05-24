@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -21,6 +22,435 @@ import coil3.compose.AsyncImage
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
+
+// ═════════════════════════════════════════════════════════════════════════════
+// BandHubTab — 하단 네비게이션 탭 정의
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** 밴드 허브 화면의 하단 탭 목록 */
+enum class BandHubTab(val label: String, val icon: ImageVector) {
+    BAND("밴드", Icons.Outlined.Group),
+    SCHEDULE("일정", Icons.Outlined.DateRange),
+    SETTLEMENT("정산", Icons.Outlined.AccountBalanceWallet),
+    PHOTO("사진", Icons.Outlined.PhotoLibrary),
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TripBandHubScreen — 밴드 방 허브 (하단 탭 네비게이션 포함)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 밴드 방 허브 화면.
+ * 하단 NavigationBar로 밴드·일정·정산·사진 탭을 전환한다.
+ * 모든 탭 콘텐츠를 인라인으로 포함하므로 별도 라우트 이동 없이 즉시 전환된다.
+ *
+ * @param selectedTab        현재 선택된 탭 (상위에서 관리 — scheduleReadyEvent 연동)
+ * @param onTabSelected      탭 선택 콜백
+ * @param schedule           일정 데이터; null이면 로딩 중 또는 미생성
+ * @param altOptions         일정 슬롯 교체 후보 목록
+ * @param isScheduleLoading  일정 탭 로딩 상태
+ * @param isEditing          일정 편집 락 보유 여부
+ * @param settlement         정산 데이터; null이면 로딩 중
+ * @param snackbarHostState  에러 스낵바 (NavGraph에서 생성 후 전달)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TripBandHubScreen(
+    band: BandResponse,
+    members: List<BandMemberResponse>,
+    picks: PlacePickListResponse?,
+    currentUserId: Long,
+    isBandLoading: Boolean,
+    schedule: ScheduleResponse?,
+    altOptions: List<ScheduleAltResponse>,
+    isScheduleLoading: Boolean,
+    isEditing: Boolean,
+    settlement: Settlement?,
+    selectedTab: BandHubTab,
+    onTabSelected: (BandHubTab) -> Unit,
+    snackbarHostState: SnackbarHostState,
+    // 밴드 탭 콜백
+    onBackClick: () -> Unit,
+    onReadyClick: () -> Unit,
+    onInviteClick: () -> Unit,
+    onAdvanceStatus: () -> Unit,
+    onGoToPlaceSearch: () -> Unit,
+    onGoToVoting: () -> Unit,
+    // 일정 탭 콜백
+    onLoadAlts: (scheduleId: Long) -> Unit,
+    onSwapSlot: (scheduleId: Long, newPlaceId: Long) -> Unit,
+    onStartEditing: () -> Unit,
+    onFinishEditing: () -> Unit,
+    // 정산 탭 콜백
+    onSettleClick: (transferId: String) -> Unit,
+    // 방 삭제 (임시 — 방장 전용)
+    onDeleteBand: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 투표 강제 시작 전 확인 다이얼로그
+    var showAdvanceDialog by remember { mutableStateOf(false) }
+
+    if (showAdvanceDialog) {
+        val notReadyCount = members.count { !it.isReady }
+        AlertDialog(
+            onDismissRequest = { showAdvanceDialog = false },
+            title            = { Text("투표 시작") },
+            text             = {
+                if (notReadyCount > 0)
+                    Text("아직 준비 안 된 멤버가 ${notReadyCount}명 있어요. 그래도 투표를 시작할까요?")
+                else
+                    Text("모든 멤버가 준비됐어요. 투표를 시작할게요!")
+            },
+            confirmButton = {
+                TextButton(onClick = { showAdvanceDialog = false; onAdvanceStatus() }) {
+                    Text("시작", color = MaterialTheme.colorScheme.primary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAdvanceDialog = false }) { Text("취소") }
+            },
+        )
+    }
+
+    Scaffold(
+        modifier     = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar       = {
+            HubTopBar(
+                title         = band.destination,
+                selectedTab   = selectedTab,
+                isEditing     = isEditing,
+                canEdit       = false,
+                isOwner       = band.isOwner,
+                onBackClick   = onBackClick,
+                onStartEditing  = onStartEditing,
+                onFinishEditing = onFinishEditing,
+                onDeleteBand    = onDeleteBand,
+            )
+        },
+        bottomBar = {
+            HubNavigationBar(
+                selectedTab   = selectedTab,
+                onTabSelected = onTabSelected,
+            )
+        },
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            when (selectedTab) {
+                BandHubTab.BAND -> BandHubTabContent(
+                    band          = band,
+                    members       = members,
+                    picks         = picks,
+                    currentUserId = currentUserId,
+                    isBandLoading = isBandLoading,
+                    onReadyClick  = onReadyClick,
+                    onInviteClick = onInviteClick,
+                    onGoToPlaceSearch  = onGoToPlaceSearch,
+                    onGoToVoting       = onGoToVoting,
+                    onAdvanceStatusClick = { showAdvanceDialog = true },
+                    modifier      = Modifier.fillMaxSize(),
+                )
+
+                BandHubTab.SCHEDULE -> {
+                    // GENERATING 상태이면서 아직 일정이 없으면 생성 중 스피너 표시
+                    if (band.status == BandStatus.GENERATING && (schedule == null || schedule.days.isEmpty())) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                PlaneLoadingIndicator()
+                                Spacer(Modifier.height(16.dp))
+                                Text(
+                                    "일정 생성 중…",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    ),
+                                )
+                            }
+                        }
+                    } else {
+                        ScheduleContent(
+                            schedule        = schedule,
+                            altOptions      = altOptions,
+                            isLoading       = isScheduleLoading,
+                            isEditing       = isEditing,
+                            canEdit         = false,
+                            onStartEditing  = onStartEditing,
+                            onFinishEditing = onFinishEditing,
+                            onSwapSlot      = onSwapSlot,
+                            onLoadAlts      = onLoadAlts,
+                            modifier        = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+
+                BandHubTab.SETTLEMENT -> SettlementContent(
+                    settlement    = settlement,
+                    onSettleClick = onSettleClick,
+                    modifier      = Modifier.fillMaxSize(),
+                )
+
+                BandHubTab.PHOTO -> {
+                    // 사진 탭 — 향후 구현 (준비 중 플레이스홀더)
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Outlined.PhotoLibrary,
+                                contentDescription = null,
+                                tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(64.dp),
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "사진 기능 준비 중",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hub TopAppBar — 탭별로 타이틀·액션 다름
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HubTopBar(
+    title: String,
+    selectedTab: BandHubTab,
+    isEditing: Boolean,
+    canEdit: Boolean,
+    isOwner: Boolean,
+    onBackClick: () -> Unit,
+    onStartEditing: () -> Unit,
+    onFinishEditing: () -> Unit,
+    onDeleteBand: () -> Unit,
+) {
+    TopAppBar(
+        title = {
+            val topTitle = when (selectedTab) {
+                BandHubTab.SETTLEMENT -> "정산"
+                BandHubTab.PHOTO      -> "사진"
+                else                  -> title
+            }
+            Text(
+                text  = topTitle,
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    color      = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                ),
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onBackClick) {
+                Icon(Icons.Outlined.ArrowBack, contentDescription = "뒤로")
+            }
+        },
+        actions = {
+            // 일정 탭: 편집 버튼
+            if (selectedTab == BandHubTab.SCHEDULE && canEdit) {
+                if (isEditing) {
+                    TextButton(onClick = onFinishEditing) {
+                        Text("편집 완료", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
+                    }
+                } else {
+                    IconButton(onClick = onStartEditing) {
+                        Icon(Icons.Outlined.EditNote, contentDescription = "일정 편집")
+                    }
+                }
+            }
+            // 방장만: 방 삭제 버튼 (임시)
+            if (isOwner) {
+                TextButton(onClick = onDeleteBand) {
+                    Text(
+                        "방 삭제",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    )
+                }
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hub NavigationBar — 하단 탭 바
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun HubNavigationBar(
+    selectedTab: BandHubTab,
+    onTabSelected: (BandHubTab) -> Unit,
+) {
+    NavigationBar {
+        BandHubTab.entries.forEach { tab ->
+            NavigationBarItem(
+                selected = selectedTab == tab,
+                onClick  = { onTabSelected(tab) },
+                icon     = { Icon(tab.icon, contentDescription = tab.label) },
+                label    = { Text(tab.label) },
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BandHubTabContent — 밴드 탭 콘텐츠 (스크롤 가능 정보 + 하단 고정 액션 버튼)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 밴드 탭 본문.
+ * 밴드 정보 카드·멤버·준비 현황은 스크롤 영역에,
+ * 액션 버튼(장소 탐색·투표 시작 등)은 하단에 고정 배치한다.
+ */
+@Composable
+private fun BandHubTabContent(
+    band: BandResponse,
+    members: List<BandMemberResponse>,
+    picks: PlacePickListResponse?,
+    currentUserId: Long,
+    isBandLoading: Boolean,
+    onReadyClick: () -> Unit,
+    onInviteClick: () -> Unit,
+    onGoToPlaceSearch: () -> Unit,
+    onGoToVoting: () -> Unit,
+    onAdvanceStatusClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val currentMember = members.find { it.userId == currentUserId }
+    val readyCount    = members.count { it.isReady }
+
+    Column(modifier = modifier) {
+        // 스크롤 가능한 정보 영역
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            Spacer(Modifier.height(4.dp))
+
+            LobbyInfoCard(band = band, readyCount = readyCount, totalCount = members.size)
+
+            MembersSection(members = members, onInviteClick = onInviteClick)
+
+            // PLANNING 단계일 때만 내 준비 현황 표시
+            if (band.status == BandStatus.PLANNING) {
+                MyStatusSection(
+                    picks         = picks,
+                    isReady       = currentMember?.isReady ?: false,
+                    onReadyClick  = onReadyClick,
+                    onSearchClick = onGoToPlaceSearch,
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // 하단 고정 액션 버튼 영역 — NavigationBar 바로 위에 위치
+        BandActionArea(
+            status               = band.status,
+            isOwner              = band.isOwner,
+            isBandLoading        = isBandLoading,
+            onGoToPlaceSearch    = onGoToPlaceSearch,
+            onGoToVoting         = onGoToVoting,
+            onAdvanceStatusClick = onAdvanceStatusClick,
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BandActionArea — 밴드 탭 하단 고정 버튼 (밴드 상태별 분기)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun BandActionArea(
+    status: BandStatus,
+    isOwner: Boolean,
+    isBandLoading: Boolean,
+    onGoToPlaceSearch: () -> Unit,
+    onGoToVoting: () -> Unit,
+    onAdvanceStatusClick: () -> Unit,
+) {
+    Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 4.dp, color = MaterialTheme.colorScheme.surface) {
+        Column(
+            modifier            = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            when (status) {
+                BandStatus.PLANNING -> {
+                    Button(
+                        onClick  = onGoToPlaceSearch,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape    = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(Icons.Outlined.Search, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("장소 탐색하기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                    }
+                    // 방장만 투표 강제 시작 가능
+                    if (isOwner) {
+                        OutlinedButton(
+                            onClick  = onAdvanceStatusClick,
+                            enabled  = !isBandLoading,
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape    = RoundedCornerShape(12.dp),
+                        ) {
+                            if (isBandLoading) {
+                                PlaneLoadingIndicator(size = 20.dp, showCircle = false)
+                            } else {
+                                Icon(Icons.Outlined.HowToVote, null, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (isBandLoading) "처리 중…" else "투표 시작하기")
+                        }
+                    }
+                }
+                BandStatus.VOTING -> {
+                    Button(
+                        onClick  = onGoToVoting,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape    = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(Icons.Outlined.HowToVote, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("투표하러 가기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                    }
+                }
+                BandStatus.GENERATING -> {
+                    // 일정 생성 중 — 탭 전환 유도
+                    OutlinedButton(
+                        onClick  = {},
+                        enabled  = false,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape    = RoundedCornerShape(12.dp),
+                    ) {
+                        PlaneLoadingIndicator(size = 24.dp, showCircle = false)
+                        Spacer(Modifier.width(8.dp))
+                        Text("일정 생성 중…")
+                    }
+                }
+                BandStatus.TRAVELLING, BandStatus.DONE -> {
+                    // 여행 중/완료 — 일정 탭으로 안내 (탭 전환은 NavigationBar로)
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 기존 TripLobbyScreen (하위 호환용 — 필요 시 유지)
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * 여행 로비 화면.
@@ -441,16 +871,21 @@ private fun LobbyBottomBar(
                         Spacer(Modifier.width(8.dp))
                         Text("장소 탐색하기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
                     }
-                    // 방장만 투표 강제 시작 가능
+                    // 방장만 투표 강제 시작 가능 — API 호출 중에는 비활성화
                     if (isOwner) {
                         OutlinedButton(
                             onClick  = onAdvanceStatusClick,
+                            enabled  = !isLoading,
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             shape    = RoundedCornerShape(12.dp),
                         ) {
-                            Icon(Icons.Outlined.HowToVote, null, modifier = Modifier.size(18.dp))
+                            if (isLoading) {
+                                PlaneLoadingIndicator(size = 20.dp, showCircle = false)
+                            } else {
+                                Icon(Icons.Outlined.HowToVote, null, modifier = Modifier.size(18.dp))
+                            }
                             Spacer(Modifier.width(8.dp))
-                            Text("투표 시작하기")
+                            Text(if (isLoading) "처리 중…" else "투표 시작하기")
                         }
                     }
                 }
@@ -474,7 +909,7 @@ private fun LobbyBottomBar(
                     ) {
                         PlaneLoadingIndicator(size = 28.dp, showCircle = false)
                         Spacer(Modifier.width(8.dp))
-                        Text("AI 일정 생성 중…")
+                        Text("일정 생성 중…")
                     }
                 }
                 BandStatus.TRAVELLING, BandStatus.DONE -> {

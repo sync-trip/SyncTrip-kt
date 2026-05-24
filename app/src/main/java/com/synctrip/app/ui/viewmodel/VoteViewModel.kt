@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.synctrip.app.data.models.*
 import com.synctrip.app.data.repository.VoteRepository
+import com.synctrip.app.network.VoteEvent
+import com.synctrip.app.network.VoteStompClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class VoteUiState(
@@ -24,6 +27,30 @@ class VoteViewModel : ViewModel() {
     val uiState: StateFlow<VoteUiState> = _uiState
 
     private var currentBandId: Long = -1L
+    private var stompClient: VoteStompClient? = null
+
+    /**
+     * WebSocket STOMP 연결 — 투표 화면 진입 시 호출.
+     * 다른 멤버가 투표할 때마다 groupStatus를 갱신해 실시간 진행 현황을 표시.
+     */
+    fun connectWebSocket(token: String, bandId: Long) {
+        stompClient?.disconnect()
+        stompClient = VoteStompClient(
+            token       = token,
+            bandId      = bandId,
+            onEvent     = { _: VoteEvent ->
+                // 다른 멤버 투표 이벤트 수신 → 그룹 진행 현황 서버에서 재조회
+                refreshStatus()
+            },
+            onConnected = { refreshStatus() },
+        )
+        stompClient?.connect()
+    }
+
+    override fun onCleared() {
+        stompClient?.disconnect()
+        super.onCleared()
+    }
 
     fun loadVotePlaces(bandId: Long) {
         currentBandId = bandId

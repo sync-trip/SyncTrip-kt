@@ -4,6 +4,8 @@
 
     <!-- ── 네트워크 권한 ──────────────────────────────────────────────────── -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13+ FCM 푸시 알림 표시 권한 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- ── 위치 권한 (지도 현재 위치 표시용) ──────────────────────────────── -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -46,6 +48,15 @@
                     android:scheme="kakao${KAKAO_NATIVE_KEY}" />
             </intent-filter>
         </activity>
+
+        <!-- ── FCM 푸시 알림 서비스 ──────────────────────────────────────────── -->
+        <service
+            android:name=".SyncTripFirebaseService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <!-- ── 메인 Activity ──────────────────────────────────────────────── -->
         <activity

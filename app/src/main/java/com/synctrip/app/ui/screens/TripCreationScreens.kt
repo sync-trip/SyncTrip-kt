@@ -1095,7 +1095,7 @@ fun AiLoadingScreen(
             Spacer(Modifier.height(24.dp))
 
             Text(
-                text      = "AI가 최적의 여행 일정을 만들고 있어요",
+                text      = "최적의 여행 일정을 만들고 있어요",
                 style     = MaterialTheme.typography.headlineMedium.copy(color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center),
                 textAlign = TextAlign.Center,
             )
