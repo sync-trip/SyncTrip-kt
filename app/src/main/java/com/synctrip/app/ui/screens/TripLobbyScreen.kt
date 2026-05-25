@@ -440,8 +440,27 @@ private fun BandActionArea(
                         Text("일정 생성 중…")
                     }
                 }
-                BandStatus.TRAVELLING, BandStatus.DONE -> {
-                    // 여행 중/완료 — 일정 탭으로 안내 (탭 전환은 NavigationBar로)
+                BandStatus.TRAVELLING -> {
+                    // 방장만 여행 완료 처리 가능
+                    if (isOwner) {
+                        OutlinedButton(
+                            onClick  = onAdvanceStatusClick,
+                            enabled  = !isBandLoading,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape    = RoundedCornerShape(12.dp),
+                        ) {
+                            if (isBandLoading) {
+                                PlaneLoadingIndicator(size = 20.dp, showCircle = false)
+                            } else {
+                                Icon(Icons.Outlined.CheckCircle, null, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (isBandLoading) "처리 중…" else "여행 완료하기")
+                        }
+                    }
+                }
+                BandStatus.DONE -> {
+                    // 완료 상태 — 별도 액션 없음
                 }
             }
         }
