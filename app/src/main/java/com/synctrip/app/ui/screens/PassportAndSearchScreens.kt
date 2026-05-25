@@ -74,6 +74,9 @@ fun PlaceSearchScreen(
     modifier: Modifier = Modifier,
 ) {
     var showCartSheet by remember { mutableStateOf(false) }
+    // 선택된 장소 externalId — 목록에서 실시간 조회해 북마크 상태 반영
+    var selectedExternalId by remember { mutableStateOf<String?>(null) }
+    val selectedPlace = selectedExternalId?.let { id -> places.find { it.externalId == id } }
     val cartCount = picks.size
 
     Scaffold(
@@ -173,7 +176,7 @@ fun PlaceSearchScreen(
                     items(places, key = { it.externalId }) { place ->
                         PlaceCard(
                             place        = place,
-                            onPlaceClick = { onPlaceClick(place.externalId) },
+                            onPlaceClick = { selectedExternalId = place.externalId },
                             onCartToggle = { onCartToggle(place.externalId) },
                         )
                     }
@@ -191,6 +194,15 @@ fun PlaceSearchScreen(
                 onDeletePick = { externalId -> onCartToggle(externalId) },
             )
         }
+    }
+
+    // 장소 상세 바텀시트 — 카드 클릭 시 표시
+    if (selectedPlace != null) {
+        PlaceSearchDetailBottomSheet(
+            place        = selectedPlace,
+            onDismiss    = { selectedExternalId = null },
+            onCartToggle = { onCartToggle(selectedPlace.externalId) },
+        )
     }
 }
 
@@ -454,6 +466,157 @@ private fun CartPickListItem(pick: PlacePickResponse, onDelete: () -> Unit) {
             Icon(Icons.Outlined.Close, contentDescription = "삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Place Search Detail Bottom Sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 장소 탐색 화면에서 카드 클릭 시 나타나는 장소 상세 바텀시트 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlaceSearchDetailBottomSheet(
+    place: ApiPlaceSearchResult,
+    onDismiss: () -> Unit,
+    onCartToggle: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+        containerColor   = MaterialTheme.colorScheme.surface,
+        shape            = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp),
+        ) {
+            // 썸네일 이미지
+            if (place.thumbnailUrl != null) {
+                AsyncImage(
+                    model              = place.thumbnailUrl,
+                    contentDescription = place.name,
+                    contentScale       = ContentScale.Crop,
+                    modifier           = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // 카테고리 칩
+            PlaceDetailCategoryChip(category = place.category)
+            Spacer(Modifier.height(6.dp))
+
+            // 장소명
+            Text(
+                text  = place.name,
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color      = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(12.dp))
+
+            // 주소 / 평점 상세 행
+            place.address?.let { PlaceDetailRow(Icons.Outlined.LocationOn, "주소", it) }
+            place.rating?.let  { PlaceDetailRow(Icons.Outlined.Star, "평점", "%.1f / 5.0".format(it)) }
+
+            Spacer(Modifier.height(20.dp))
+
+            // 장바구니 담기 / 제거 버튼
+            if (place.isBookmarked) {
+                OutlinedButton(
+                    onClick  = onCartToggle,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Outlined.Bookmark, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("장바구니에서 제거", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                }
+            } else {
+                Button(
+                    onClick  = onCartToggle,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                    colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                ) {
+                    Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("장바구니에 담기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaceDetailCategoryChip(category: ApiPlaceCategory) {
+    val tint = placeDetailCategoryColor(category)
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = tint.copy(alpha = 0.12f),
+    ) {
+        Row(
+            modifier          = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(placeDetailCategoryIcon(category), contentDescription = null, tint = tint, modifier = Modifier.size(10.dp))
+            Spacer(Modifier.width(3.dp))
+            Text(placeDetailCategoryLabel(category), style = MaterialTheme.typography.labelSmall.copy(color = tint))
+        }
+    }
+}
+
+@Composable
+private fun PlaceDetailRow(icon: ImageVector, label: String, value: String) {
+    Row(
+        modifier          = Modifier.fillMaxWidth().padding(vertical = 7.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp).padding(top = 1.dp))
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+            Text(value, style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface))
+        }
+    }
+}
+
+@Composable
+private fun placeDetailCategoryColor(category: ApiPlaceCategory): Color = when (category) {
+    ApiPlaceCategory.FOOD     -> MaterialTheme.colorScheme.error
+    ApiPlaceCategory.CULTURE  -> MaterialTheme.colorScheme.tertiary
+    ApiPlaceCategory.ACTIVITY -> MaterialTheme.colorScheme.secondary
+    ApiPlaceCategory.SHOPPING -> MaterialTheme.colorScheme.primary
+    ApiPlaceCategory.NATURE   -> Color(0xFF2E7D32)
+    ApiPlaceCategory.ETC      -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+private fun placeDetailCategoryIcon(category: ApiPlaceCategory): ImageVector = when (category) {
+    ApiPlaceCategory.FOOD     -> Icons.Outlined.Restaurant
+    ApiPlaceCategory.CULTURE  -> Icons.Outlined.Museum
+    ApiPlaceCategory.ACTIVITY -> Icons.Outlined.SportsBasketball
+    ApiPlaceCategory.SHOPPING -> Icons.Outlined.ShoppingBag
+    ApiPlaceCategory.NATURE   -> Icons.Outlined.Park
+    ApiPlaceCategory.ETC      -> Icons.Outlined.Place
+}
+
+private fun placeDetailCategoryLabel(category: ApiPlaceCategory): String = when (category) {
+    ApiPlaceCategory.FOOD     -> "음식"
+    ApiPlaceCategory.CULTURE  -> "문화"
+    ApiPlaceCategory.ACTIVITY -> "액티비티"
+    ApiPlaceCategory.SHOPPING -> "쇼핑"
+    ApiPlaceCategory.NATURE   -> "자연"
+    ApiPlaceCategory.ETC      -> "기타"
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
