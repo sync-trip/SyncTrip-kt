@@ -216,4 +216,43 @@ interface SyncTripApiService {
     /** 정산 요청 알림 발송 */
     @POST("api/bands/{bandId}/settlement/request")
     suspend fun requestSettlement(@Path("bandId") bandId: Long)
+
+    // ── Album (USR-023 공유 앨범) ──────────────────────────────────────────────
+
+    /** 사진 + 글 + 좌표 업로드. Base64 photoData 필수. 성공 시 201 Created */
+    @POST("api/bands/{bandId}/album")
+    suspend fun uploadAlbumPhoto(
+        @Path("bandId") bandId: Long,
+        @Body body: AlbumPhotoUploadRequest,
+    ): AlbumPhotoResponse
+
+    /** 피드 목록 — 최신순, Base64 이미지 포함 */
+    @GET("api/bands/{bandId}/album")
+    suspend fun getAlbumFeed(@Path("bandId") bandId: Long): List<AlbumPhotoResponse>
+
+    /** 지도 핀용 목록 — 좌표 있는 사진만, Base64 제외 경량 응답 */
+    @GET("api/bands/{bandId}/album/map")
+    suspend fun getAlbumMapPins(@Path("bandId") bandId: Long): List<AlbumPhotoMapResponse>
+
+    /** 사진 상세 조회 */
+    @GET("api/bands/{bandId}/album/{photoId}")
+    suspend fun getAlbumPhoto(
+        @Path("bandId") bandId: Long,
+        @Path("photoId") photoId: Long,
+    ): AlbumPhotoResponse
+
+    /** 캡션 수정 — 업로더만 가능 */
+    @PATCH("api/bands/{bandId}/album/{photoId}")
+    suspend fun updateAlbumPhoto(
+        @Path("bandId") bandId: Long,
+        @Path("photoId") photoId: Long,
+        @Body body: AlbumPhotoUpdateRequest,
+    ): AlbumPhotoResponse
+
+    /** 사진 삭제 — 업로더 또는 방장만 가능. 성공 시 204 No Content */
+    @DELETE("api/bands/{bandId}/album/{photoId}")
+    suspend fun deleteAlbumPhoto(
+        @Path("bandId") bandId: Long,
+        @Path("photoId") photoId: Long,
+    )
 }

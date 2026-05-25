@@ -86,7 +86,20 @@ fun TripBandHubScreen(
     onFinishEditing: () -> Unit,
     // 정산 탭 콜백
     onSettleClick: (transferId: String) -> Unit,
-    // 방 삭제 (임시 — 방장 전용)
+    // 사진 탭 — 앨범 상태 + 콜백
+    albumPhotos: List<com.synctrip.app.data.models.AlbumPhotoResponse>,
+    albumMapPins: List<com.synctrip.app.data.models.AlbumPhotoMapResponse>,
+    isAlbumLoading: Boolean,
+    isAlbumUploading: Boolean,
+    onUploadAlbumPhoto: (
+        photoData: String,
+        caption: String?,
+        latitude: Double?,
+        longitude: Double?,
+        takenAt: String?,
+    ) -> Unit,
+    onDeleteAlbumPhoto: (photoId: Long) -> Unit,
+    // 방 삭제 (방장 전용)
     onDeleteBand: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -223,26 +236,18 @@ fun TripBandHubScreen(
                     modifier      = Modifier.fillMaxSize(),
                 )
 
-                BandHubTab.PHOTO -> {
-                    // 사진 탭 — 향후 구현 (준비 중 플레이스홀더)
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Outlined.PhotoLibrary,
-                                contentDescription = null,
-                                tint     = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(64.dp),
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                "사진 기능 준비 중",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                ),
-                            )
-                        }
-                    }
-                }
+                BandHubTab.PHOTO -> AlbumContent(
+                    photos          = albumPhotos,
+                    mapPins         = albumMapPins,
+                    isLoading       = isAlbumLoading,
+                    isUploading     = isAlbumUploading,
+                    currentUserId   = currentUserId,
+                    destinationLat  = band.destinationLat,
+                    destinationLng  = band.destinationLng,
+                    onUploadPhoto   = onUploadAlbumPhoto,
+                    onDeletePhoto   = onDeleteAlbumPhoto,
+                    modifier        = Modifier.fillMaxSize(),
+                )
             }
         }
     }
