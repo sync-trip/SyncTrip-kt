@@ -48,8 +48,6 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     recommendedContent: List<RecommendedContent>,
     myTripBands: List<TripBand>,
-    selectedNavItem: BottomNavDestination,
-    onNavItemSelected: (BottomNavDestination) -> Unit,
     onSearchClick: () -> Unit,
     onNotificationsClick: () -> Unit,
     onContentCardClick: (String) -> Unit,
@@ -194,12 +192,6 @@ fun HomeScreen(
                             onSearchClick          = onSearchClick,
                             onNotificationsClick   = onNotificationsClick,
                             hasUnreadNotifications = hasUnreadNotifications,
-                        )
-                    },
-                    bottomBar = {
-                        SyncTripBottomNav(
-                            selectedDestination   = selectedNavItem,
-                            onDestinationSelected = onNavItemSelected,
                         )
                     },
                     snackbarHost        = { SnackbarHost(snackbarHostState) },
@@ -662,8 +654,6 @@ private fun HomeScreenPreview() {
         HomeScreen(
             recommendedContent     = previewContent,
             myTripBands            = previewBands,
-            selectedNavItem        = BottomNavDestination.Home,
-            onNavItemSelected      = {},
             onSearchClick          = {},
             onNotificationsClick   = {},
             onContentCardClick     = {},

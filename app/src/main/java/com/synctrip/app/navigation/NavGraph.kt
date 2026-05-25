@@ -25,7 +25,6 @@ import com.synctrip.app.core.TokenDataStore
 import com.synctrip.app.data.models.*
 import com.synctrip.app.data.repository.BandRepository
 import com.synctrip.app.network.ApiClient
-import com.synctrip.app.ui.components.BottomNavDestination
 import com.synctrip.app.ui.screens.*
 import com.synctrip.app.ui.viewmodel.AuthUiState
 import com.synctrip.app.ui.viewmodel.AuthViewModel
@@ -175,7 +174,6 @@ fun SyncTripNavGraph(
             val bandViewModel   = viewModel<BandViewModel>()
             val authViewModel   = viewModel<AuthViewModel>()
             val bandUiState     by bandViewModel.uiState.collectAsState()
-            var selectedNavItem by remember { mutableStateOf(BottomNavDestination.Home) }
             val snackbarState   = remember { SnackbarHostState() }
 
             // 화면 진입 시 밴드 목록 + 유저 프로필 로드
@@ -197,16 +195,7 @@ fun SyncTripNavGraph(
                 myTripBands          = bandUiState.bands.reversed().map { it.toTripBand() },
                 userName             = bandUiState.userProfile?.name ?: "",
                 userProfileImageUrl  = bandUiState.userProfile?.profileImageUrl,
-                selectedNavItem      = selectedNavItem,
                 snackbarHostState    = snackbarState,
-                onNavItemSelected    = { dest ->
-                    selectedNavItem = dest
-                    when (dest) {
-                        BottomNavDestination.Explore  -> navController.navigate("placeSearch")
-                        BottomNavDestination.Passport -> navController.navigate("passport")
-                        else                          -> {}
-                    }
-                },
                 onSearchClick        = {},
                 onNotificationsClick = { navController.navigate("notifications") },
                 onContentCardClick   = {},

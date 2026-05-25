@@ -156,6 +156,15 @@ interface SyncTripApiService {
     @GET("api/destinations/search")
     suspend fun searchDestinations(@Query("query") query: String): List<DestinationResponse>
 
+    // ── Holiday (공휴일) ──────────────────────────────────────────────────────
+
+    /** 국가+연도별 공휴일 목록 — 달력 마킹용. Nager.Date API 래핑 */
+    @GET("api/holidays")
+    suspend fun getHolidays(
+        @Query("countryCode") countryCode: String,
+        @Query("year") year: Int,
+    ): List<HolidayInfo>
+
     // ── Place Picks (장바구니) ─────────────────────────────────────────────────
 
     /** 장바구니 목록 — {currentCount, maxCount, items} 래퍼로 반환됨 */

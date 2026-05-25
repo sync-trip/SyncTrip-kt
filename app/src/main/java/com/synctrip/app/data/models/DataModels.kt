@@ -578,6 +578,23 @@ data class DestinationResponse(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Backend – Holiday  (GET /api/holidays?countryCode=JP&year=2026)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 공휴일 정보 DTO.
+ * 백엔드 HolidayInfo record와 1:1 대응.
+ * @param date      날짜 문자열 (yyyy-MM-dd)
+ * @param localName 현지어 공휴일명 (예: 成人の日)
+ * @param name      영문 공휴일명 (예: Coming of Age Day)
+ */
+data class HolidayInfo(
+    val date: String,
+    val localName: String,
+    val name: String,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Backend – Place Pick (장바구니)
 // GET  /api/bands/{bandId}/picks  → PlacePickListResponse
 // POST /api/bands/{bandId}/picks  → PlacePickRequest
