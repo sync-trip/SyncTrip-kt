@@ -23,12 +23,12 @@
 |---|---|---|
 | UI (Jetpack Compose) | ✅ 구현 | 전체 화면 UI 완성. 주요 화면 API 연결 완료 |
 | Navigation (NavGraph) | ✅ 구현 | `SyncTripNavGraph` — Splash 자동로그인 포함 전체 라우트 |
-| ViewModel 레이어 | ✅ 구현 | `AuthViewModel`, `BandViewModel`, `VoteViewModel`, `ScheduleViewModel`, `NotificationViewModel` |
-| Repository 레이어 | ✅ 구현 | `AuthRepository`, `BandRepository`, `VoteRepository`, `ScheduleRepository` |
+| ViewModel 레이어 | ✅ 구현 | `AuthViewModel`, `BandViewModel`, `VoteViewModel`, `ScheduleViewModel`, `NotificationViewModel`, `AlbumViewModel` |
+| Repository 레이어 | ✅ 구현 | `AuthRepository`, `BandRepository`, `VoteRepository`, `ScheduleRepository`, `AlbumRepository` |
 | 네트워크 (Retrofit) | ✅ 구현 | `ApiClient` Bearer 자동첨부 + 401 자동 갱신 Authenticator |
 | JWT 토큰 저장소 | ✅ 구현 | `core/TokenDataStore.kt` — DataStore<Preferences> 기반 |
 | WebSocket (STOMP) | ✅ 구현 | `network/VoteStompClient.kt` — OkHttp3 STOMP 직접 구현, VoteViewModel 통합 |
-| 지도 SDK (Kakao / Google) | ❌ 미구현 | 의존성 추가됨, 화면 미연결 |
+| 지도 SDK (Google Maps Compose) | ✅ 구현 | 앨범 지도 탭에서 핀 표시용으로 연결. `maps-compose` 의존성 활용 |
 | FCM 클라이언트 | ✅ 구현 | `SyncTripFirebaseService.kt` — 토큰 등록 + 푸시 알림 표시 |
 
 ---
@@ -143,7 +143,7 @@
 
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
-| USR-023 | 공유 앨범 | ❌ 미구현 | — | 백엔드도 미구현 |
+| USR-023 | 공유 앨범 | ✅ 구현 | `ui/screens/AlbumScreen.kt` + `AlbumViewModel` + `AlbumRepository` | 인스타그램 피드 형식. 피드/지도 탭 전환. EXIF(위도·경도·촬영시각) 추출. Base64 업로드. 낙관적 삭제. 지도 핀 클릭 → 피드 스크롤 |
 | USR-024 | 여권 스탬프 UI | ⚠️ 부분 구현 | `MyPassportScreen` | 스탬프 그리드 UI 있음, DONE 밴드 필터 미연결 |
 | USR-025 | 과거 여행 기록 | ❌ 미구현 | — | 전용 화면 없음 |
 
@@ -153,6 +153,7 @@
 
 | 화면 (Composable) | 파일 | UI 완성 | API 연결 | 비고 |
 |---|---|---|---|---|
+| `AlbumContent` | `AlbumScreen.kt` | ✅ | ✅ | hub PHOTO 탭 임베드용. AlbumViewModel 연결. 피드(인스타 스타일)/지도 탭 전환. EXIF 추출. 업로드 다이얼로그 |
 | `SplashScreen` | `SplashScreen.kt` | ✅ | ✅ | DataStore 토큰 복구 → 자동 로그인 |
 | `LoginScreen` | `LoginScreen.kt` | ✅ | ✅ | 카카오/구글 AuthViewModel 연결 완료 |
 | `HomeScreen` | `HomeScreen.kt` | ✅ | ✅ | 밴드 목록 최신순 + 사이드 드로어(프로필·D-day배너·퀵액션·로그아웃·회원탈퇴) |
@@ -221,4 +222,6 @@
 
 ---
 
-**마지막 수정:** 2026-05-25 | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+| 2026-05-26 | **공유 앨범 (USR-023)** — `AlbumScreen.kt` 신규 (인스타그램 피드 + Google Maps 지도 핀 탭). `AlbumViewModel`, `AlbumRepository` 신규. `DataModels` 앨범 4개 모델 추가. `SyncTripApiService` 앨범 API 6개 추가. EXIF 메타데이터(위도·경도·촬영시각) 추출. Base64 이미지 업로드. 낙관적 삭제. 지도 핀 클릭 시 피드 탭으로 전환 + 스크롤. `TripBandHubScreen` PHOTO 탭 `AlbumContent` 연결. Google Maps SDK 첫 연결(지도 SDK 미구현 → 구현) |
+
+**마지막 수정:** 2026-05-26 | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

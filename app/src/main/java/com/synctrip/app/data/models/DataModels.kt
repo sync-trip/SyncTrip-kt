@@ -294,6 +294,10 @@ data class BandResponse(
     val accommodationName: String?,
     val memberCount: Int,
     val thumbnailUrl: String? = null,
+    /** 여행지 위도 — 앨범 지도 탭 초기 중심 위치 */
+    val destinationLat: Double = 37.5665,   // 기본값: 서울
+    /** 여행지 경도 */
+    val destinationLng: Double = 126.9780,
 )
 
 data class BandMemberResponse(
@@ -684,4 +688,62 @@ data class NotificationSettingsResponse(
 data class NotificationSettingUpdateRequest(
     val type: ApiNotificationType,
     val enabled: Boolean,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Backend – Album  (USR-023 공유 앨범)
+// POST   /api/bands/{bandId}/album
+// GET    /api/bands/{bandId}/album
+// GET    /api/bands/{bandId}/album/map
+// GET    /api/bands/{bandId}/album/{photoId}
+// PATCH  /api/bands/{bandId}/album/{photoId}
+// DELETE /api/bands/{bandId}/album/{photoId}
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 앨범 사진 업로드 요청.
+ * @param photoData  이미지 Base64 문자열 (필수)
+ * @param caption    사진 설명 글 (선택)
+ * @param latitude   GPS 위도 — Android에서 EXIF 추출 후 전달 (선택)
+ * @param longitude  GPS 경도 (선택)
+ * @param takenAt    촬영 시각 ISO 8601 (선택) — "yyyy-MM-dd'T'HH:mm:ss"
+ */
+data class AlbumPhotoUploadRequest(
+    val photoData: String,
+    val caption: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val takenAt: String? = null,
+)
+
+/** 앨범 사진 캡션 수정 요청. null 전달 시 빈 글로 초기화. */
+data class AlbumPhotoUpdateRequest(
+    val caption: String?,
+)
+
+/**
+ * 앨범 사진 응답 — 피드 목록 및 상세 조회에서 반환.
+ * photoData 는 Base64 인코딩된 이미지 문자열.
+ */
+data class AlbumPhotoResponse(
+    val id: Long,
+    val bandId: Long,
+    val uploaderId: Long,
+    val uploaderName: String,
+    val photoData: String,
+    val caption: String?,
+    val latitude: Double?,
+    val longitude: Double?,
+    val takenAt: String?,
+    val uploadedAt: String,
+)
+
+/**
+ * 지도 핀용 경량 응답 — Base64 이미지 제외, 좌표 있는 사진만 반환됨.
+ */
+data class AlbumPhotoMapResponse(
+    val id: Long,
+    val latitude: Double,
+    val longitude: Double,
+    val uploaderName: String,
 )
