@@ -42,9 +42,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
+import android.net.Uri
 import coil3.compose.AsyncImage
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
@@ -480,6 +483,7 @@ private fun PlaceSearchDetailBottomSheet(
     onDismiss: () -> Unit,
     onCartToggle: () -> Unit,
 ) {
+    val context = LocalContext.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = false),
@@ -553,6 +557,22 @@ private fun PlaceSearchDetailBottomSheet(
                     Spacer(Modifier.width(8.dp))
                     Text("장바구니에 담기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
                 }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Google 지도에서 장소 상세 보기
+            OutlinedButton(
+                onClick  = {
+                    val uri = Uri.parse("geo:${place.latitude},${place.longitude}?q=${Uri.encode(place.name)}")
+                    context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape    = RoundedCornerShape(12.dp),
+            ) {
+                Icon(Icons.Outlined.Map, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Google 지도에서 보기", style = MaterialTheme.typography.titleMedium)
             }
         }
     }
