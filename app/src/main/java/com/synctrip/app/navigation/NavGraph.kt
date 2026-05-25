@@ -370,6 +370,8 @@ fun SyncTripNavGraph(
 
             // 허브 탭 선택 상태 — NavGraph에서 관리해야 scheduleReadyEvent와 연동 가능
             var selectedTab by remember { mutableStateOf(BandHubTab.BAND) }
+            // 이전 상태 추적 — GENERATING→TRAVELLING 전환 시에만 탭 자동 전환
+            var prevBandStatus by remember { mutableStateOf<BandStatus?>(null) }
 
             // 진입 시 기본 데이터 로드
             LaunchedEffect(bandIdLong) {
@@ -381,18 +383,20 @@ fun SyncTripNavGraph(
 
             val band = bandUiState.bands.find { it.id == bandIdLong }
 
-            // 밴드 상태 변화 감지 — GENERATING 폴링 시작, TRAVELLING/DONE 일정 탭 자동 전환
+            // 밴드 상태 변화 감지 — GENERATING 폴링 시작, GENERATING→TRAVELLING 전환 시에만 일정 탭 전환
+            // 재진입 시 이미 TRAVELLING/DONE인 경우엔 탭 자동 전환 안 함
             LaunchedEffect(band?.status) {
-                when (band?.status) {
+                val current = band?.status
+                when (current) {
                     BandStatus.GENERATING -> bandViewModel.startGeneratingPoll(bandIdLong)
                     BandStatus.TRAVELLING, BandStatus.DONE -> {
-                        // 이미 일정 탭에 있으면 탭 전환 생략
-                        if (selectedTab == BandHubTab.BAND) {
+                        if (prevBandStatus == BandStatus.GENERATING && selectedTab == BandHubTab.BAND) {
                             selectedTab = BandHubTab.SCHEDULE
                         }
                     }
                     else -> {}
                 }
+                prevBandStatus = current
             }
 
             // scheduleReadyEvent 수신 → 일정 탭 전환 + 데이터 즉시 로드
@@ -468,6 +472,8 @@ fun SyncTripNavGraph(
                             when (transition.currentStatus) {
                                 BandStatus.VOTING     -> navController.navigate("blindVoting/$bandIdLong")
                                 BandStatus.GENERATING -> navController.navigate("aiLoading/$bandIdLong")
+                                // TRAVELLING→DONE: 별도 화면 이동 없이 밴드 상태 갱신으로 UI 자동 반영
+                                BandStatus.DONE       -> bandViewModel.loadBands()
                                 else                  -> {}
                             }
                         }
