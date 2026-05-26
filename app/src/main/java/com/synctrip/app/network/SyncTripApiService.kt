@@ -99,7 +99,6 @@ interface SyncTripApiService {
         @Path("bandId") bandId: Long,
         @Query("keyword") keyword: String? = null,
         @Query("category") category: String? = null,
-        @Query("radiusMeters") radiusMeters: Int = 5000,
     ): List<ApiPlaceSearchResult>
 
     // ── Expense ───────────────────────────────────────────────────────────────

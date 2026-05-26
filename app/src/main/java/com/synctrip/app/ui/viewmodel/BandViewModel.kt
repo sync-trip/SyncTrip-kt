@@ -89,11 +89,24 @@ class BandViewModel : ViewModel() {
         }
     }
 
-    /** 구 앱 checkScheduleReady() 동일 — 일정 API 호출해 days가 있으면 완료 이벤트 발행 */
+    /** 구 앱 checkScheduleReady() 동일 — 일정 API 호출해 days가 있으면 완료 이벤트 발행
+     *  백엔드가 GENERATING → TRAVELLING 자동 전환을 안 해주므로
+     *  일정이 확인되면 advanceBandStatus를 직접 호출해 백엔드 상태도 업데이트 */
     private suspend fun checkScheduleExistsAsBackup(bandId: Long) {
         runCatching { ScheduleRepository.getSchedule(bandId) }
             .onSuccess { schedule ->
                 if (schedule.days.isNotEmpty()) {
+                    // 백엔드 상태도 TRAVELLING으로 전환 (재진입 시 "일정 생성 중" 반복 방지)
+                    runCatching { BandRepository.advanceBandStatus(bandId) }
+                        .onSuccess { transition ->
+                            _uiState.update { state ->
+                                state.copy(
+                                    bands = state.bands.map { b ->
+                                        if (b.id == bandId) b.copy(status = transition.currentStatus) else b
+                                    }
+                                )
+                            }
+                        }
                     _scheduleReadyEvent.tryEmit(Unit)
                     pollingJob?.cancel()
                 }
@@ -119,8 +132,34 @@ class BandViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             runCatching { BandRepository.getBands() }
-                .onSuccess { _uiState.value = _uiState.value.copy(bands = it, isLoading = false) }
+                .onSuccess { bands ->
+                    _uiState.value = _uiState.value.copy(bands = bands, isLoading = false)
+                    // 종료일이 지난 TRAVELLING 밴드는 자동으로 DONE으로 전환
+                    autoAdvanceExpiredBands(bands)
+                }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+        }
+    }
+
+    /** 여행 종료일이 오늘 이전인 TRAVELLING 밴드를 자동으로 DONE으로 전환 */
+    private fun autoAdvanceExpiredBands(bands: List<BandResponse>) {
+        val today = java.time.LocalDate.now()
+        bands.filter { band ->
+            band.status == BandStatus.TRAVELLING &&
+            runCatching { java.time.LocalDate.parse(band.endDate) }.getOrNull()?.isBefore(today) == true
+        }.forEach { band ->
+            viewModelScope.launch {
+                runCatching { BandRepository.advanceBandStatus(band.id) }
+                    .onSuccess { transition ->
+                        _uiState.update { state ->
+                            state.copy(
+                                bands = state.bands.map { b ->
+                                    if (b.id == band.id) b.copy(status = transition.currentStatus) else b
+                                }
+                            )
+                        }
+                    }
+            }
         }
     }
 
@@ -202,7 +241,7 @@ class BandViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(isSearchLoading = true)
             runCatching { BandRepository.searchPlaces(bandId, keyword, category) }
                 .onSuccess { _uiState.value = _uiState.value.copy(searchResults = it, isSearchLoading = false) }
-                .onFailure { _uiState.value = _uiState.value.copy(isSearchLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isSearchLoading = false, error = it.message ?: it.toString()) }
         }
     }
 

@@ -376,6 +376,8 @@ fun SyncTripNavGraph(
 
             // 허브 탭 선택 상태 — NavGraph에서 관리해야 scheduleReadyEvent와 연동 가능
             var selectedTab by remember { mutableStateOf(BandHubTab.BAND) }
+            // 이전 상태 추적 — GENERATING→TRAVELLING 전환 시에만 탭 자동 전환
+            var prevBandStatus by remember { mutableStateOf<BandStatus?>(null) }
 
             // 진입 시 기본 데이터 로드
             LaunchedEffect(bandIdLong) {
@@ -387,18 +389,20 @@ fun SyncTripNavGraph(
 
             val band = bandUiState.bands.find { it.id == bandIdLong }
 
-            // 밴드 상태 변화 감지 — GENERATING 폴링 시작, TRAVELLING/DONE 일정 탭 자동 전환
+            // 밴드 상태 변화 감지 — GENERATING 폴링 시작, GENERATING→TRAVELLING 전환 시에만 일정 탭 전환
+            // 재진입 시 이미 TRAVELLING/DONE인 경우엔 탭 자동 전환 안 함
             LaunchedEffect(band?.status) {
-                when (band?.status) {
+                val current = band?.status
+                when (current) {
                     BandStatus.GENERATING -> bandViewModel.startGeneratingPoll(bandIdLong)
                     BandStatus.TRAVELLING, BandStatus.DONE -> {
-                        // 이미 일정 탭에 있으면 탭 전환 생략
-                        if (selectedTab == BandHubTab.BAND) {
+                        if (prevBandStatus == BandStatus.GENERATING && selectedTab == BandHubTab.BAND) {
                             selectedTab = BandHubTab.SCHEDULE
                         }
                     }
                     else -> {}
                 }
+                prevBandStatus = current
             }
 
             // scheduleReadyEvent 수신 → 일정 탭 전환 + 데이터 즉시 로드
@@ -478,6 +482,8 @@ fun SyncTripNavGraph(
                             when (transition.currentStatus) {
                                 BandStatus.VOTING     -> navController.navigate("blindVoting/$bandIdLong")
                                 BandStatus.GENERATING -> navController.navigate("aiLoading/$bandIdLong")
+                                // TRAVELLING→DONE: 별도 화면 이동 없이 밴드 상태 갱신으로 UI 자동 반영
+                                BandStatus.DONE       -> bandViewModel.loadBands()
                                 else                  -> {}
                             }
                         }
@@ -488,6 +494,10 @@ fun SyncTripNavGraph(
                     onSwapSlot        = { sid, pid -> scheduleViewModel.swapSlot(bandIdLong, sid, pid) },
                     onStartEditing    = { scheduleViewModel.startEditing(bandIdLong) },
                     onFinishEditing   = { scheduleViewModel.finishEditing(bandIdLong) },
+                    planBResults      = scheduleUiState.planBResults,
+                    isPlanBLoading    = scheduleUiState.isPlanBLoading,
+                    onRequestPlanB    = { pid -> scheduleViewModel.loadPlanB(bandIdLong, pid) },
+                    onExecutePlanBSwap = { sid, pid -> scheduleViewModel.executePlanBSwap(bandIdLong, sid, pid) },
                     onSettleClick     = {},
                     onAddExpense      = { itemName, amount, currency, memberIds ->
                         val now = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
@@ -590,39 +600,53 @@ fun SyncTripNavGraph(
             val uiState          by bandViewModel.uiState.collectAsState()
             var query            by remember { mutableStateOf("") }
             var selectedCategory by remember { mutableStateOf(PlaceCategory.ALL) }
+            val snackbarState    = remember { SnackbarHostState() }
 
-            // 진입 시 픽 목록 + 전체 장소 초기 로드
+            // 진입 시 픽 목록만 로드 — 장소 검색은 키워드 입력 후 수동 실행
             LaunchedEffect(bandId) {
                 bandViewModel.loadPicks(bandId)
-                bandViewModel.searchPlaces(bandId)
+            }
+
+            // 검색 에러 스낵바 — 실패 원인을 사용자에게 표시
+            LaunchedEffect(uiState.error) {
+                uiState.error?.let { err ->
+                    snackbarState.showSnackbar(err)
+                    bandViewModel.clearError()
+                }
             }
 
             PlaceSearchScreen(
-                query            = query,
-                onQueryChange    = { query = it },
-                selectedCategory = selectedCategory,
-                onCategoryChange = { cat ->
+                query             = query,
+                onQueryChange     = { query = it },
+                selectedCategory  = selectedCategory,
+                onCategoryChange  = { cat ->
                     selectedCategory = cat
-                    bandViewModel.searchPlaces(
-                        bandId   = bandId,
-                        keyword  = query.takeIf { it.isNotBlank() },
-                        category = if (cat == PlaceCategory.ALL) null else cat.name,
-                    )
+                    // 키워드 없이 카테고리만 바꿔도 API를 호출하지 않음 — keyword 필수 정책
+                    if (query.isNotBlank()) {
+                        bandViewModel.searchPlaces(
+                            bandId   = bandId,
+                            keyword  = query,
+                            category = if (cat == PlaceCategory.ALL) null else cat.name,
+                        )
+                    }
                 },
                 onSearch = {
-                    bandViewModel.searchPlaces(
-                        bandId   = bandId,
-                        keyword  = query.takeIf { it.isNotBlank() },
-                        category = if (selectedCategory == PlaceCategory.ALL) null else selectedCategory.name,
-                    )
+                    if (query.isNotBlank()) {
+                        bandViewModel.searchPlaces(
+                            bandId   = bandId,
+                            keyword  = query,
+                            category = if (selectedCategory == PlaceCategory.ALL) null else selectedCategory.name,
+                        )
+                    }
                 },
-                places           = uiState.searchResults,
-                isLoading        = uiState.isSearchLoading,
-                picks            = uiState.picks?.items ?: emptyList(),
-                maxPickCount     = uiState.picks?.maxCount ?: 5,
-                onPlaceClick     = {},
-                onCartToggle     = { externalId -> bandViewModel.togglePick(bandId, externalId) },
-                onBackClick      = { navController.popBackStack() },
+                places            = uiState.searchResults,
+                isLoading         = uiState.isSearchLoading,
+                picks             = uiState.picks?.items ?: emptyList(),
+                maxPickCount      = uiState.picks?.maxCount ?: 5,
+                onPlaceClick      = {},
+                onCartToggle      = { externalId -> bandViewModel.togglePick(bandId, externalId) },
+                onBackClick       = { navController.popBackStack() },
+                snackbarHostState = snackbarState,
             )
 
             // 장바구니 한도 초과 다이얼로그
@@ -638,7 +662,7 @@ fun SyncTripNavGraph(
             }
         }
 
-        // 투표 화면 — 스와이프 카드 방식, 완료 시 일정 생성 화면으로 이동
+        // 투표 화면 — 스와이프 카드 방식, 전원 완료 시 완료 화면 표시 (자동 이동 없음)
         composable("blindVoting/{bandId}") { backStackEntry ->
             val bandId        = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
             val voteViewModel: VoteViewModel = viewModel()
@@ -650,23 +674,21 @@ fun SyncTripNavGraph(
                 voteViewModel.connectWebSocket(ApiClient.accessToken ?: "", bandId)
             }
 
-            // pendingPlaces 소진 또는 서버 응답 isComplete = 모두 투표 완료
-            val isComplete = uiState.myStatus?.isComplete == true ||
+            // 내 투표 완료 여부: pendingPlaces 소진 또는 서버 응답 isComplete
+            val isMyComplete  = uiState.myStatus?.isComplete == true ||
                 (uiState.pendingPlaces.isEmpty() && uiState.votedPlaces.isNotEmpty())
+            // 전원 투표 완료 여부: 서버 groupStatus 기준
+            val isAllComplete = uiState.groupStatus?.isAllComplete == true
 
             SwipeVotingScreen(
                 pendingPlaces    = uiState.pendingPlaces,
                 votedCount       = uiState.votedPlaces.size,
-                isMyVoteComplete = isComplete,
+                isMyVoteComplete = isMyComplete,
+                isAllComplete    = isAllComplete,
                 isLoading        = uiState.isLoading,
                 onVote           = { placeId, result -> voteViewModel.voteForPlace(placeId, result) },
                 onBackClick      = { navController.popBackStack() },
-                onVotingDone     = {
-                    // 투표 완료 → 일정 생성 로딩 화면으로 이동 (bandId 포함, 투표 화면 백스택 제거)
-                    navController.navigate("aiLoading/$bandId") {
-                        popUpTo("blindVoting/$bandId") { inclusive = true }
-                    }
-                },
+                onVotingDone     = {},
             )
         }
 
@@ -747,7 +769,9 @@ fun SyncTripNavGraph(
                 }
             }
 
-            val destination = bandState.bands.find { it.id == bandId }?.destination ?: "일정"
+            val band        = bandState.bands.find { it.id == bandId }
+            val destination = band?.destination ?: "일정"
+            val isOverseas  = band?.isOverseas ?: false
 
             Scaffold(snackbarHost = { SnackbarHost(snackbarState) }) { _ ->
                 ScheduleScreen(
@@ -757,10 +781,15 @@ fun SyncTripNavGraph(
                     isLoading       = scheduleState.isLoading,
                     isEditing       = scheduleState.isEditing,
                     canEdit         = false,
-                    onStartEditing  = { scheduleViewModel.startEditing(bandId) },
-                    onFinishEditing = { scheduleViewModel.finishEditing(bandId) },
-                    onSwapSlot      = { sid, pid -> scheduleViewModel.swapSlot(bandId, sid, pid) },
-                    onLoadAlts      = { scheduleViewModel.loadAlts(bandId) },
+                    isOverseas      = isOverseas,
+                    onStartEditing      = { scheduleViewModel.startEditing(bandId) },
+                    onFinishEditing     = { scheduleViewModel.finishEditing(bandId) },
+                    onSwapSlot          = { sid, pid -> scheduleViewModel.swapSlot(bandId, sid, pid) },
+                    onLoadAlts          = { scheduleViewModel.loadAlts(bandId) },
+                    planBResults        = scheduleState.planBResults,
+                    isPlanBLoading      = scheduleState.isPlanBLoading,
+                    onRequestPlanB      = { pid -> scheduleViewModel.loadPlanB(bandId, pid) },
+                    onExecutePlanBSwap  = { sid, pid -> scheduleViewModel.executePlanBSwap(bandId, sid, pid) },
                     onBackClick     = { navController.popBackStack() },
                     onShareClick    = {},
                 )

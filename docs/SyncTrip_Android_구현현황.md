@@ -1,5 +1,5 @@
 # SyncTrip Android 클라이언트 구현 현황
-**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-25
+**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-26
 
 > 이 문서는 기능이 구현되거나 수정될 때마다 업데이트합니다.  
 > 기준: `SyncTrip_인수인계문서_v6.md` USR-001 ~ USR-031 + 기존 SyncTrip-Android 앱 기능 동등성
@@ -28,7 +28,7 @@
 | 네트워크 (Retrofit) | ✅ 구현 | `ApiClient` Bearer 자동첨부 + 401 자동 갱신 Authenticator |
 | JWT 토큰 저장소 | ✅ 구현 | `core/TokenDataStore.kt` — DataStore<Preferences> 기반 |
 | WebSocket (STOMP) | ✅ 구현 | `network/VoteStompClient.kt` — OkHttp3 STOMP 직접 구현, VoteViewModel 통합 |
-| 지도 SDK (Google Maps Compose) | ✅ 구현 | 앨범 지도 탭에서 핀 표시용으로 연결. `maps-compose` 의존성 활용 |
+| 지도 SDK (Google Maps Compose) | ✅ 구현 | 앨범 지도 탭 + 일정 지도(ScheduleDayMapView) 두 곳에서 활용. `maps-compose` 의존성 활용 |
 | FCM 클라이언트 | ✅ 구현 | `SyncTripFirebaseService.kt` — 토큰 등록 + 푸시 알림 표시 |
 
 ---
@@ -71,8 +71,8 @@
 
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
-| USR-007 | 장소 검색 UI | ✅ 구현 | `PassportAndSearchScreens.kt` | 카테고리 탭 6개(전체/음식점/관광지/액티비티/쇼핑/자연). 진입 시 자동 로드. 키보드 검색 버튼 클릭 시에만 API 호출(비용 절감) |
-| USR-007 | 해외 장소 검색 API | ✅ 구현 | `BandRepository.searchPlaces()` | 백엔드가 isOverseas 기준으로 카카오/구글 자동 분기 |
+| USR-007 | 장소 검색 UI | ✅ 구현 | `PassportAndSearchScreens.kt` | 카테고리 탭 6개(전체/음식점/관광지/액티비티/쇼핑/자연). 키워드 입력 후 검색 버튼 클릭 시에만 API 호출. 카테고리 탭 전환 시에도 keyword 있을 때만 API 호출(빈 값이면 생략). "지도에서 보기" geo: URI로 기기 설치 지도 앱 선택 |
+| USR-007 | 장소 검색 API | ✅ 구현 | `BandRepository.searchPlaces()` | 국내/해외 모두 Google Places Text Search. keyword 필수(빈 값이면 API 호출 생략). `radiusMeters` 파라미터 제거 |
 | USR-007 | 여행지 인기/검색 API | ✅ 구현 | `NavGraph.kt` createTrip composable | `GET api/destinations/popular` 진입 시 로드. `GET api/destinations/search` 키보드 검색 시에만 호출 |
 | USR-007 | 지도 뷰 | ❌ 미구현 | — | 지도 SDK 미연동 |
 | USR-008 | 장바구니 담기/삭제/목록 | ✅ 구현 | `BandViewModel.togglePick()` | 낙관적 업데이트 — UI 선반영 후 API, 실패 시 롤백. 5개 초과 시 다이얼로그 |
@@ -85,7 +85,7 @@
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
 | USR-010 | 스와이프 투표 UI | ✅ 구현 | `VotingAndSettlementScreens.kt` `SwipeVotingScreen` | 카드 1장씩 표시, 좋아요/싫어요 버튼, 카드 이탈 애니메이션, 진행률 배지 |
-| USR-010 | 투표 API 연결 | ✅ 구현 | `VoteViewModel.voteForPlace()` | placeId 기반 투표. 완료 시 aiLoading 자동 이동 |
+| USR-010 | 투표 API 연결 | ✅ 구현 | `VoteViewModel.voteForPlace()` | placeId 기반 투표. 내 투표 완료 시 대기 UI, 전원 완료(`isAllComplete`) 시 aiLoading 이동 |
 | USR-010 | WebSocket 실시간 투표 | ✅ 구현 | `network/VoteStompClient.kt` + `VoteViewModel.connectWebSocket()` | 투표 화면 진입 시 자동 연결, 이벤트 수신 시 groupStatus 갱신 |
 | USR-010 | 내가 담은 장소 자동 좋아요 | ❌ 미구현 | — | 구 앱에서 구현됨, 미이식 |
 | USR-011 | 카테고리별 순위 풀 표시 | ❌ 미구현 | — | 투표 결과 목록 UI 없음 |
@@ -111,8 +111,8 @@
 | USR-015 | 대체 장소(alts) 카테고리 필터 | ✅ 구현 | `ScheduleScreen.kt` `SlotSwapBottomSheet` | `altOptions`를 `swapSlot.place.category`로 필터링하여 동일 카테고리만 표시 |
 | USR-016 | 이상치 배지 표시 | ❌ 미구현 | — | 배지 UI 없음 |
 | USR-017 | Drag & Drop 순서 변경 | ❌ 미구현 | — | 구 앱도 미구현 |
-| USR-018 | Plan B 대안 팝업 | ❌ 미구현 | — | 구 앱도 미구현 |
-| USR-031 | 실시간 Plan B 추천 | ❌ 미구현 | — | 구 앱도 미구현 |
+| USR-018 | Plan B 대안 팝업 | ✅ 구현 | 2026-05-26 | `ScheduleScreen.kt` `PlanBBottomSheet` — 각 슬롯 카드 아래 "Plan B 추천받기" 버튼, 선택 시 락 획득·교체·락 반환 원자 처리 |
+| USR-031 | 실시간 Plan B 추천 | ✅ 구현 | 2026-05-26 | `ScheduleViewModel.loadPlanB()` → `POST /schedule/plan-b` → `PlanBBottomSheet` 결과 표시 (최대 7개, 거리 표시) |
 
 ---
 
@@ -207,6 +207,7 @@
 | 2026-05-23 | CreateTripScreen 2단계 플로우 재설계. 여행지 검색 + 트리플 스타일 캘린더. PlaceSearchScreen BandViewModel 연결. 장바구니 낙관적 업데이트. USR-007/008 완성 |
 | 2026-05-24 | SwipeVotingScreen 신규 구현 + VoteViewModel 연결. `blindVoting/{bandId}` NavGraph 라우트 추가. USR-010 완성 |
 | 2026-05-24 | AiLoadingScreen 진행률 시뮬레이션 + `aiLoading/{bandId}` 라우트 연결. 투표 완료 → aiLoading 자동 이동 |
+| 2026-05-26 | 투표 완료 조건 수정 — 내 투표 완료 시 즉시 이동하던 버그 수정. 내 투표 완료→대기 UI(CircularProgressIndicator), groupStatus.isAllComplete==true 시에만 aiLoading 이동. USR-010 스펙 준수 |
 | 2026-05-24 | 홈 밴드 카드 최신순 정렬. InviteScreen 신규 분리 + `invite/{bandId}` 라우트. 딥링크 AlertDialog NavHost 밖으로 이동 |
 | 2026-05-24 | 사이드 드로어 전면 리디자인 — 프로필 섹션, D-day 배너, 퀵액션 카드, 회원탈퇴. `GET api/users/me` 연결 |
 | 2026-05-24 | ScheduleViewModel 신규 생성. VoteStompClient 이식 + VoteViewModel WebSocket 통합. NotificationViewModel 신규 생성. BandViewModel.loadSettlement() 추가. Firebase FCM 구현 |
@@ -233,5 +234,9 @@
 | 2026-05-26 | **사이드 드로어 메뉴 확장 + 설정 화면 신규 구현** — 드로어 퀵 액션을 2×2 그리드로 확장(내 여권·코드 참여·알림 설정·프로필 편집). `ProfileAndSettingsScreens.kt` 신규 파일에 `NotificationSettingsScreen`(알림 5종 Switch + PATCH API 낙관적 업데이트) + `ProfileEditScreen`(이름 텍스트필드 + 갤러리 이미지 선택·Base64 인코딩·PUT API). `BandViewModel`에 `loadNotificationSettings·updateNotificationSetting·updateProfile` 추가. NavGraph `notificationSettings`, `profileEdit` 라우트 추가. USR-002, USR-027 완료 |
 
 | 2026-05-26 | **과거 여행 기록 (USR-025)** — `PastTripsScreen` 신규 (`HomeScreen.kt`). 홈 드로어에 "지난 여행" `NavigationDrawerItem` 추가. NavGraph `"pastTrips"` 라우트 추가. DONE 상태 밴드를 최신순으로 표시. 썸네일(없으면 그라디언트 플레이스홀더)·여행기간·인원수·완료 뱃지 카드 구성 |
+| 2026-05-26 | **장소 검색 Google 통일 반영** — `BandRepository.searchPlaces()` `radiusMeters` 파라미터 제거. `SyncTripApiService.searchPlaces()` `@Query("radiusMeters")` 제거. `NavGraph.kt` `onCategoryChange` / `onSearch` keyword 빈 값 가드 추가(빈 상태에서 API 호출 생략). `PassportAndSearchScreens.kt` 바텀시트 "Google 지도에서 보기" → "지도에서 보기". |
 
-**마지막 수정:** 2026-05-26 | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+| 2026-05-26 | **Plan B (USR-018/031)** — `ScheduleViewModel`에 `planBResults`·`isPlanBLoading` 상태 + `loadPlanB()`·`executePlanBSwap()` 함수 추가. `ScheduleScreen`/`ScheduleContent`에 슬롯별 "Plan B 추천받기" 버튼(항상 노출) + `PlanBBottomSheet` + `PlanBOptionCard` 추가. `TripBandHubScreen`·NavGraph(두 call site) Plan B 파라미터 연결. |
+| 2026-05-26 | **일정 지도 뷰 (Option B 분할화면)** — `ScheduleScreen`/`ScheduleContent` else 브랜치를 지도(240dp 고정)·타임라인 분할 레이아웃으로 변경. `ScheduleDayMapView`(Google Maps + 번호 마커), `NumberedMarker`(카테고리 색 원+흰 숫자), `MapPlaceBottomSheet`(썸네일·정보·길찾기 버튼), `openDirections()`(국내=geo: URI 선택기, 해외=Google Maps) 추가. `isOverseas: Boolean` 파라미터 `ScheduleScreen`·`ScheduleContent`·`TripBandHubScreen`·NavGraph 두 call site 전파. |
+
+**마지막 수정:** 2026-05-26 (일정 지도 뷰 구현 완료) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

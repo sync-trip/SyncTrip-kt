@@ -31,7 +31,6 @@ import java.text.NumberFormat
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -44,21 +43,24 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 /**
  * 스와이프 투표 화면.
  * 장소 카드를 한 장씩 보여주며 좋아요(♥) / 싫어요(✗) 버튼으로 투표한다.
- * 모든 장소에 투표가 끝나면 자동으로 onVotingDone이 호출된다.
+ * 내 투표가 끝나면 다른 멤버를 기다리는 UI를 표시하고,
+ * 전원 투표 완료(isAllComplete) 시 완료 화면을 표시한다.
  *
  * @param pendingPlaces    아직 투표하지 않은 장소 목록
  * @param votedCount       이미 투표한 장소 수 (진행 표시용)
  * @param isMyVoteComplete 내 투표가 완전히 끝났는지 여부
+ * @param isAllComplete    방 전원의 투표가 완전히 끝났는지 여부
  * @param isLoading        장소 목록 로딩 중 여부
  * @param onVote           투표 콜백 (placeId, result: 1=좋아요/-1=싫어요)
  * @param onBackClick      뒤로가기
- * @param onVotingDone     모든 투표 완료 후 호출 → 일정 생성 화면으로 이동
+ * @param onVotingDone     전원 투표 완료 감지 시 호출 → 일정 생성 화면으로 이동 (현재 미사용)
  */
 @Composable
 fun SwipeVotingScreen(
     pendingPlaces: List<VotePlaceResponse>,
     votedCount: Int,
     isMyVoteComplete: Boolean,
+    isAllComplete: Boolean,
     isLoading: Boolean,
     onVote: (placeId: Long, result: Int) -> Unit,
     onBackClick: () -> Unit,
@@ -75,14 +77,6 @@ fun SwipeVotingScreen(
     // 새 카드 진입 시 위치 초기화
     LaunchedEffect(currentPlace?.placeId) {
         cardOffsetX.snapTo(0f)
-    }
-
-    // 모든 투표 완료 → 잠깐 완료 UI 표시 후 자동 이동
-    LaunchedEffect(isMyVoteComplete) {
-        if (isMyVoteComplete) {
-            delay(1200)
-            onVotingDone()
-        }
     }
 
     /** 버튼 클릭 → 카드 날리기 애니메이션 → 투표 제출 */
@@ -162,11 +156,19 @@ fun SwipeVotingScreen(
                     contentAlignment = Alignment.Center,
                 ) { PlaneLoadingIndicator() }
 
-                // 모든 투표 완료
+                // 전원 투표 완료 → 완료 화면 표시 (백엔드가 일정 자동 생성)
+                isAllComplete -> Box(
+                    modifier         = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    VotingAllCompleteContent()
+                }
+
+                // 내 투표만 완료 → 다른 멤버 기다리는 중
                 isMyVoteComplete -> Box(
                     modifier         = Modifier.weight(1f),
                     contentAlignment = Alignment.Center,
-                ) { VotingCompleteContent() }
+                ) { VotingWaitingContent() }
 
                 // 투표 중: 카드 + 액션 버튼
                 currentPlace != null -> {
@@ -243,9 +245,9 @@ fun SwipeVotingScreen(
     }
 }
 
-/** 모든 투표 완료 후 보여주는 완료 콘텐츠 */
+/** 내 투표 완료 후 다른 멤버를 기다리는 콘텐츠 */
 @Composable
-private fun VotingCompleteContent() {
+private fun VotingWaitingContent() {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -266,10 +268,51 @@ private fun VotingCompleteContent() {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "일정 생성 화면으로 이동합니다...",
+            "다른 멤버의 투표를 기다리는 중...",
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             ),
+        )
+        Spacer(Modifier.height(24.dp))
+        CircularProgressIndicator(
+            modifier = Modifier.size(32.dp),
+            color    = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+/** 전원 투표 완료 콘텐츠 — 완료 메시지와 스피너 표시, 백엔드가 일정을 자동 생성 */
+@Composable
+private fun VotingAllCompleteContent() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            Icons.Outlined.CheckCircle,
+            null,
+            modifier = Modifier.size(80.dp),
+            tint     = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "전원 투표 완료!",
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontWeight = FontWeight.Bold,
+                color      = MaterialTheme.colorScheme.onSurface,
+            ),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "일정을 생성하고 있어요…",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        )
+        Spacer(Modifier.height(24.dp))
+        CircularProgressIndicator(
+            modifier = Modifier.size(32.dp),
+            color    = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -1116,6 +1159,7 @@ private fun SwipeVotingPreview() {
             pendingPlaces    = previewVotePlaces,
             votedCount       = 2,
             isMyVoteComplete = false,
+            isAllComplete    = false,
             isLoading        = false,
             onVote           = { _, _ -> },
             onBackClick      = {},
@@ -1126,12 +1170,30 @@ private fun SwipeVotingPreview() {
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
-private fun SwipeVotingCompletePreview() {
+private fun SwipeVotingWaitingPreview() {
     SynctripTheme {
         SwipeVotingScreen(
             pendingPlaces    = emptyList(),
             votedCount       = 4,
             isMyVoteComplete = true,
+            isAllComplete    = false,
+            isLoading        = false,
+            onVote           = { _, _ -> },
+            onBackClick      = {},
+            onVotingDone     = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Composable
+private fun SwipeVotingAllCompletePreview() {
+    SynctripTheme {
+        SwipeVotingScreen(
+            pendingPlaces    = emptyList(),
+            votedCount       = 4,
+            isMyVoteComplete = true,
+            isAllComplete    = true,
             isLoading        = false,
             onVote           = { _, _ -> },
             onBackClick      = {},
