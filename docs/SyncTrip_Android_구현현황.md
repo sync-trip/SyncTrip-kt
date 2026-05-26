@@ -71,8 +71,8 @@
 
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
-| USR-007 | 장소 검색 UI | ✅ 구현 | `PassportAndSearchScreens.kt` | 카테고리 탭 6개(전체/음식점/관광지/액티비티/쇼핑/자연). 진입 시 자동 로드. 키보드 검색 버튼 클릭 시에만 API 호출(비용 절감) |
-| USR-007 | 해외 장소 검색 API | ✅ 구현 | `BandRepository.searchPlaces()` | 백엔드가 isOverseas 기준으로 카카오/구글 자동 분기 |
+| USR-007 | 장소 검색 UI | ✅ 구현 | `PassportAndSearchScreens.kt` | 카테고리 탭 6개(전체/음식점/관광지/액티비티/쇼핑/자연). 키워드 입력 후 검색 버튼 클릭 시에만 API 호출. 카테고리 탭 전환 시에도 keyword 있을 때만 API 호출(빈 값이면 생략). "지도에서 보기" geo: URI로 기기 설치 지도 앱 선택 |
+| USR-007 | 장소 검색 API | ✅ 구현 | `BandRepository.searchPlaces()` | 국내/해외 모두 Google Places Text Search. keyword 필수(빈 값이면 API 호출 생략). `radiusMeters` 파라미터 제거 |
 | USR-007 | 여행지 인기/검색 API | ✅ 구현 | `NavGraph.kt` createTrip composable | `GET api/destinations/popular` 진입 시 로드. `GET api/destinations/search` 키보드 검색 시에만 호출 |
 | USR-007 | 지도 뷰 | ❌ 미구현 | — | 지도 SDK 미연동 |
 | USR-008 | 장바구니 담기/삭제/목록 | ✅ 구현 | `BandViewModel.togglePick()` | 낙관적 업데이트 — UI 선반영 후 API, 실패 시 롤백. 5개 초과 시 다이얼로그 |
@@ -85,7 +85,7 @@
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
 | USR-010 | 스와이프 투표 UI | ✅ 구현 | `VotingAndSettlementScreens.kt` `SwipeVotingScreen` | 카드 1장씩 표시, 좋아요/싫어요 버튼, 카드 이탈 애니메이션, 진행률 배지 |
-| USR-010 | 투표 API 연결 | ✅ 구현 | `VoteViewModel.voteForPlace()` | placeId 기반 투표. 완료 시 aiLoading 자동 이동 |
+| USR-010 | 투표 API 연결 | ✅ 구현 | `VoteViewModel.voteForPlace()` | placeId 기반 투표. 내 투표 완료 시 대기 UI, 전원 완료(`isAllComplete`) 시 aiLoading 이동 |
 | USR-010 | WebSocket 실시간 투표 | ✅ 구현 | `network/VoteStompClient.kt` + `VoteViewModel.connectWebSocket()` | 투표 화면 진입 시 자동 연결, 이벤트 수신 시 groupStatus 갱신 |
 | USR-010 | 내가 담은 장소 자동 좋아요 | ❌ 미구현 | — | 구 앱에서 구현됨, 미이식 |
 | USR-011 | 카테고리별 순위 풀 표시 | ❌ 미구현 | — | 투표 결과 목록 UI 없음 |
@@ -207,6 +207,7 @@
 | 2026-05-23 | CreateTripScreen 2단계 플로우 재설계. 여행지 검색 + 트리플 스타일 캘린더. PlaceSearchScreen BandViewModel 연결. 장바구니 낙관적 업데이트. USR-007/008 완성 |
 | 2026-05-24 | SwipeVotingScreen 신규 구현 + VoteViewModel 연결. `blindVoting/{bandId}` NavGraph 라우트 추가. USR-010 완성 |
 | 2026-05-24 | AiLoadingScreen 진행률 시뮬레이션 + `aiLoading/{bandId}` 라우트 연결. 투표 완료 → aiLoading 자동 이동 |
+| 2026-05-26 | 투표 완료 조건 수정 — 내 투표 완료 시 즉시 이동하던 버그 수정. 내 투표 완료→대기 UI(CircularProgressIndicator), groupStatus.isAllComplete==true 시에만 aiLoading 이동. USR-010 스펙 준수 |
 | 2026-05-24 | 홈 밴드 카드 최신순 정렬. InviteScreen 신규 분리 + `invite/{bandId}` 라우트. 딥링크 AlertDialog NavHost 밖으로 이동 |
 | 2026-05-24 | 사이드 드로어 전면 리디자인 — 프로필 섹션, D-day 배너, 퀵액션 카드, 회원탈퇴. `GET api/users/me` 연결 |
 | 2026-05-24 | ScheduleViewModel 신규 생성. VoteStompClient 이식 + VoteViewModel WebSocket 통합. NotificationViewModel 신규 생성. BandViewModel.loadSettlement() 추가. Firebase FCM 구현 |
@@ -223,5 +224,6 @@
 ---
 
 | 2026-05-26 | **공유 앨범 (USR-023)** — `AlbumScreen.kt` 신규 (인스타그램 피드 + Google Maps 지도 핀 탭). `AlbumViewModel`, `AlbumRepository` 신규. `DataModels` 앨범 4개 모델 추가. `SyncTripApiService` 앨범 API 6개 추가. EXIF 메타데이터(위도·경도·촬영시각) 추출. Base64 이미지 업로드. 낙관적 삭제. 지도 핀 클릭 시 피드 탭으로 전환 + 스크롤. `TripBandHubScreen` PHOTO 탭 `AlbumContent` 연결. Google Maps SDK 첫 연결(지도 SDK 미구현 → 구현) |
+| 2026-05-26 | **장소 검색 Google 통일 반영** — `BandRepository.searchPlaces()` `radiusMeters` 파라미터 제거. `SyncTripApiService.searchPlaces()` `@Query("radiusMeters")` 제거. `NavGraph.kt` `onCategoryChange` / `onSearch` keyword 빈 값 가드 추가(빈 상태에서 API 호출 생략). `PassportAndSearchScreens.kt` 바텀시트 "Google 지도에서 보기" → "지도에서 보기". |
 
-**마지막 수정:** 2026-05-26 | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+**마지막 수정:** 2026-05-26 (장소 검색 Google 통일, radiusMeters 제거, NavGraph 빈 keyword 가드) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
