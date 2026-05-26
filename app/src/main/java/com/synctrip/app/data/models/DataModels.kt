@@ -36,6 +36,7 @@ data class RecommendedContent(
     val imageUrl: String,
     val category: String,
     val destination: String,
+    val subtitle: String = "",   // 대표 명소 키워드 (e.g. "신주쿠 · 시부야 · 아키하바라")
 )
 
 data class TripBand(
@@ -228,6 +229,8 @@ data class PassportStamp(
     val visitDate: String,
     val iconName: String,
     val accentColor: StampColor,
+    // 신규 스탬프 판별용 — epoch millis (로컬 비교용)
+    val stampedAtMs: Long = 0L,
 )
 
 enum class StampColor { PRIMARY, SECONDARY, ERROR, TERTIARY, FIXED }
@@ -683,6 +686,19 @@ data class UserProfileResponse(
     val name: String,
     val profileImageUrl: String?,
     val oauthProvider: String,
+)
+
+/**
+ * GET /api/users/me/stamps 응답 (PassportStampResponse record).
+ * stampedAt은 Jackson 설정에 따라 ISO 문자열 또는 배열로 올 수 있어 String으로 받는다.
+ */
+data class ApiPassportStampResponse(
+    val id: Long,
+    val bandId: Long,
+    val bandName: String,
+    val city: String,
+    val countryCode: String,
+    val stampedAt: String,
 )
 
 /** PUT /api/users/me 요청. name은 @NotBlank 필수값. */

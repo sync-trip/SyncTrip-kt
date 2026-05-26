@@ -8,11 +8,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,10 +70,24 @@ fun HomeScreen(
 ) {
     val drawerState      = rememberDrawerState(DrawerValue.Closed)
     val scope            = rememberCoroutineScope()
-    var showLogoutDialog   by remember { mutableStateOf(false) }
-    var showWithdrawDialog by remember { mutableStateOf(false) }
-    var showJoinSheet      by remember { mutableStateOf(false) }
-    var joinCodeInput      by remember { mutableStateOf("") }
+    var showLogoutDialog     by remember { mutableStateOf(false) }
+    var showWithdrawDialog   by remember { mutableStateOf(false) }
+    var showJoinSheet        by remember { mutableStateOf(false) }
+    var joinCodeInput        by remember { mutableStateOf("") }
+    // 추천 여행지 카드 클릭 시 상세 BottomSheet에 표시할 항목
+    var selectedRecommended  by remember { mutableStateOf<RecommendedContent?>(null) }
+
+    // 계절별 섹션 서브타이틀
+    val seasonSubtitle by remember {
+        derivedStateOf {
+            when (java.time.LocalDate.now().monthValue) {
+                3, 4, 5   -> "봄에 떠나기 좋은 여행지를 골라봤어요 🌸"
+                6, 7, 8   -> "시원하게 즐길 수 있는 여름 여행지예요 ☀️"
+                9, 10, 11 -> "단풍과 함께할 가을 여행지예요 🍂"
+                else      -> "따뜻하게 즐길 수 있는 겨울 여행지예요 ❄️"
+            }
+        }
+    }
 
     // 가장 가까운 미래 여행 — D-day 배너에 사용
     val upcomingBand = remember(myTripBands) {
@@ -120,6 +137,145 @@ fun HomeScreen(
                 TextButton(onClick = { showWithdrawDialog = false }) { Text("취소") }
             },
         )
+    }
+
+    // 추천 여행지 상세 팝업 다이얼로그
+    if (selectedRecommended != null) {
+        val dest = selectedRecommended!!
+        val month = java.time.LocalDate.now().monthValue
+        val seasonCopy = when (month) {
+            3, 4, 5   -> "이번 봄에 가기 딱 좋은 여행지예요"
+            6, 7, 8   -> "여름 휴가로 완벽한 선택이에요"
+            9, 10, 11 -> "단풍 물드는 가을에 가면 더 아름다워요"
+            else      -> "겨울에 따뜻하게 즐길 수 있는 여행지예요"
+        }
+        val regionFeature = when (dest.category) {
+            "일본"            -> "🍜 미식  ♨️ 온천  🎌 문화"
+            "동남아시아"      -> "🏖️ 리조트  🌴 열대 자연  🌃 야시장"
+            "유럽"            -> "🏛️ 역사 유적  🎨 감성 거리  🍷 미식"
+            "미주/오세아니아" -> "🗽 도시 라이프  🏔️ 자연 경관  🏄 액티비티"
+            "중화권"          -> "🌃 야경  🥟 식도락  🛍️ 쇼핑"
+            "국내"            -> "🚄 접근 편리  💸 가성비  📸 감성 여행"
+            else              -> "✈️ 이국적인 풍경  🌏 다채로운 문화"
+        }
+        val landmarks = dest.subtitle.split(" · ").filter { it.isNotBlank() }
+
+        Dialog(
+            onDismissRequest = { selectedRecommended = null },
+            properties       = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .wrapContentHeight(),
+                shape  = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            ) {
+                Column {
+                    // 여행지 이미지 (상단)
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
+                        AsyncImage(
+                            model              = dest.imageUrl,
+                            contentDescription = dest.title,
+                            contentScale       = ContentScale.Crop,
+                            modifier           = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+                        )
+                        Box(
+                            modifier = Modifier.fillMaxSize().background(
+                                Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.6f))
+                            ),
+                        )
+                        // 지역 칩 (우측 상단)
+                        Surface(
+                            modifier  = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                            shape     = RoundedCornerShape(50),
+                            color     = MaterialTheme.colorScheme.primary.copy(alpha = 0.88f),
+                        ) {
+                            Text(
+                                text     = dest.category,
+                                style    = MaterialTheme.typography.labelSmall.copy(color = Color.White),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            )
+                        }
+                        // 닫기 버튼 (좌측 상단)
+                        IconButton(
+                            onClick  = { selectedRecommended = null },
+                            modifier = Modifier.align(Alignment.TopStart),
+                        ) {
+                            Icon(Icons.Outlined.Close, "닫기", tint = Color.White)
+                        }
+                        // 제목 + 계절 문구 오버레이 (하단)
+                        Column(
+                            modifier            = Modifier.align(Alignment.BottomStart).padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                text  = dest.title,
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    color = Color.White, fontWeight = FontWeight.Bold,
+                                ),
+                            )
+                            Text(
+                                text  = seasonCopy,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = Color.White.copy(alpha = 0.85f),
+                                ),
+                            )
+                        }
+                    }
+
+                    // 내용 영역
+                    Column(
+                        modifier            = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Text(
+                            text  = regionFeature,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        if (landmarks.isNotEmpty()) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            Text(
+                                text  = "이런 곳이 있어요",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(landmarks.size) { idx ->
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                    ) {
+                                        Text(
+                                            text     = landmarks[idx],
+                                            style    = MaterialTheme.typography.labelMedium.copy(
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            ),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick  = { selectedRecommended = null; onCreateTripClick() },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape    = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(Icons.Outlined.FlightTakeoff, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("이 여행지로 계획 세우기")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // 초대 코드 입력 BottomSheet
@@ -223,8 +379,14 @@ fun HomeScreen(
                             title    = "추천 여행지",
                             modifier = Modifier.padding(horizontal = 20.dp),
                         )
+                        Text(
+                            text     = seasonSubtitle,
+                            style    = MaterialTheme.typography.bodySmall,
+                            color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        )
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(8.dp))
 
                         LazyRow(
                             contentPadding        = PaddingValues(horizontal = 20.dp),
@@ -233,7 +395,7 @@ fun HomeScreen(
                             items(recommendedContent, key = { it.id }) { content ->
                                 RecommendedCard(
                                     content  = content,
-                                    onClick  = { onContentCardClick(content.id) },
+                                    onClick  = { selectedRecommended = content },
                                     modifier = Modifier.width(256.dp),
                                 )
                             }
@@ -566,7 +728,7 @@ private fun RecommendedCard(
     Box(
         modifier = modifier
             .height(320.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
     ) {
         AsyncImage(
@@ -575,27 +737,54 @@ private fun RecommendedCard(
             contentScale       = ContentScale.Crop,
             modifier           = Modifier.fillMaxSize(),
         )
+        // 하단 그라디언트
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         0f   to Color.Transparent,
-                        0.4f to Color.Transparent,
-                        1f   to Color.Black.copy(alpha = 0.75f),
+                        0.35f to Color.Transparent,
+                        1f   to Color.Black.copy(alpha = 0.82f),
                     ),
                 ),
         )
-        Text(
-            text     = content.title,
-            style    = MaterialTheme.typography.titleLarge.copy(
-                color      = Color.White,
-                fontWeight = FontWeight.Bold,
-            ),
+        // 지역 배지 (우측 상단)
+        Surface(
+            modifier  = Modifier.align(Alignment.TopEnd).padding(10.dp),
+            shape     = RoundedCornerShape(50),
+            color     = Color.Black.copy(alpha = 0.45f),
+        ) {
+            Text(
+                text     = content.category,
+                style    = MaterialTheme.typography.labelSmall.copy(color = Color.White),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+        // 하단 텍스트 영역
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(16.dp),
-        )
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text  = content.title,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    color      = Color.White,
+                    fontWeight = FontWeight.Bold,
+                ),
+            )
+            if (content.subtitle.isNotBlank()) {
+                Text(
+                    text  = content.subtitle,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = Color.White.copy(alpha = 0.75f),
+                    ),
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 

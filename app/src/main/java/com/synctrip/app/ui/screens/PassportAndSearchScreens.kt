@@ -1,12 +1,15 @@
 package com.synctrip.app.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -49,6 +52,7 @@ import coil3.compose.AsyncImage
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -465,6 +469,8 @@ fun MyPassportScreen(
     user: UserProfile,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isLoading: Boolean = false,
+    newStampIds: Set<String> = emptySet(),
 ) {
     Scaffold(
         modifier = modifier,
@@ -498,16 +504,24 @@ fun MyPassportScreen(
                 Text("방문한 도시", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(12.dp))
 
-                if (user.passportStamps.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            "아직 방문한 도시가 없어요\n첫 여행을 떠나보세요!",
-                            style     = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center),
-                            textAlign = TextAlign.Center,
-                        )
+                when {
+                    isLoading -> {
+                        Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
-                } else {
-                    PassportStampGrid(stamps = user.passportStamps)
+                    user.passportStamps.isEmpty() -> {
+                        Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                "아직 방문한 도시가 없어요\n첫 여행을 떠나보세요!",
+                                style     = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                    else -> {
+                        PassportStampGrid(stamps = user.passportStamps, newStampIds = newStampIds)
+                    }
                 }
             }
         }
@@ -566,42 +580,158 @@ private fun StatColumn(label: String, value: String) {
     }
 }
 
+/**
+ * 여권 스탬프 그리드.
+ * 진입 시 스탬프마다 순차적으로 도장을 쾅 찍는 애니메이션이 실행된다.
+ * newestStampId 에 해당하는 스탬프는 마지막에 더 강한 바운스 + 잉크 번짐 효과.
+ */
+/**
+ * 여권 스탬프 그리드.
+ * - 기존 스탬프(newStampIds에 없는 것): 즉시 표시, 애니메이션 없음
+ * - 신규 스탬프(newStampIds에 있는 것): 순차 stagger + spring 바운스 + 잉크 번짐
+ * 신규 스탬프는 기존 스탬프가 모두 표시된 뒤 순서대로 쾅쾅 찍힌다.
+ */
 @Composable
-private fun PassportStampGrid(stamps: List<PassportStamp>) {
+private fun PassportStampGrid(
+    stamps: List<PassportStamp>,
+    newStampIds: Set<String> = emptySet(),
+) {
     val rotations = listOf(-4f, 3f, -2f, 5f, -3f, 2f)
 
-    LazyVerticalGrid(
-        columns               = GridCells.Fixed(3),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement   = Arrangement.spacedBy(12.dp),
-        modifier              = Modifier.height((((stamps.size + 2) / 3) * 140).dp),
-        userScrollEnabled     = false,
-    ) {
-        items(stamps, key = { it.id }) { stamp ->
-            val rotation    = rotations[stamps.indexOf(stamp) % rotations.size]
-            val accentColor = when (stamp.accentColor) {
-                StampColor.PRIMARY   -> MaterialTheme.colorScheme.primary
-                StampColor.SECONDARY -> MaterialTheme.colorScheme.secondary
-                StampColor.ERROR     -> MaterialTheme.colorScheme.error
-                StampColor.TERTIARY  -> MaterialTheme.colorScheme.tertiary
-                StampColor.FIXED     -> MaterialTheme.colorScheme.primaryFixedDim
-            }
+    // 신규 스탬프 인덱스만 순차 활성화 (기존 스탬프는 처음부터 true)
+    val stampIds      = stamps.map { it.id }
+    val newStampList  = stamps.filter { it.id in newStampIds }
+    val visibleStates = remember(stampIds) {
+        stamps.map { mutableStateOf(it.id !in newStampIds) }
+    }
 
+    LaunchedEffect(stampIds, newStampIds) {
+        // 신규 스탬프만 stagger 애니메이션 — 300ms 간격으로 쾅쾅
+        newStampList.forEach { newStamp ->
+            val idx = stamps.indexOf(newStamp)
+            if (idx >= 0) {
+                delay(300L * newStampList.indexOf(newStamp))
+                visibleStates[idx].value = true
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        stamps.chunked(3).forEachIndexed { rowIdx, row ->
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                row.forEachIndexed { colIdx, stamp ->
+                    val idx      = rowIdx * 3 + colIdx
+                    val rotation = rotations[idx % rotations.size]
+                    val isNew    = stamp.id in newStampIds
+                    val accentColor = when (stamp.accentColor) {
+                        StampColor.PRIMARY   -> MaterialTheme.colorScheme.primary
+                        StampColor.SECONDARY -> MaterialTheme.colorScheme.secondary
+                        StampColor.ERROR     -> MaterialTheme.colorScheme.error
+                        StampColor.TERTIARY  -> MaterialTheme.colorScheme.tertiary
+                        StampColor.FIXED     -> MaterialTheme.colorScheme.primaryFixedDim
+                    }
+
+                    AnimatedVisibility(
+                        visible = visibleStates[idx].value,
+                        // 기존 스탬프: 즉시 나타남 (fadeIn 0ms). 신규: 도장 쾅 spring 바운스
+                        enter   = if (isNew) {
+                            scaleIn(
+                                initialScale  = 1.7f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness    = Spring.StiffnessMedium,
+                                ),
+                            ) + fadeIn(animationSpec = tween(80))
+                        } else {
+                            fadeIn(animationSpec = tween(0))  // 즉시 표시
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        StampCell(
+                            stamp       = stamp,
+                            rotation    = rotation,
+                            accentColor = accentColor,
+                            isNew       = isNew,
+                        )
+                    }
+                }
+                // 행의 빈 칸 채우기 (3열 고정)
+                repeat(3 - row.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 도장 하나 셀.
+ * isNew=true이면 잉크 번짐 링이 fade-out되는 효과 추가.
+ */
+@Composable
+private fun StampCell(
+    stamp: PassportStamp,
+    rotation: Float,
+    accentColor: Color,
+    isNew: Boolean,
+) {
+    // 잉크 번짐 링 알파 — 신규 스탬프가 찍힌 직후 밝았다가 사라짐
+    val inkAlpha = remember { Animatable(if (isNew) 0.9f else 0f) }
+    if (isNew) {
+        LaunchedEffect(Unit) {
+            delay(250L)
+            inkAlpha.animateTo(0f, animationSpec = tween(durationMillis = 1400))
+        }
+    }
+
+    Box(modifier = Modifier.aspectRatio(1f)) {
+        // 잉크 번짐 링 (신규 스탬프 전용, 점차 사라짐)
+        if (isNew) {
             Box(
                 modifier = Modifier
-                    .aspectRatio(1f)
+                    .fillMaxSize()
                     .rotate(rotation)
-                    .clip(CircleShape)
-                    .border(3.dp, accentColor.copy(alpha = 0.5f), CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.FlightLand, null, tint = accentColor.copy(alpha = 0.7f), modifier = Modifier.size(28.dp))
-                    Text(stamp.cityCode, style = MaterialTheme.typography.titleLarge.copy(color = accentColor.copy(alpha = 0.85f), fontWeight = FontWeight.Bold, fontSize = 16.sp))
-                    Text(stamp.cityName, style = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant), textAlign = TextAlign.Center)
-                    Text(stamp.visitDate, style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)))
-                }
+                    .border(8.dp, accentColor.copy(alpha = inkAlpha.value), CircleShape),
+            )
+        }
+
+        // 스탬프 본체
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .rotate(rotation)
+                .clip(CircleShape)
+                .border(3.dp, accentColor.copy(alpha = 0.5f), CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Outlined.FlightLand,
+                    contentDescription = null,
+                    tint               = accentColor.copy(alpha = 0.7f),
+                    modifier           = Modifier.size(28.dp),
+                )
+                Text(
+                    text  = stamp.cityCode,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        color      = accentColor.copy(alpha = 0.85f),
+                        fontWeight = FontWeight.Bold,
+                        fontSize   = 16.sp,
+                    ),
+                )
+                Text(
+                    text      = stamp.cityName,
+                    style     = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text  = stamp.visitDate,
+                    style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+                )
             }
         }
     }
@@ -756,18 +886,34 @@ private val previewUser = UserProfile(
     nickname        = "Skybound Explorer",
     profileImageUrl = null,
     homeTown        = "Seoul",
-    totalTrips      = 6,
+    totalTrips      = 5,
     passportStamps  = listOf(
-        PassportStamp("s1", "TYO", "Tokyo, JP",  "OCT 2023", "flight_land", StampColor.PRIMARY),
-        PassportStamp("s2", "PAR", "Paris, FR",  "MAY 2023", "train",       StampColor.SECONDARY),
-        PassportStamp("s3", "SYD", "Sydney, AU", "JAN 2024", "sailing",     StampColor.ERROR),
+        PassportStamp("s1", "TYO", "Tokyo, JP",   "OCT 2023", "flight_land", StampColor.PRIMARY),
+        PassportStamp("s2", "PAR", "Paris, FR",   "MAY 2023", "flight_land", StampColor.SECONDARY),
+        PassportStamp("s3", "SYD", "Sydney, AU",  "JAN 2024", "flight_land", StampColor.ERROR),
+        PassportStamp("s4", "BKK", "Bangkok, TH", "MAY 2026", "flight_land", StampColor.TERTIARY),
+        PassportStamp("s5", "NYC", "New York, US","MAY 2026", "flight_land", StampColor.FIXED),
     ),
 )
 
-@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+// 기존 스탬프만 있는 상태
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Passport - 신규 없음")
 @Composable
 private fun MyPassportPreview() {
     SynctripTheme { MyPassportScreen(user = previewUser, onBackClick = {}) }
+}
+
+// ▶ Interactive Mode 버튼 클릭 → s4·s5가 순서대로 쾅쾅 찍히는 애니메이션 확인
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Passport - 신규 스탬프 애니메이션")
+@Composable
+private fun MyPassportStampAnimPreview() {
+    SynctripTheme {
+        MyPassportScreen(
+            user        = previewUser,
+            newStampIds = setOf("s4", "s5"),
+            onBackClick = {},
+        )
+    }
 }
 
 private val previewNotifications = mapOf(

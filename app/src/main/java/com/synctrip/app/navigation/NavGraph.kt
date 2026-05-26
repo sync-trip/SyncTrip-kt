@@ -670,14 +670,45 @@ fun SyncTripNavGraph(
         }
 
         composable("passport") {
+            val context       = LocalContext.current
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState by bandViewModel.uiState.collectAsState()
+
+            // 마지막 여권 열람 시각 — 진입 즉시 읽어서 "신규 기준선"으로 사용
+            var lastVisitedMs by remember { mutableStateOf(Long.MAX_VALUE) }  // MAX = 아직 읽기 전 (모두 기존으로 처리)
+            var visitLoaded   by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) {
+                // 1) 이전 방문 시각 읽기 → 신규 스탬프 판별 기준
+                lastVisitedMs = TokenDataStore.passportLastVisitedFlow(context).first()
+                visitLoaded   = true
+                // 2) 현재 시각으로 갱신 (다음 방문 때 기준이 됨)
+                TokenDataStore.markPassportVisited(context)
+                // 3) 데이터 로드
+                if (uiState.userProfile == null) bandViewModel.loadMyProfile()
+                bandViewModel.loadPassportStamps()
+            }
+
+            // lastVisitedMs 이후에 찍힌 스탬프 ID만 "신규" 처리
+            val newStampIds = remember(uiState.passportStamps, visitLoaded) {
+                if (!visitLoaded) emptySet()
+                else uiState.passportStamps
+                    .filter { it.stampedAtMs > lastVisitedMs }
+                    .map { it.id }
+                    .toSet()
+            }
+
             MyPassportScreen(
                 user = UserProfile(
-                    id              = "",
-                    nickname        = "여행자",
-                    profileImageUrl = null,
+                    id              = uiState.userProfile?.id?.toString() ?: "",
+                    nickname        = uiState.userProfile?.name ?: "여행자",
+                    profileImageUrl = uiState.userProfile?.profileImageUrl,
                     homeTown        = null,
-                    totalTrips      = 0,
+                    totalTrips      = uiState.passportStamps.size,
+                    passportStamps  = uiState.passportStamps,
                 ),
+                newStampIds = newStampIds,
+                isLoading   = uiState.isPassportLoading,
                 onBackClick = { navController.popBackStack() },
             )
         }

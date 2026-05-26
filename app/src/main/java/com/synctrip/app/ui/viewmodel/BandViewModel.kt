@@ -42,6 +42,9 @@ data class BandUiState(
     // 알림 설정
     val notificationSettings: NotificationSettingsResponse? = null,
     val isNotificationSettingsLoading: Boolean = false,
+    // 여권 스탬프 목록 (화면 표시용 UI 모델)
+    val passportStamps: List<PassportStamp> = emptyList(),
+    val isPassportLoading: Boolean = false,
 )
 
 class BandViewModel : ViewModel() {
@@ -410,6 +413,8 @@ class BandViewModel : ViewModel() {
         imageUrl    = thumbnailUrl ?: "",
         category    = region ?: "해외",
         destination = name,
+        // ", "로 구분된 명소 목록 → " · " 구분자로 변환
+        subtitle    = description?.replace(", ", " · ") ?: "",
     )
 
     fun clearError() {
@@ -452,6 +457,78 @@ class BandViewModel : ViewModel() {
                 _uiState.update { it.copy(notificationSettings = current) }
             }
         }
+    }
+
+    /**
+     * GET /api/users/me/stamps — 여권 스탬프 목록 조회.
+     * API는 stampedAt DESC 정렬 → 역순(오래된 것 먼저)으로 변환하여 저장.
+     * 신규 스탬프(마지막 아이템)가 애니메이션 강조 대상이 됨.
+     */
+    fun loadPassportStamps() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isPassportLoading = true) }
+            runCatching { ApiClient.api.getMyStamps() }
+                .onSuccess { apiStamps ->
+                    // DESC → ASC 역순 변환 (오래된 것 먼저, 최신 것이 마지막에 도장 찍힘)
+                    val uiStamps = apiStamps.reversed().mapIndexed { idx, s ->
+                        s.toPassportStamp(colorIndex = idx)
+                    }
+                    _uiState.update { it.copy(passportStamps = uiStamps, isPassportLoading = false) }
+                }
+                .onFailure {
+                    _uiState.update { it.copy(isPassportLoading = false) }
+                }
+        }
+    }
+
+    /**
+     * API 스탬프 응답 → UI PassportStamp 변환.
+     * stampedAt은 ISO 문자열("yyyy-MM-dd'T'HH:mm:ss") 또는 배열("[2023,10,15,...]") 두 형식 모두 처리.
+     */
+    private fun ApiPassportStampResponse.toPassportStamp(colorIndex: Int): PassportStamp {
+        val colors       = StampColor.entries.toTypedArray()
+        val visitDate    = parseStampDate(stampedAt)
+        val stampedAtMs  = parseStampDateMs(stampedAt)
+        return PassportStamp(
+            id          = id.toString(),
+            cityCode    = city.take(3).uppercase(),
+            cityName    = "$city, $countryCode",
+            visitDate   = visitDate,
+            iconName    = "flight_land",
+            accentColor = colors[colorIndex % colors.size],
+            stampedAtMs = stampedAtMs,
+        )
+    }
+
+    /** stampedAt 문자열 → epoch millis (신규 스탬프 판별용) */
+    private fun parseStampDateMs(raw: String): Long {
+        return runCatching {
+            java.time.LocalDateTime.parse(raw)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toInstant().toEpochMilli()
+        }.recoverCatching {
+            val parts = raw.trim('[', ']').split(",")
+            java.time.LocalDateTime.of(
+                parts[0].trim().toInt(), parts[1].trim().toInt(), parts[2].trim().toInt(),
+                parts.getOrNull(3)?.trim()?.toIntOrNull() ?: 0,
+                parts.getOrNull(4)?.trim()?.toIntOrNull() ?: 0,
+            ).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        }.getOrDefault(0L)
+    }
+
+    /** "2023-10-15T12:00:00" 또는 "[2023,10,15,12,0,0]" 양쪽 포맷 모두 파싱 → "OCT 2023" */
+    private fun parseStampDate(raw: String): String {
+        return runCatching {
+            val dt = java.time.LocalDateTime.parse(raw)
+            "${dt.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH).uppercase()} ${dt.year}"
+        }.recoverCatching {
+            // 배열 형식 "[2023,10,15,0,0]" — 연도·월만 추출
+            val parts = raw.trim('[', ']').split(",")
+            val year  = parts[0].trim().toInt()
+            val month = parts[1].trim().toInt()
+            val m = java.time.Month.of(month)
+            "${m.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH).uppercase()} $year"
+        }.getOrDefault("")
     }
 
     /**

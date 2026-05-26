@@ -221,6 +221,12 @@ interface SyncTripApiService {
     @DELETE("api/notifications/{id}")
     suspend fun deleteNotification(@Path("id") notificationId: Long)
 
+    // ── Passport Stamps ───────────────────────────────────────────────────────
+
+    /** 내 여권 스탬프 목록 — stampedAt DESC 정렬 */
+    @GET("api/users/me/stamps")
+    suspend fun getMyStamps(): List<ApiPassportStampResponse>
+
     // ── Notification Settings ─────────────────────────────────────────────────
 
     @GET("api/users/notification-settings")
