@@ -74,6 +74,7 @@ fun PlaceSearchScreen(
     onPlaceClick: (String) -> Unit,
     onCartToggle: (String) -> Unit,
     onBackClick: () -> Unit,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier,
 ) {
     var showCartSheet by remember { mutableStateOf(false) }
@@ -84,6 +85,7 @@ fun PlaceSearchScreen(
 
     Scaffold(
         modifier  = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar    = {
             TopAppBar(
                 title = {

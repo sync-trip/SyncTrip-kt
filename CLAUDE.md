@@ -82,5 +82,5 @@ com/synctrip/app/
 - Card fields: `thumbnailUrl`, `isBookmarked`, `externalId`
 - Category tab order (do not change): ALL → FOOD → CULTURE → ACTIVITY → SHOPPING → NATURE
     - ALL sends `null`; others send their `.name` string
-- On enter: call `bandViewModel.loadPicks(bandId)` + `searchPlaces(bandId)` together
+- On enter: call `bandViewModel.loadPicks(bandId)` only — `searchPlaces` is NOT called on enter (user must type keyword and press search)
 - Cart toggle: `bandViewModel.togglePick(bandId, externalId)` — includes optimistic update

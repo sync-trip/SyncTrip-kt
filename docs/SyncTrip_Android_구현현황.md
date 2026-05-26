@@ -71,7 +71,7 @@
 
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
-| USR-007 | 장소 검색 UI | ✅ 구현 | `PassportAndSearchScreens.kt` | 카테고리 탭 6개(전체/음식점/관광지/액티비티/쇼핑/자연). 진입 시 자동 로드. 키보드 검색 버튼 클릭 시에만 API 호출(비용 절감) |
+| USR-007 | 장소 검색 UI | ✅ 구현 | `PassportAndSearchScreens.kt` | 카테고리 탭 6개(전체/음식점/관광지/액티비티/쇼핑/자연). 진입 시 자동 검색 없음(국내/해외 공통) — 키워드 입력 후 검색 버튼 클릭 시에만 API 호출. 에러 스낵바 표시 |
 | USR-007 | 해외 장소 검색 API | ✅ 구현 | `BandRepository.searchPlaces()` | 백엔드가 isOverseas 기준으로 카카오/구글 자동 분기 |
 | USR-007 | 여행지 인기/검색 API | ✅ 구현 | `NavGraph.kt` createTrip composable | `GET api/destinations/popular` 진입 시 로드. `GET api/destinations/search` 키보드 검색 시에만 호출 |
 | USR-007 | 지도 뷰 | ❌ 미구현 | — | 지도 SDK 미연동 |
