@@ -35,6 +35,8 @@ import com.synctrip.app.ui.viewmodel.ScheduleViewModel
 import com.synctrip.app.ui.viewmodel.VoteViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 
 @Composable
@@ -177,10 +179,11 @@ fun SyncTripNavGraph(
             val bandUiState     by bandViewModel.uiState.collectAsState()
             val snackbarState   = remember { SnackbarHostState() }
 
-            // 화면 진입 시 밴드 목록 + 유저 프로필 로드
+            // 화면 진입 시 밴드 목록 + 유저 프로필 + 추천 여행지 로드
             LaunchedEffect(Unit) {
                 bandViewModel.loadBands()
                 bandViewModel.loadMyProfile()
+                bandViewModel.loadRecommendedDestinations()
             }
 
             // BottomSheet 수동 코드 입력 에러 → 스낵바 표시
@@ -192,7 +195,7 @@ fun SyncTripNavGraph(
             }
 
             HomeScreen(
-                recommendedContent   = emptyList(),
+                recommendedContent   = bandUiState.recommendedDestinations,
                 myTripBands          = bandUiState.bands.reversed().map { it.toTripBand() },
                 userName             = bandUiState.userProfile?.name ?: "",
                 userProfileImageUrl  = bandUiState.userProfile?.profileImageUrl,
@@ -203,6 +206,9 @@ fun SyncTripNavGraph(
                 onTripBandClick      = { bandId -> navController.navigate("tripLobby/$bandId") },
                 onCreateTripClick    = { navController.navigate("createTrip") },
                 onPassportClick      = { navController.navigate("passport") },
+                onAlarmSettingsClick = { navController.navigate("notificationSettings") },
+                onProfileEditClick   = { navController.navigate("profileEdit") },
+                onPastTripsClick     = { navController.navigate("pastTrips") },
                 onJoinWithCode       = { code ->
                     bandViewModel.joinBand(code) { band ->
                         bandViewModel.loadBands()
@@ -420,6 +426,8 @@ fun SyncTripNavGraph(
                         if (bandUiState.settlement == null) {
                             bandViewModel.loadSettlement(bandIdLong)
                         }
+                        // 지출 목록은 탭 진입마다 최신화 (추가/삭제 후 재진입 시 반영)
+                        bandViewModel.loadExpenses(bandIdLong)
                     }
                     BandHubTab.PHOTO -> {
                         // 사진 탭 최초 진입 시 피드 + 지도 핀 로드
@@ -461,6 +469,8 @@ fun SyncTripNavGraph(
                     isScheduleLoading = scheduleUiState.isLoading,
                     isEditing         = scheduleUiState.isEditing,
                     settlement        = bandUiState.settlement,
+                    expenses          = bandUiState.expenses,
+                    isExpensesLoading = bandUiState.isExpensesLoading,
                     selectedTab       = selectedTab,
                     onTabSelected     = { tab -> selectedTab = tab },
                     snackbarHostState = snackbarState,
@@ -484,7 +494,25 @@ fun SyncTripNavGraph(
                     onSwapSlot        = { sid, pid -> scheduleViewModel.swapSlot(bandIdLong, sid, pid) },
                     onStartEditing    = { scheduleViewModel.startEditing(bandIdLong) },
                     onFinishEditing   = { scheduleViewModel.finishEditing(bandIdLong) },
+                    planBResults      = scheduleUiState.planBResults,
+                    isPlanBLoading    = scheduleUiState.isPlanBLoading,
+                    onRequestPlanB    = { pid -> scheduleViewModel.loadPlanB(bandIdLong, pid) },
+                    onExecutePlanBSwap = { sid, pid -> scheduleViewModel.executePlanBSwap(bandIdLong, sid, pid) },
                     onSettleClick     = {},
+                    onAddExpense      = { itemName, amount, currency, memberIds ->
+                        val now = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                        bandViewModel.createExpense(
+                            bandIdLong,
+                            ExpenseCreateRequest(
+                                itemName  = itemName,
+                                amount    = amount,
+                                currency  = currency,
+                                paidAt    = now,
+                                memberIds = memberIds,
+                            ),
+                        )
+                    },
+                    onDeleteExpense   = { expenseId -> bandViewModel.deleteExpense(bandIdLong, expenseId) },
                     // 앨범 탭 연결
                     albumPhotos       = albumUiState.photos,
                     albumMapPins      = albumUiState.mapPins,
@@ -618,6 +646,10 @@ fun SyncTripNavGraph(
                 onPlaceClick      = {},
                 onCartToggle      = { externalId -> bandViewModel.togglePick(bandId, externalId) },
                 onBackClick       = { navController.popBackStack() },
+                onReadyClick      = {
+                    bandViewModel.setReady(bandId)
+                    navController.popBackStack()
+                },
                 snackbarHostState = snackbarState,
             )
 
@@ -638,7 +670,11 @@ fun SyncTripNavGraph(
         composable("blindVoting/{bandId}") { backStackEntry ->
             val bandId        = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
             val voteViewModel: VoteViewModel = viewModel()
+            val bandViewModel: BandViewModel = viewModel()
             val uiState       by voteViewModel.uiState.collectAsState()
+            val bandUiState   by bandViewModel.uiState.collectAsState()
+
+            val voteSnackbarState = remember { SnackbarHostState() }
 
             // 화면 진입 시 투표 장소 로드 + WebSocket 연결
             LaunchedEffect(bandId) {
@@ -646,9 +682,18 @@ fun SyncTripNavGraph(
                 voteViewModel.connectWebSocket(ApiClient.accessToken ?: "", bandId)
             }
 
+            // 투표 실패 에러 스낵바
+            LaunchedEffect(uiState.error) {
+                uiState.error?.let { err ->
+                    voteSnackbarState.showSnackbar(err)
+                    voteViewModel.clearError()
+                }
+            }
+
             // 내 투표 완료 여부: pendingPlaces 소진 또는 서버 응답 isComplete
+            // 로딩 중에는 초기 빈 상태를 완료로 잘못 판단하지 않도록 isLoading 가드 추가
             val isMyComplete  = uiState.myStatus?.isComplete == true ||
-                (uiState.pendingPlaces.isEmpty() && uiState.votedPlaces.isNotEmpty())
+                (!uiState.isLoading && uiState.pendingPlaces.isEmpty() && uiState.votedPlaces.isNotEmpty())
             // 전원 투표 완료 여부: 서버 groupStatus 기준
             val isAllComplete = uiState.groupStatus?.isAllComplete == true
 
@@ -660,19 +705,62 @@ fun SyncTripNavGraph(
                 isLoading        = uiState.isLoading,
                 onVote           = { placeId, result -> voteViewModel.voteForPlace(placeId, result) },
                 onBackClick      = { navController.popBackStack() },
-                onVotingDone     = {},
+                onVotingDone      = {},
+                isOwner           = bandUiState.selectedBand?.isOwner == true,
+                snackbarHostState = voteSnackbarState,
+                onForceClose     = {
+                    bandViewModel.advanceBandStatus(bandId) { transition ->
+                        when (transition.currentStatus) {
+                            BandStatus.GENERATING -> navController.navigate("aiLoading/$bandId") {
+                                popUpTo("blindVoting/$bandId") { inclusive = true }
+                            }
+                            else -> navController.popBackStack()
+                        }
+                    }
+                },
             )
         }
 
         composable("passport") {
+            val context       = LocalContext.current
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState by bandViewModel.uiState.collectAsState()
+
+            // 마지막 여권 열람 시각 — 진입 즉시 읽어서 "신규 기준선"으로 사용
+            var lastVisitedMs by remember { mutableStateOf(Long.MAX_VALUE) }  // MAX = 아직 읽기 전 (모두 기존으로 처리)
+            var visitLoaded   by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) {
+                // 1) 이전 방문 시각 읽기 → 신규 스탬프 판별 기준
+                lastVisitedMs = TokenDataStore.passportLastVisitedFlow(context).first()
+                visitLoaded   = true
+                // 2) 현재 시각으로 갱신 (다음 방문 때 기준이 됨)
+                TokenDataStore.markPassportVisited(context)
+                // 3) 데이터 로드
+                if (uiState.userProfile == null) bandViewModel.loadMyProfile()
+                bandViewModel.loadPassportStamps()
+            }
+
+            // lastVisitedMs 이후에 찍힌 스탬프 ID만 "신규" 처리
+            val newStampIds = remember(uiState.passportStamps, visitLoaded) {
+                if (!visitLoaded) emptySet()
+                else uiState.passportStamps
+                    .filter { it.stampedAtMs > lastVisitedMs }
+                    .map { it.id }
+                    .toSet()
+            }
+
             MyPassportScreen(
                 user = UserProfile(
-                    id              = "",
-                    nickname        = "여행자",
-                    profileImageUrl = null,
+                    id              = uiState.userProfile?.id?.toString() ?: "",
+                    nickname        = uiState.userProfile?.name ?: "여행자",
+                    profileImageUrl = uiState.userProfile?.profileImageUrl,
                     homeTown        = null,
-                    totalTrips      = 0,
+                    totalTrips      = uiState.passportStamps.size,
+                    passportStamps  = uiState.passportStamps,
                 ),
+                newStampIds = newStampIds,
+                isLoading   = uiState.isPassportLoading,
                 onBackClick = { navController.popBackStack() },
             )
         }
@@ -710,7 +798,9 @@ fun SyncTripNavGraph(
                 }
             }
 
-            val destination = bandState.bands.find { it.id == bandId }?.destination ?: "일정"
+            val band        = bandState.bands.find { it.id == bandId }
+            val destination = band?.destination ?: "일정"
+            val isOverseas  = band?.isOverseas ?: false
 
             Scaffold(snackbarHost = { SnackbarHost(snackbarState) }) { _ ->
                 ScheduleScreen(
@@ -720,10 +810,15 @@ fun SyncTripNavGraph(
                     isLoading       = scheduleState.isLoading,
                     isEditing       = scheduleState.isEditing,
                     canEdit         = false,
-                    onStartEditing  = { scheduleViewModel.startEditing(bandId) },
-                    onFinishEditing = { scheduleViewModel.finishEditing(bandId) },
-                    onSwapSlot      = { sid, pid -> scheduleViewModel.swapSlot(bandId, sid, pid) },
-                    onLoadAlts      = { scheduleViewModel.loadAlts(bandId) },
+                    isOverseas      = isOverseas,
+                    onStartEditing      = { scheduleViewModel.startEditing(bandId) },
+                    onFinishEditing     = { scheduleViewModel.finishEditing(bandId) },
+                    onSwapSlot          = { sid, pid -> scheduleViewModel.swapSlot(bandId, sid, pid) },
+                    onLoadAlts          = { scheduleViewModel.loadAlts(bandId) },
+                    planBResults        = scheduleState.planBResults,
+                    isPlanBLoading      = scheduleState.isPlanBLoading,
+                    onRequestPlanB      = { pid -> scheduleViewModel.loadPlanB(bandId, pid) },
+                    onExecutePlanBSwap  = { sid, pid -> scheduleViewModel.executePlanBSwap(bandId, sid, pid) },
                     onBackClick     = { navController.popBackStack() },
                     onShareClick    = {},
                 )
@@ -749,6 +844,57 @@ fun SyncTripNavGraph(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     PlaneLoadingIndicator()
                 }
+            }
+        }
+
+        // ── 알림 설정 화면 ─────────────────────────────────────────────────
+        composable("notificationSettings") {
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState by bandViewModel.uiState.collectAsState()
+            LaunchedEffect(Unit) { bandViewModel.loadNotificationSettings() }
+            NotificationSettingsScreen(
+                settings    = uiState.notificationSettings,
+                isLoading   = uiState.isNotificationSettingsLoading,
+                onToggle    = { type, enabled -> bandViewModel.updateNotificationSetting(type, enabled) },
+                onBackClick = { navController.popBackStack() },
+            )
+        }
+
+        // ── 지난 여행 기록 화면 (USR-025) ───────────────────────────────────
+        composable("pastTrips") {
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState by bandViewModel.uiState.collectAsState()
+            // 밴드 목록이 아직 없으면 로드
+            LaunchedEffect(Unit) { if (uiState.bands.isEmpty()) bandViewModel.loadBands() }
+            PastTripsScreen(
+                // DONE 상태 밴드만 최신순으로 정렬하여 전달
+                pastBands   = uiState.bands.reversed().filter { it.status == BandStatus.DONE },
+                onBandClick = { bandId -> navController.navigate("tripLobby/$bandId") },
+                onBackClick = { navController.popBackStack() },
+            )
+        }
+
+        // ── 프로필 편집 화면 ────────────────────────────────────────────────
+        composable("profileEdit") {
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState by bandViewModel.uiState.collectAsState()
+            val snackbarState = remember { SnackbarHostState() }
+            LaunchedEffect(Unit) { bandViewModel.loadMyProfile() }
+            Scaffold(snackbarHost = { SnackbarHost(snackbarState) }) { _ ->
+                ProfileEditScreen(
+                    initialName            = uiState.userProfile?.name ?: "",
+                    initialProfileImageUrl = uiState.userProfile?.profileImageUrl,
+                    isLoading              = uiState.isLoading,
+                    onSave                 = { name, imageUrl ->
+                        bandViewModel.updateProfile(
+                            name            = name,
+                            profileImageUrl = imageUrl,
+                            onSuccess       = { navController.popBackStack() },
+                            onError         = { msg -> scope.launch { snackbarState.showSnackbar(msg) } },
+                        )
+                    },
+                    onBackClick = { navController.popBackStack() },
+                )
             }
         }
     }

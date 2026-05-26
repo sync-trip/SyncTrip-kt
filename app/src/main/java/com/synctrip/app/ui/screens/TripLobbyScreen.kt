@@ -69,6 +69,8 @@ fun TripBandHubScreen(
     isScheduleLoading: Boolean,
     isEditing: Boolean,
     settlement: Settlement?,
+    expenses: List<com.synctrip.app.data.models.ExpenseResponse>,
+    isExpensesLoading: Boolean,
     selectedTab: BandHubTab,
     onTabSelected: (BandHubTab) -> Unit,
     snackbarHostState: SnackbarHostState,
@@ -84,8 +86,14 @@ fun TripBandHubScreen(
     onSwapSlot: (scheduleId: Long, newPlaceId: Long) -> Unit,
     onStartEditing: () -> Unit,
     onFinishEditing: () -> Unit,
+    planBResults: List<PlanBResponse>,
+    isPlanBLoading: Boolean,
+    onRequestPlanB: (targetPlaceId: Long) -> Unit,
+    onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
     // 정산 탭 콜백
     onSettleClick: (transferId: String) -> Unit,
+    onAddExpense: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+    onDeleteExpense: (expenseId: Long) -> Unit,
     // 사진 탭 — 앨범 상태 + 콜백
     albumPhotos: List<com.synctrip.app.data.models.AlbumPhotoResponse>,
     albumMapPins: List<com.synctrip.app.data.models.AlbumPhotoMapResponse>,
@@ -105,6 +113,8 @@ fun TripBandHubScreen(
 ) {
     // 투표 강제 시작 전 확인 다이얼로그
     var showAdvanceDialog by remember { mutableStateOf(false) }
+    // 픽 수 부족 에러 다이얼로그 — 멤버 수 * 2 미만이면 표시
+    var showInsufficientPicksDialog by remember { mutableStateOf(false) }
     // 방 삭제 확인 다이얼로그
     var showDeleteDialog  by remember { mutableStateOf(false) }
 
@@ -130,6 +140,28 @@ fun TripBandHubScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("취소") }
+            },
+        )
+    }
+
+    // 픽 수 부족 시 투표 시작 차단 팝업
+    val minPicksRequired = members.size * 2
+    val totalPicks = members.sumOf { it.bookmarkCount }
+
+    if (showInsufficientPicksDialog) {
+        AlertDialog(
+            onDismissRequest = { showInsufficientPicksDialog = false },
+            title            = { Text("장소가 부족해요") },
+            text             = {
+                Text(
+                    "투표를 시작하려면 최소 ${minPicksRequired}개의 장소가 필요해요.\n" +
+                    "현재 ${totalPicks}개 담겨 있어요. (멤버 수 × 2 기준)",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showInsufficientPicksDialog = false }) {
+                    Text("확인", color = MaterialTheme.colorScheme.primary)
+                }
             },
         )
     }
@@ -195,7 +227,14 @@ fun TripBandHubScreen(
                     onInviteClick = onInviteClick,
                     onGoToPlaceSearch  = onGoToPlaceSearch,
                     onGoToVoting       = onGoToVoting,
-                    onAdvanceStatusClick = { showAdvanceDialog = true },
+                    onAdvanceStatusClick = {
+                        // 멤버 수 * 2 미만이면 투표 차단
+                        if (totalPicks < minPicksRequired) {
+                            showInsufficientPicksDialog = true
+                        } else {
+                            showAdvanceDialog = true
+                        }
+                    },
                     modifier      = Modifier.fillMaxSize(),
                 )
 
@@ -216,24 +255,36 @@ fun TripBandHubScreen(
                         }
                     } else {
                         ScheduleContent(
-                            schedule        = schedule,
-                            altOptions      = altOptions,
-                            isLoading       = isScheduleLoading,
-                            isEditing       = isEditing,
-                            canEdit         = false,
-                            onStartEditing  = onStartEditing,
-                            onFinishEditing = onFinishEditing,
-                            onSwapSlot      = onSwapSlot,
-                            onLoadAlts      = onLoadAlts,
-                            modifier        = Modifier.fillMaxSize(),
+                            schedule            = schedule,
+                            altOptions          = altOptions,
+                            planBResults        = planBResults,
+                            isPlanBLoading      = isPlanBLoading,
+                            isLoading           = isScheduleLoading,
+                            isEditing           = isEditing,
+                            canEdit             = false,
+                            isOverseas          = band.isOverseas,
+                            onStartEditing      = onStartEditing,
+                            onFinishEditing     = onFinishEditing,
+                            onSwapSlot          = onSwapSlot,
+                            onLoadAlts          = onLoadAlts,
+                            onRequestPlanB      = onRequestPlanB,
+                            onExecutePlanBSwap  = onExecutePlanBSwap,
+                            modifier            = Modifier.fillMaxSize(),
                         )
                     }
                 }
 
                 BandHubTab.SETTLEMENT -> SettlementContent(
-                    settlement    = settlement,
-                    onSettleClick = onSettleClick,
-                    modifier      = Modifier.fillMaxSize(),
+                    bandId            = band.id,
+                    settlement        = settlement,
+                    expenses          = expenses,
+                    members           = members,
+                    currentUserId     = currentUserId,
+                    isExpensesLoading = isExpensesLoading,
+                    onAddExpense      = onAddExpense,
+                    onDeleteExpense   = onDeleteExpense,
+                    onSettleClick     = onSettleClick,
+                    modifier          = Modifier.fillMaxSize(),
                 )
 
                 BandHubTab.PHOTO -> AlbumContent(
@@ -1042,27 +1093,16 @@ private fun MyStatusSection(
             }
 
             if (!isReady) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick  = onSearchClick,
-                        modifier = Modifier.weight(1f),
-                        shape    = RoundedCornerShape(12.dp),
-                    ) {
-                        Icon(Icons.Outlined.Search, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("장소 탐색")
-                    }
-                    // 장바구니 1개 이상이어야 Ready 가능 (인수인계 문서 §4 조건)
-                    Button(
-                        onClick  = onReadyClick,
-                        enabled  = count >= 1,
-                        modifier = Modifier.weight(1f),
-                        shape    = RoundedCornerShape(12.dp),
-                    ) {
-                        Icon(Icons.Outlined.Check, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("준비 완료")
-                    }
+                // 장바구니 1개 이상이어야 Ready 가능 (인수인계 문서 §4 조건)
+                Button(
+                    onClick  = onReadyClick,
+                    enabled  = count >= 1,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Outlined.Check, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("준비 완료", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                 }
             }
         }

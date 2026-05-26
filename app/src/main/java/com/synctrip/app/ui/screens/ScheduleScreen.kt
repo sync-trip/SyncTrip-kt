@@ -1,5 +1,9 @@
 package com.synctrip.app.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -20,12 +24,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.*
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
@@ -47,18 +56,22 @@ import com.synctrip.app.ui.theme.SynctripTheme
  * 상태 호이스팅: 모든 데이터·비즈니스 상태는 ViewModel(상위)에서 주입.
  * 순수 UI 상태(선택 탭, 바텀시트 열림 여부)만 내부에서 관리.
  *
- * @param destination     툴바에 표시할 여행지 (예: "도쿄, 일본")
- * @param schedule        전체 일정; null이면 로딩 중 또는 미생성
- * @param altOptions      교체 선택 중인 슬롯의 대체 후보 목록
- * @param isLoading       일정 API 요청 진행 중
- * @param isEditing       현재 사용자가 서버 편집 락을 보유 중
- * @param canEdit         편집 가능 여부 (밴드 오너 + 상태 TRAVELLING)
- * @param onStartEditing  POST /edit/start
- * @param onFinishEditing POST /edit/finish
- * @param onSwapSlot      POST /swap — (scheduleId, newPlaceId) 전달
- * @param onLoadAlts      GET /alts 트리거 — ViewModel이 altOptions 업데이트
- * @param onBackClick     뒤로 이동
- * @param onShareClick    일정 공유
+ * @param destination          툴바에 표시할 여행지 (예: "도쿄, 일본")
+ * @param schedule             전체 일정; null이면 로딩 중 또는 미생성
+ * @param altOptions           교체 선택 중인 슬롯의 대체 후보 목록
+ * @param planBResults         Plan B 추천 결과 목록
+ * @param isPlanBLoading       Plan B 추천 API 진행 중
+ * @param isLoading            일정 API 요청 진행 중
+ * @param isEditing            현재 사용자가 서버 편집 락을 보유 중
+ * @param canEdit              편집 가능 여부 (밴드 오너 + 상태 TRAVELLING)
+ * @param onStartEditing       POST /edit/start
+ * @param onFinishEditing      POST /edit/finish
+ * @param onSwapSlot           POST /swap — (scheduleId, newPlaceId) 전달
+ * @param onLoadAlts           GET /alts 트리거 — ViewModel이 altOptions 업데이트
+ * @param onRequestPlanB       POST /plan-b 트리거 — (targetPlaceId) 전달
+ * @param onExecutePlanBSwap   Plan B 교체 실행 — 락 획득·교체·반환 원자적 처리
+ * @param onBackClick          뒤로 이동
+ * @param onShareClick         일정 공유
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,13 +79,18 @@ fun ScheduleScreen(
     destination: String,
     schedule: ScheduleResponse?,
     altOptions: List<ScheduleAltResponse>,
+    planBResults: List<PlanBResponse>,
+    isPlanBLoading: Boolean,
     isLoading: Boolean,
     isEditing: Boolean,
     canEdit: Boolean,
+    isOverseas: Boolean,
     onStartEditing: () -> Unit,
     onFinishEditing: () -> Unit,
     onSwapSlot: (scheduleId: Long, newPlaceId: Long) -> Unit,
     onLoadAlts: (scheduleId: Long) -> Unit,
+    onRequestPlanB: (targetPlaceId: Long) -> Unit,
+    onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
     onBackClick: () -> Unit,
     onShareClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -80,6 +98,8 @@ fun ScheduleScreen(
     var selectedDayIndex by remember { mutableIntStateOf(0) }
     var detailSlot by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
     var showSwapSheet by remember { mutableStateOf(false) }
+    var showPlanBSheet by remember { mutableStateOf(false) }
+    var planBTargetSlot by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
 
     Scaffold(
         modifier = modifier,
@@ -151,25 +171,43 @@ fun ScheduleScreen(
                 schedule == null || days.isEmpty() -> ScheduleEmptyContent(modifier = Modifier.fillMaxSize())
                 else -> {
                     val dayIndex = selectedDayIndex.coerceIn(0, days.lastIndex)
-                    SlotTimeline(
-                        slots = days[dayIndex].slots,
-                        isEditing = isEditing,
-                        onSlotClick = { slot -> detailSlot = slot },
-                        onSwapClick = { slot ->
-                            detailSlot = slot
-                            onLoadAlts(slot.scheduleId)
-                            showSwapSheet = true
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    val currentSlots = days[dayIndex].slots
+                    // 지도(240dp 고정) + 타임라인 분할 화면
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        ScheduleDayMapView(
+                            slots      = currentSlots,
+                            isOverseas = isOverseas,
+                            modifier   = Modifier
+                                .fillMaxWidth()
+                                .height(240.dp),
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        SlotTimeline(
+                            slots          = currentSlots,
+                            isEditing      = isEditing,
+                            isPlanBLoading = isPlanBLoading,
+                            onSlotClick    = { slot -> detailSlot = slot },
+                            onSwapClick    = { slot ->
+                                detailSlot = slot
+                                onLoadAlts(slot.scheduleId)
+                                showSwapSheet = true
+                            },
+                            onPlanBClick   = { slot ->
+                                planBTargetSlot = slot
+                                showPlanBSheet  = true
+                                onRequestPlanB(slot.place.placeId)
+                            },
+                            modifier       = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
         }
     }
 
-    // 장소 상세 바텀시트 (swap 시트가 닫혀 있을 때만 표시)
+    // 장소 상세 바텀시트 (swap/planB 시트가 닫혀 있을 때만 표시)
     val activeDetailSlot = detailSlot
-    if (activeDetailSlot != null && !showSwapSheet) {
+    if (activeDetailSlot != null && !showSwapSheet && !showPlanBSheet) {
         PlaceDetailBottomSheet(
             slot = activeDetailSlot,
             isEditing = isEditing,
@@ -195,6 +233,25 @@ fun ScheduleScreen(
                 onSwapSlot(swapSlot.scheduleId, newPlaceId)
                 showSwapSheet = false
                 detailSlot = null
+            },
+        )
+    }
+
+    // Plan B 추천 바텀시트
+    val planBSlot = planBTargetSlot
+    if (showPlanBSheet && planBSlot != null) {
+        PlanBBottomSheet(
+            slot = planBSlot,
+            results = planBResults,
+            isLoading = isPlanBLoading,
+            onDismiss = {
+                showPlanBSheet  = false
+                planBTargetSlot = null
+            },
+            onSelect = { newPlaceId ->
+                onExecutePlanBSwap(planBSlot.scheduleId, newPlaceId)
+                showPlanBSheet  = false
+                planBTargetSlot = null
             },
         )
     }
@@ -294,8 +351,10 @@ private fun EditingBanner() {
 private fun SlotTimeline(
     slots: List<ScheduleSlotResponse>,
     isEditing: Boolean,
+    isPlanBLoading: Boolean,
     onSlotClick: (ScheduleSlotResponse) -> Unit,
     onSwapClick: (ScheduleSlotResponse) -> Unit,
+    onPlanBClick: (ScheduleSlotResponse) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (slots.isEmpty()) {
@@ -318,8 +377,10 @@ private fun SlotTimeline(
             ScheduleSlotItem(
                 slot = slot,
                 isEditing = isEditing,
+                isPlanBLoading = isPlanBLoading,
                 onClick = { onSlotClick(slot) },
                 onSwapClick = { onSwapClick(slot) },
+                onPlanBClick = { onPlanBClick(slot) },
             )
         }
     }
@@ -373,8 +434,10 @@ private fun TravelTimeConnector(
 private fun ScheduleSlotItem(
     slot: ScheduleSlotResponse,
     isEditing: Boolean,
+    isPlanBLoading: Boolean,
     onClick: () -> Unit,
     onSwapClick: () -> Unit,
+    onPlanBClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -388,15 +451,49 @@ private fun ScheduleSlotItem(
             time = slot.startTime,
         )
         Spacer(Modifier.width(10.dp))
-        ScheduleSlotCard(
-            slot = slot,
-            isEditing = isEditing,
-            onClick = onClick,
-            onSwapClick = onSwapClick,
-            modifier = Modifier
-                .weight(1f)
-                .padding(bottom = 4.dp),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            ScheduleSlotCard(
+                slot = slot,
+                isEditing = isEditing,
+                onClick = onClick,
+                onSwapClick = onSwapClick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp),
+            )
+            // 슬롯 카드 아래 Plan B 추천 버튼 — 항상 노출
+            OutlinedButton(
+                onClick = onPlanBClick,
+                enabled = !isPlanBLoading,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                contentPadding = PaddingValues(vertical = 8.dp),
+            ) {
+                if (isPlanBLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.Explore,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Plan B 추천받기",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = MaterialTheme.colorScheme.primary,
+                    ),
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+        }
     }
 }
 
@@ -801,6 +898,461 @@ private fun AltOptionCard(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Plan B Bottom Sheet — 근처 대안 장소 추천 목록
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Plan B 추천 바텀시트.
+ * 현재 슬롯 장소의 위경도 기준으로 1~3km 반경 내 동일 카테고리 대안 장소를 최대 7개 표시한다.
+ * 장소 선택 시 onSelect 콜백으로 newPlaceId 전달 → ViewModel이 락 획득·교체·반환을 처리한다.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlanBBottomSheet(
+    slot: ScheduleSlotResponse,
+    results: List<PlanBResponse>,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (newPlaceId: Long) -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Plan B 추천",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    )
+                    Text(
+                        "${slot.place.name} 대신 방문할 근처 장소",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Outlined.Close, contentDescription = "닫기")
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(12.dp))
+
+            when {
+                isLoading -> {
+                    // 추천 API 호출 중
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(160.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                "주변 대안 장소를 찾는 중…",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
+                    }
+                }
+                results.isEmpty() -> {
+                    // 추천 결과 없음
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(160.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Outlined.SearchOff, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(48.dp),
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                "근처에 추천 가능한 장소가 없습니다",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        results.forEach { result ->
+                            PlanBOptionCard(
+                                result = result,
+                                onSelect = { onSelect(result.placeId) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Plan B 추천 결과 카드 한 장 */
+@Composable
+private fun PlanBOptionCard(
+    result: PlanBResponse,
+    onSelect: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AsyncImage(
+                model = result.placeInfo.thumbnailUrl,
+                contentDescription = result.placeInfo.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(
+                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                CategoryChip(category = result.placeInfo.category)
+                Text(
+                    text = result.placeInfo.name,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                result.placeInfo.address?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    result.placeInfo.rating?.let { rating ->
+                        MetaBadge(
+                            icon = Icons.Outlined.Star,
+                            iconTint = MaterialTheme.colorScheme.secondary,
+                            label = "%.1f".format(rating),
+                        )
+                    }
+                    // 거리 정보 — 소수점 1자리까지 표시
+                    MetaBadge(
+                        icon = Icons.Outlined.NearMe,
+                        label = "%.1fkm".format(result.distanceKmToTarget),
+                    )
+                }
+            }
+            Button(
+                onClick = onSelect,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+            ) {
+                Text("선택", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schedule Day Map View — 당일 슬롯을 번호 핀으로 표시하는 지도 (240dp 고정 높이)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 현재 선택된 날짜의 슬롯 장소를 순번 마커로 지도에 표시한다.
+ * 마커 탭 시 길찾기 버튼이 포함된 바텀시트를 띄운다.
+ * 위경도가 없는 슬롯은 마커를 렌더링하지 않는다.
+ *
+ * @param slots      현재 날짜의 슬롯 목록
+ * @param isOverseas 해외 여행 여부 — 길찾기 앱 분기에 사용
+ */
+@Composable
+private fun ScheduleDayMapView(
+    slots: List<ScheduleSlotResponse>,
+    isOverseas: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+
+    // 위경도가 있는 슬롯만 마커로 사용
+    val validSlots = remember(slots) {
+        slots.filter { it.place.latitude != 0.0 && it.place.longitude != 0.0 }
+    }
+
+    // 탭된 슬롯 — 길찾기 바텀시트 표시용
+    var tappedSlot by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
+
+    // 지도 카메라 상태
+    val cameraPositionState = rememberCameraPositionState()
+
+    // 슬롯 목록이 바뀔 때마다 카메라를 첫 번째 유효 슬롯 위치로 이동
+    LaunchedEffect(validSlots) {
+        if (validSlots.isNotEmpty()) {
+            val first = validSlots.first()
+            cameraPositionState.animate(
+                CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.fromLatLngZoom(
+                        LatLng(first.place.latitude, first.place.longitude),
+                        14f,
+                    )
+                )
+            )
+        }
+    }
+
+    Box(modifier = modifier) {
+        if (validSlots.isEmpty()) {
+            // 위경도 데이터 없으면 안내 문구
+            Box(
+                modifier          = Modifier.fillMaxSize(),
+                contentAlignment  = Alignment.Center,
+            ) {
+                Text(
+                    "지도 정보를 불러올 수 없습니다",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            }
+        } else {
+            GoogleMap(
+                modifier             = Modifier.fillMaxSize(),
+                cameraPositionState  = cameraPositionState,
+                uiSettings           = MapUiSettings(
+                    zoomControlsEnabled  = false,
+                    myLocationButtonEnabled = false,
+                ),
+            ) {
+                validSlots.forEachIndexed { index, slot ->
+                    val position = LatLng(slot.place.latitude, slot.place.longitude)
+                    MarkerComposable(
+                        keys     = arrayOf(slot.scheduleId, index),
+                        state    = rememberMarkerState(position = position),
+                        onClick  = { _ ->
+                            tappedSlot = slot
+                            true
+                        },
+                    ) {
+                        // 카테고리 색 원 안에 흰 숫자 — 순번 표시
+                        NumberedMarker(
+                            number   = index + 1,
+                            category = slot.place.category,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // 마커 탭 → 장소 미니 바텀시트
+    tappedSlot?.let { slot ->
+        MapPlaceBottomSheet(
+            slot       = slot,
+            isOverseas = isOverseas,
+            onDismiss  = { tappedSlot = null },
+            onNavigate = { lat, lng, name ->
+                openDirections(context, lat, lng, name, isOverseas)
+                tappedSlot = null
+            },
+        )
+    }
+}
+
+/**
+ * 타임라인 순번을 표시하는 지도 마커.
+ * 카테고리 색 원 + 흰 테두리 + 흰 숫자로 구성된다.
+ */
+@Composable
+private fun NumberedMarker(
+    number: Int,
+    category: ApiPlaceCategory,
+) {
+    val dotColor = category.color()
+    Box(
+        modifier         = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(dotColor)
+            .border(2.dp, Color.White, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text      = number.toString(),
+            style     = MaterialTheme.typography.labelMedium.copy(
+                color      = Color.White,
+                fontWeight = FontWeight.Bold,
+            ),
+        )
+    }
+}
+
+/**
+ * 지도 마커 탭 시 표시되는 미니 바텀시트.
+ * 장소 이름·카테고리·주소·평점과 길찾기 버튼을 제공한다.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MapPlaceBottomSheet(
+    slot: ScheduleSlotResponse,
+    isOverseas: Boolean,
+    onDismiss: () -> Unit,
+    onNavigate: (lat: Double, lng: Double, name: String) -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor   = MaterialTheme.colorScheme.surface,
+        shape            = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp),
+        ) {
+            // 썸네일 (있을 때만)
+            slot.place.thumbnailUrl?.let { url ->
+                AsyncImage(
+                    model             = url,
+                    contentDescription = slot.place.name,
+                    contentScale      = ContentScale.Crop,
+                    modifier          = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
+            CategoryChip(category = slot.place.category)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text  = slot.place.name,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color      = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
+
+            slot.place.address?.let { addr ->
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Outlined.LocationOn,
+                        contentDescription = null,
+                        tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier           = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text     = addr,
+                        style    = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines = 2,
+                    )
+                }
+            }
+
+            slot.place.rating?.let { rating ->
+                Spacer(Modifier.height(4.dp))
+                MetaBadge(
+                    icon     = Icons.Outlined.Star,
+                    iconTint = MaterialTheme.colorScheme.secondary,
+                    label    = "%.1f".format(rating),
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Button(
+                onClick  = {
+                    onNavigate(slot.place.latitude, slot.place.longitude, slot.place.name)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape    = RoundedCornerShape(12.dp),
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                ),
+            ) {
+                Icon(Icons.Outlined.Directions, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "길찾기",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 장소 길찾기를 외부 앱으로 열어준다.
+ * - 국내: geo: URI → 시스템 앱 선택기 (카카오맵·네이버지도 등 포함)
+ * - 해외: Google Maps 강제 실행, 미설치 시 브라우저 폴백
+ */
+private fun openDirections(
+    context: Context,
+    lat: Double,
+    lng: Double,
+    name: String,
+    isOverseas: Boolean,
+) {
+    if (isOverseas) {
+        // 해외 → Google Maps URI
+        val uri    = Uri.parse("google.navigation:q=$lat,$lng&mode=d")
+        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+            setPackage("com.google.android.apps.maps")
+        }
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+        } else {
+            // Google Maps 미설치 시 브라우저로 폴백
+            val webUri     = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng")
+            val webIntent  = Intent(Intent.ACTION_VIEW, webUri)
+            context.startActivity(webIntent)
+        }
+    } else {
+        // 국내 → geo: URI (시스템 앱 선택기 — 카카오·네이버·구글 모두 처리)
+        val geoUri = Uri.parse("geo:$lat,$lng?q=$lat,$lng(${Uri.encode(name)})")
+        val intent = Intent(Intent.ACTION_VIEW, geoUri)
+        context.startActivity(Intent.createChooser(intent, "길찾기 앱 선택"))
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Loading / Empty States
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -890,18 +1442,25 @@ private fun String.toShortDate(): String {
 internal fun ScheduleContent(
     schedule: ScheduleResponse?,
     altOptions: List<ScheduleAltResponse>,
+    planBResults: List<PlanBResponse>,
+    isPlanBLoading: Boolean,
     isLoading: Boolean,
     isEditing: Boolean,
     canEdit: Boolean,
+    isOverseas: Boolean,
     onStartEditing: () -> Unit,
     onFinishEditing: () -> Unit,
     onSwapSlot: (scheduleId: Long, newPlaceId: Long) -> Unit,
     onLoadAlts: (scheduleId: Long) -> Unit,
+    onRequestPlanB: (targetPlaceId: Long) -> Unit,
+    onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedDayIndex by remember { mutableIntStateOf(0) }
     var detailSlot by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
     var showSwapSheet by remember { mutableStateOf(false) }
+    var showPlanBSheet by remember { mutableStateOf(false) }
+    var planBTargetSlot by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
 
     val days = schedule?.days ?: emptyList()
 
@@ -919,30 +1478,48 @@ internal fun ScheduleContent(
         // 편집 중 배너
         if (isEditing) EditingBanner()
 
-        // 주요 콘텐츠 (로딩·빈상태·타임라인)
+        // 주요 콘텐츠 (로딩·빈상태·지도+타임라인 분할)
         when {
             isLoading                          -> ScheduleLoadingContent(modifier = Modifier.weight(1f))
             schedule == null || days.isEmpty() -> ScheduleEmptyContent(modifier = Modifier.weight(1f))
             else -> {
-                val dayIndex = selectedDayIndex.coerceIn(0, days.lastIndex)
-                SlotTimeline(
-                    slots       = days[dayIndex].slots,
-                    isEditing   = isEditing,
-                    onSlotClick  = { slot -> detailSlot = slot },
-                    onSwapClick  = { slot ->
-                        detailSlot = slot
-                        onLoadAlts(slot.scheduleId)
-                        showSwapSheet = true
-                    },
-                    modifier = Modifier.weight(1f),
-                )
+                val dayIndex     = selectedDayIndex.coerceIn(0, days.lastIndex)
+                val currentSlots = days[dayIndex].slots
+                // 지도(240dp 고정) + 타임라인 분할 화면
+                Column(modifier = Modifier.weight(1f)) {
+                    ScheduleDayMapView(
+                        slots      = currentSlots,
+                        isOverseas = isOverseas,
+                        modifier   = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp),
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    SlotTimeline(
+                        slots          = currentSlots,
+                        isEditing      = isEditing,
+                        isPlanBLoading = isPlanBLoading,
+                        onSlotClick    = { slot -> detailSlot = slot },
+                        onSwapClick    = { slot ->
+                            detailSlot = slot
+                            onLoadAlts(slot.scheduleId)
+                            showSwapSheet = true
+                        },
+                        onPlanBClick   = { slot ->
+                            planBTargetSlot = slot
+                            showPlanBSheet  = true
+                            onRequestPlanB(slot.place.placeId)
+                        },
+                        modifier       = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }
 
     // 장소 상세 바텀시트
     val activeDetailSlot = detailSlot
-    if (activeDetailSlot != null && !showSwapSheet) {
+    if (activeDetailSlot != null && !showSwapSheet && !showPlanBSheet) {
         PlaceDetailBottomSheet(
             slot        = activeDetailSlot,
             isEditing   = isEditing,
@@ -968,6 +1545,25 @@ internal fun ScheduleContent(
                 onSwapSlot(swapSlot.scheduleId, newPlaceId)
                 showSwapSheet = false
                 detailSlot    = null
+            },
+        )
+    }
+
+    // Plan B 추천 바텀시트
+    val planBSlot = planBTargetSlot
+    if (showPlanBSheet && planBSlot != null) {
+        PlanBBottomSheet(
+            slot = planBSlot,
+            results = planBResults,
+            isLoading = isPlanBLoading,
+            onDismiss = {
+                showPlanBSheet = false
+                planBTargetSlot = null
+            },
+            onSelect = { newPlaceId ->
+                onExecutePlanBSwap(planBSlot.scheduleId, newPlaceId)
+                showPlanBSheet = false
+                planBTargetSlot = null
             },
         )
     }
@@ -1028,9 +1624,11 @@ private fun ScheduleScreenPreview() {
             destination = "도쿄, 일본",
             schedule = previewSchedule,
             altOptions = emptyList(),
-            isLoading = false, isEditing = false, canEdit = true,
+            planBResults = emptyList(), isPlanBLoading = false,
+            isLoading = false, isEditing = false, canEdit = true, isOverseas = true,
             onStartEditing = {}, onFinishEditing = {},
             onSwapSlot = { _, _ -> }, onLoadAlts = {},
+            onRequestPlanB = {}, onExecutePlanBSwap = { _, _ -> },
             onBackClick = {}, onShareClick = {},
         )
     }
@@ -1044,9 +1642,11 @@ private fun ScheduleScreenEditingPreview() {
             destination = "도쿄, 일본",
             schedule = previewSchedule,
             altOptions = emptyList(),
-            isLoading = false, isEditing = true, canEdit = true,
+            planBResults = emptyList(), isPlanBLoading = false,
+            isLoading = false, isEditing = true, canEdit = true, isOverseas = true,
             onStartEditing = {}, onFinishEditing = {},
             onSwapSlot = { _, _ -> }, onLoadAlts = {},
+            onRequestPlanB = {}, onExecutePlanBSwap = { _, _ -> },
             onBackClick = {}, onShareClick = {},
         )
     }
@@ -1060,9 +1660,11 @@ private fun ScheduleScreenLoadingPreview() {
             destination = "도쿄, 일본",
             schedule = null,
             altOptions = emptyList(),
-            isLoading = true, isEditing = false, canEdit = false,
+            planBResults = emptyList(), isPlanBLoading = false,
+            isLoading = true, isEditing = false, canEdit = false, isOverseas = false,
             onStartEditing = {}, onFinishEditing = {},
             onSwapSlot = { _, _ -> }, onLoadAlts = {},
+            onRequestPlanB = {}, onExecutePlanBSwap = { _, _ -> },
             onBackClick = {}, onShareClick = {},
         )
     }
@@ -1076,9 +1678,11 @@ private fun ScheduleScreenEmptyPreview() {
             destination = "도쿄, 일본",
             schedule = ScheduleResponse(1L, "2024-08-15", "2024-08-18", emptyList()),
             altOptions = emptyList(),
-            isLoading = false, isEditing = false, canEdit = false,
+            planBResults = emptyList(), isPlanBLoading = false,
+            isLoading = false, isEditing = false, canEdit = false, isOverseas = false,
             onStartEditing = {}, onFinishEditing = {},
             onSwapSlot = { _, _ -> }, onLoadAlts = {},
+            onRequestPlanB = {}, onExecutePlanBSwap = { _, _ -> },
             onBackClick = {}, onShareClick = {},
         )
     }
