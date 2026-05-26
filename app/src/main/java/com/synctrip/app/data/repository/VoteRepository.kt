@@ -17,4 +17,7 @@ object VoteRepository {
 
     suspend fun getGroupVoteStatus(bandId: Long): GroupVoteStatusResponse =
         ApiClient.api.getGroupVoteStatus(bandId)
+
+    suspend fun getVoteResults(bandId: Long): List<VotePlaceResult> =
+        ApiClient.api.getVoteResults(bandId)
 }

@@ -34,6 +34,12 @@ class SyncTripFirebaseService : FirebaseMessagingService() {
         val title = message.notification?.title ?: return
         val body  = message.notification?.body  ?: return
         showNotification(title, body)
+
+        // data 페이로드의 bandId가 있으면 해당 밴드 화면을 즉시 갱신
+        val bandId = message.data["bandId"]?.toLongOrNull()
+        if (bandId != null) {
+            SyncTripApplication.instance.emitBandRefresh(bandId)
+        }
     }
 
     private fun showNotification(title: String, body: String) {

@@ -21,6 +21,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.synctrip.app.SyncTripApplication
 import com.synctrip.app.core.TokenDataStore
 import com.synctrip.app.data.models.*
 import com.synctrip.app.data.repository.BandRepository
@@ -352,8 +353,8 @@ fun SyncTripNavGraph(
             val bandId = backStackEntry.arguments?.getString("bandId") ?: ""
             AiLoadingSimulated(
                 onComplete = {
-                    // 허브(tripLobby)가 백스택에 있으므로 popBackStack으로 복귀
-                    navController.popBackStack()
+                    // voteResults가 중간에 있을 수 있으므로 tripLobby까지 팝
+                    navController.popBackStack("tripLobby/$bandId", inclusive = false)
                 },
             )
         }
@@ -385,6 +386,17 @@ fun SyncTripNavGraph(
                 bandViewModel.loadBands()
                 bandViewModel.loadMembers(bandIdLong)
                 bandViewModel.loadPicks(bandIdLong)
+            }
+
+            // 15초마다 자동 갱신 — 다른 멤버 입장·장바구니 변경·Ready 상태 변화를 polling으로 반영
+            // Compose Navigation 특성상 서브 화면 이동 후 돌아와도 LaunchedEffect가 재실행되지 않아 필요
+            LaunchedEffect("poll_$bandIdLong") {
+                while (true) {
+                    delay(15_000L)
+                    bandViewModel.loadBands()
+                    bandViewModel.loadMembers(bandIdLong)
+                    bandViewModel.loadPicks(bandIdLong)
+                }
             }
 
             val band = bandUiState.bands.find { it.id == bandIdLong }
@@ -444,6 +456,17 @@ fun SyncTripNavGraph(
                 bandUiState.error?.let {
                     snackbarState.showSnackbar(it)
                     bandViewModel.clearError()
+                }
+            }
+
+            // FCM 수신 시 즉시 갱신 — 멤버 합류·장바구니 변경 등 이벤트를 폴링 없이 반영
+            val application = context.applicationContext as SyncTripApplication
+            LaunchedEffect(Unit) {
+                application.bandRefreshFlow.collect { refreshedBandId ->
+                    if (refreshedBandId == bandIdLong) {
+                        bandViewModel.loadMembers(bandIdLong)
+                        bandViewModel.loadPicks(bandIdLong)
+                    }
                 }
             }
 
@@ -666,7 +689,7 @@ fun SyncTripNavGraph(
             }
         }
 
-        // 투표 화면 — 스와이프 카드 방식, 전원 완료 시 완료 화면 표시 (자동 이동 없음)
+        // 투표 화면 — 스와이프 카드 방식, 전원 완료 시 1.5초 후 aiLoading 자동 이동
         composable("blindVoting/{bandId}") { backStackEntry ->
             val bandId        = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
             val voteViewModel: VoteViewModel = viewModel()
@@ -690,12 +713,22 @@ fun SyncTripNavGraph(
                 }
             }
 
-            // 내 투표 완료 여부: pendingPlaces 소진 또는 서버 응답 isComplete
+            // 내 투표 완료 여부: pendingPlaces 소진 또는 서버 응답 myComplete
             // 로딩 중에는 초기 빈 상태를 완료로 잘못 판단하지 않도록 isLoading 가드 추가
-            val isMyComplete  = uiState.myStatus?.isComplete == true ||
+            val isMyComplete  = uiState.myStatus?.myComplete == true ||
                 (!uiState.isLoading && uiState.pendingPlaces.isEmpty() && uiState.votedPlaces.isNotEmpty())
             // 전원 투표 완료 여부: 서버 groupStatus 기준
             val isAllComplete = uiState.groupStatus?.isAllComplete == true
+
+            // 전원 투표 완료 → 1.5초 후 투표 결과 화면으로 자동 이동
+            LaunchedEffect(isAllComplete) {
+                if (isAllComplete) {
+                    delay(1_500L)
+                    navController.navigate("voteResults/$bandId") {
+                        popUpTo("blindVoting/$bandId") { inclusive = true }
+                    }
+                }
+            }
 
             SwipeVotingScreen(
                 pendingPlaces    = uiState.pendingPlaces,
@@ -718,6 +751,26 @@ fun SyncTripNavGraph(
                         }
                     }
                 },
+            )
+        }
+
+        // 투표 결과 화면 — 전원 투표 완료 후 blindVoting에서 자동 이동
+        composable("voteResults/{bandId}") { backStackEntry ->
+            val bandId        = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
+            val voteViewModel: VoteViewModel = viewModel()
+            val uiState       by voteViewModel.uiState.collectAsState()
+
+            LaunchedEffect(bandId) { voteViewModel.loadVoteResults(bandId) }
+
+            VoteResultScreen(
+                results          = uiState.voteResults,
+                isLoading        = uiState.isLoading,
+                onCreateSchedule = {
+                    navController.navigate("aiLoading/$bandId") {
+                        popUpTo("voteResults/$bandId") { inclusive = true }
+                    }
+                },
+                onBackClick = { navController.popBackStack() },
             )
         }
 

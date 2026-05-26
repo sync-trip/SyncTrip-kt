@@ -106,6 +106,23 @@ fun PlaceSearchScreen(
                 navigationIcon = {
                     IconButton(onClick = onBackClick) { Icon(Icons.Outlined.ArrowBack, "뒤로") }
                 },
+                actions = {
+                    // 준비 완료 버튼 — PLANNING 상태에서 onReadyClick이 있을 때만 표시
+                    if (onReadyClick != null) {
+                        TextButton(
+                            onClick  = onReadyClick,
+                            enabled  = cartCount >= 1,
+                        ) {
+                            Icon(
+                                Icons.Outlined.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("준비 완료")
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
         },
@@ -115,7 +132,6 @@ fun PlaceSearchScreen(
                 cartCount    = cartCount,
                 maxPickCount = maxPickCount,
                 onClick      = { showCartSheet = true },
-                onReadyClick = onReadyClick,
             )
         },
     ) { innerPadding ->
@@ -332,86 +348,65 @@ private fun PlaceCard(place: ApiPlaceSearchResult, onPlaceClick: () -> Unit, onC
     }
 }
 
-/** 화면 하단 장바구니 바 — 구 앱 cartCard 디자인 참고, N/5 카운트 표시 + 준비 완료 버튼 */
+/** 화면 하단 장바구니 바 — 구 앱 cartCard 디자인 참고, N/5 카운트 표시 */
 @Composable
 private fun CartBottomBar(
     cartCount: Int,
     maxPickCount: Int,
     onClick: () -> Unit,
-    onReadyClick: (() -> Unit)? = null,
 ) {
     Surface(
         modifier        = Modifier.fillMaxWidth(),
         shadowElevation = 8.dp,
         color           = MaterialTheme.colorScheme.surface,
     ) {
-        Column(
-            modifier = Modifier
+        Row(
+            modifier          = Modifier
+                .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(top = 12.dp, bottom = if (onReadyClick != null) 12.dp else 0.dp),
+                .clickable(onClick = onClick)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier          = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onClick)
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Outlined.ShoppingCart,
-                    contentDescription = null,
-                    tint               = MaterialTheme.colorScheme.primary,
-                    modifier           = Modifier.size(22.dp),
-                )
-                Spacer(Modifier.width(10.dp))
+            Icon(
+                Icons.Outlined.ShoppingCart,
+                contentDescription = null,
+                tint               = MaterialTheme.colorScheme.primary,
+                modifier           = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "담은 장소",
+                style    = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            // 카운트 변경 시 숫자가 위로 슬라이드하며 교체됨
+            AnimatedContent(
+                targetState  = cartCount,
+                transitionSpec = {
+                    if (targetState > initialState) {
+                        (slideInVertically { it } + fadeIn()).togetherWith(slideOutVertically { -it } + fadeOut())
+                    } else {
+                        (slideInVertically { -it } + fadeIn()).togetherWith(slideOutVertically { it } + fadeOut())
+                    }
+                },
+                label = "cartCount",
+            ) { count ->
                 Text(
-                    "담은 장소",
-                    style    = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f),
-                )
-                // 카운트 변경 시 숫자가 위로 슬라이드하며 교체됨
-                AnimatedContent(
-                    targetState  = cartCount,
-                    transitionSpec = {
-                        if (targetState > initialState) {
-                            (slideInVertically { it } + fadeIn()).togetherWith(slideOutVertically { -it } + fadeOut())
-                        } else {
-                            (slideInVertically { -it } + fadeIn()).togetherWith(slideOutVertically { it } + fadeOut())
-                        }
-                    },
-                    label = "cartCount",
-                ) { count ->
-                    Text(
-                        "$count / $maxPickCount",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            color      = if (count >= maxPickCount) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                    )
-                }
-                Spacer(Modifier.width(6.dp))
-                Icon(
-                    Icons.Outlined.ChevronRight,
-                    contentDescription = null,
-                    tint               = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier           = Modifier.size(20.dp),
+                    "$count / $maxPickCount",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        color      = if (count >= maxPickCount) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    ),
                 )
             }
-            // 준비 완료 버튼 — onReadyClick이 있을 때만 표시
-            if (onReadyClick != null) {
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick  = onReadyClick,
-                    enabled  = cartCount >= 1,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape    = RoundedCornerShape(12.dp),
-                ) {
-                    Icon(Icons.Outlined.Check, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("준비 완료", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
-                }
-            }
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier           = Modifier.size(20.dp),
+            )
         }
     }
 }

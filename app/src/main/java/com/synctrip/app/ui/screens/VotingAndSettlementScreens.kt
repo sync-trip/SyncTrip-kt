@@ -1313,3 +1313,188 @@ private fun SettlementPreview() {
         SettlementScreen(settlement = previewSettlement, onSettleClick = {}, onBackClick = {})
     }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 4. Vote Result Screen  ← 투표 결과 화면
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 투표 결과 화면.
+ * 장소별 좋아요/싫어요 집계와 통과/탈락 여부를 표시한다.
+ * 좋아요 많은 순으로 정렬되며, 통과 장소는 강조 표시된다.
+ * "일정 만들기" 버튼 클릭 시 AI 일정 생성 화면으로 이동한다.
+ *
+ * @param results          투표 결과 목록 (서버에서 likeCount 내림차순 정렬됨)
+ * @param isLoading        결과 로딩 중 여부
+ * @param onCreateSchedule 일정 만들기 버튼 콜백
+ * @param onBackClick      뒤로가기
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VoteResultScreen(
+    results: List<VotePlaceResult>,
+    isLoading: Boolean,
+    onCreateSchedule: () -> Unit,
+    onBackClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val passedCount = results.count { it.passed }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("투표 결과", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.Outlined.ArrowBack, contentDescription = "뒤로가기")
+                    }
+                },
+            )
+        },
+        bottomBar = {
+            Surface(shadowElevation = 8.dp) {
+                Button(
+                    onClick  = onCreateSchedule,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text("일정 만들기", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        },
+        modifier = modifier,
+    ) { innerPadding ->
+        if (isLoading) {
+            Box(
+                modifier         = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                PlaneLoadingIndicator()
+            }
+        } else {
+            LazyColumn(
+                modifier            = Modifier.fillMaxSize().padding(innerPadding),
+                contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                // 요약 헤더
+                item {
+                    Text(
+                        text  = "총 ${results.size}개 중 ${passedCount}개 통과",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
+                }
+
+                items(results, key = { it.placeId }) { result ->
+                    VoteResultCard(result = result)
+                }
+            }
+        }
+    }
+}
+
+/** 투표 결과 카드 — 장소 썸네일, 이름, 좋아요/싫어요 수, 통과 여부 표시 */
+@Composable
+private fun VoteResultCard(result: VotePlaceResult) {
+    val passColor = if (result.passed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+    val passLabel = if (result.passed) "통과" else "탈락"
+
+    Card(
+        shape    = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+        colors   = CardDefaults.cardColors(
+            containerColor = if (result.passed)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+            else
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+    ) {
+        Row(
+            modifier            = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment   = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // 썸네일
+            AsyncImage(
+                model             = result.thumbnailUrl,
+                contentDescription = result.name,
+                contentScale      = ContentScale.Crop,
+                modifier          = Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+            )
+
+            // 장소 정보
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text     = result.name,
+                    style    = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text  = result.category.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // 좋아요 카운트
+                    Row(
+                        verticalAlignment   = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Outlined.FavoriteBorder,
+                            contentDescription = "좋아요",
+                            tint               = Color(0xFFE91E63),
+                            modifier           = Modifier.size(14.dp),
+                        )
+                        Text(
+                            text  = "${result.likeCount}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFFE91E63),
+                        )
+                    }
+                    // 싫어요 카운트
+                    Row(
+                        verticalAlignment   = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Close,
+                            contentDescription = "싫어요",
+                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier           = Modifier.size(14.dp),
+                        )
+                        Text(
+                            text  = "${result.dislikeCount}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            // 통과/탈락 배지
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = passColor.copy(alpha = 0.15f),
+            ) {
+                Text(
+                    text     = passLabel,
+                    style    = MaterialTheme.typography.labelMedium,
+                    color    = passColor,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+        }
+    }
+}
