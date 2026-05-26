@@ -603,11 +603,13 @@ fun SyncTripNavGraph(
                     }
                 },
                 onSearch = {
-                    bandViewModel.searchPlaces(
-                        bandId   = bandId,
-                        keyword  = query.takeIf { it.isNotBlank() },
-                        category = if (selectedCategory == PlaceCategory.ALL) null else selectedCategory.name,
-                    )
+                    if (query.isNotBlank()) {
+                        bandViewModel.searchPlaces(
+                            bandId   = bandId,
+                            keyword  = query,
+                            category = if (selectedCategory == PlaceCategory.ALL) null else selectedCategory.name,
+                        )
+                    }
                 },
                 places            = uiState.searchResults,
                 isLoading         = uiState.isSearchLoading,

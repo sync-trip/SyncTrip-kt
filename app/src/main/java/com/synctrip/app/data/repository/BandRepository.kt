@@ -36,17 +36,15 @@ object BandRepository {
     // getPicks 는 위에 있음
 
     /**
-     * 주변 장소 검색.
-     * 백엔드가 band.isOverseas에 따라 카카오/구글 분기 처리.
-     * 국내는 keyword 없어도 됨, 해외는 keyword 필수.
+     * 장소 검색 — 국내/해외 모두 Google Places Text Search 사용.
+     * keyword 필수, 없으면 백엔드에서 400 반환.
      */
     suspend fun searchPlaces(
         bandId: Long,
         keyword: String? = null,
         category: String? = null,
-        radiusMeters: Int = 5000,
     ): List<ApiPlaceSearchResult> =
-        ApiClient.api.searchPlaces(bandId, keyword, category, radiusMeters)
+        ApiClient.api.searchPlaces(bandId, keyword, category)
 
     /** 장소 담기 — 장소 전체 정보를 서버에 전달 (placeId 단독 전달 불가) */
     suspend fun addPick(bandId: Long, request: PlacePickRequest): PlacePickResponse =
