@@ -632,19 +632,22 @@ fun SyncTripNavGraph(
                 voteViewModel.connectWebSocket(ApiClient.accessToken ?: "", bandId)
             }
 
-            // pendingPlaces 소진 또는 서버 응답 isComplete = 모두 투표 완료
-            val isComplete = uiState.myStatus?.isComplete == true ||
+            // 내 투표 완료 여부: pendingPlaces 소진 또는 서버 응답 isComplete
+            val isMyComplete = uiState.myStatus?.isComplete == true ||
                 (uiState.pendingPlaces.isEmpty() && uiState.votedPlaces.isNotEmpty())
+            // 전원 투표 완료 여부: 서버 groupStatus 기준
+            val isAllComplete = uiState.groupStatus?.isAllComplete == true
 
             SwipeVotingScreen(
                 pendingPlaces    = uiState.pendingPlaces,
                 votedCount       = uiState.votedPlaces.size,
-                isMyVoteComplete = isComplete,
+                isMyVoteComplete = isMyComplete,
+                isAllComplete    = isAllComplete,
                 isLoading        = uiState.isLoading,
                 onVote           = { placeId, result -> voteViewModel.voteForPlace(placeId, result) },
                 onBackClick      = { navController.popBackStack() },
                 onVotingDone     = {
-                    // 투표 완료 → 일정 생성 로딩 화면으로 이동 (bandId 포함, 투표 화면 백스택 제거)
+                    // 전원 투표 완료 → 일정 생성 로딩 화면으로 이동 (투표 화면 백스택 제거)
                     navController.navigate("aiLoading/$bandId") {
                         popUpTo("blindVoting/$bandId") { inclusive = true }
                     }
