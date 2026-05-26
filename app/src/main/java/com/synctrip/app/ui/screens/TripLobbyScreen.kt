@@ -227,6 +227,7 @@ fun TripBandHubScreen(
                             isLoading           = isScheduleLoading,
                             isEditing           = isEditing,
                             canEdit             = false,
+                            isOverseas          = band.isOverseas,
                             onStartEditing      = onStartEditing,
                             onFinishEditing     = onFinishEditing,
                             onSwapSlot          = onSwapSlot,

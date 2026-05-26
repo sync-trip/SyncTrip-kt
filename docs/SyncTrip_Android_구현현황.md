@@ -1,5 +1,5 @@
 # SyncTrip Android 클라이언트 구현 현황
-**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-25
+**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-26
 
 > 이 문서는 기능이 구현되거나 수정될 때마다 업데이트합니다.  
 > 기준: `SyncTrip_인수인계문서_v6.md` USR-001 ~ USR-031 + 기존 SyncTrip-Android 앱 기능 동등성
@@ -28,7 +28,7 @@
 | 네트워크 (Retrofit) | ✅ 구현 | `ApiClient` Bearer 자동첨부 + 401 자동 갱신 Authenticator |
 | JWT 토큰 저장소 | ✅ 구현 | `core/TokenDataStore.kt` — DataStore<Preferences> 기반 |
 | WebSocket (STOMP) | ✅ 구현 | `network/VoteStompClient.kt` — OkHttp3 STOMP 직접 구현, VoteViewModel 통합 |
-| 지도 SDK (Google Maps Compose) | ✅ 구현 | 앨범 지도 탭에서 핀 표시용으로 연결. `maps-compose` 의존성 활용 |
+| 지도 SDK (Google Maps Compose) | ✅ 구현 | 앨범 지도 탭 + 일정 지도(ScheduleDayMapView) 두 곳에서 활용. `maps-compose` 의존성 활용 |
 | FCM 클라이언트 | ✅ 구현 | `SyncTripFirebaseService.kt` — 토큰 등록 + 푸시 알림 표시 |
 
 ---
@@ -227,5 +227,6 @@
 | 2026-05-26 | **장소 검색 Google 통일 반영** — `BandRepository.searchPlaces()` `radiusMeters` 파라미터 제거. `SyncTripApiService.searchPlaces()` `@Query("radiusMeters")` 제거. `NavGraph.kt` `onCategoryChange` / `onSearch` keyword 빈 값 가드 추가(빈 상태에서 API 호출 생략). `PassportAndSearchScreens.kt` 바텀시트 "Google 지도에서 보기" → "지도에서 보기". |
 
 | 2026-05-26 | **Plan B (USR-018/031)** — `ScheduleViewModel`에 `planBResults`·`isPlanBLoading` 상태 + `loadPlanB()`·`executePlanBSwap()` 함수 추가. `ScheduleScreen`/`ScheduleContent`에 슬롯별 "Plan B 추천받기" 버튼(항상 노출) + `PlanBBottomSheet` + `PlanBOptionCard` 추가. `TripBandHubScreen`·NavGraph(두 call site) Plan B 파라미터 연결. |
+| 2026-05-26 | **일정 지도 뷰 (Option B 분할화면)** — `ScheduleScreen`/`ScheduleContent` else 브랜치를 지도(240dp 고정)·타임라인 분할 레이아웃으로 변경. `ScheduleDayMapView`(Google Maps + 번호 마커), `NumberedMarker`(카테고리 색 원+흰 숫자), `MapPlaceBottomSheet`(썸네일·정보·길찾기 버튼), `openDirections()`(국내=geo: URI 선택기, 해외=Google Maps) 추가. `isOverseas: Boolean` 파라미터 `ScheduleScreen`·`ScheduleContent`·`TripBandHubScreen`·NavGraph 두 call site 전파. |
 
-**마지막 수정:** 2026-05-26 (Plan B USR-018/031 구현 완료) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+**마지막 수정:** 2026-05-26 (일정 지도 뷰 구현 완료) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

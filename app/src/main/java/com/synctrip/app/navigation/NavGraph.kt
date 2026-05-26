@@ -714,7 +714,9 @@ fun SyncTripNavGraph(
                 }
             }
 
-            val destination = bandState.bands.find { it.id == bandId }?.destination ?: "일정"
+            val band        = bandState.bands.find { it.id == bandId }
+            val destination = band?.destination ?: "일정"
+            val isOverseas  = band?.isOverseas ?: false
 
             Scaffold(snackbarHost = { SnackbarHost(snackbarState) }) { _ ->
                 ScheduleScreen(
@@ -724,6 +726,7 @@ fun SyncTripNavGraph(
                     isLoading       = scheduleState.isLoading,
                     isEditing       = scheduleState.isEditing,
                     canEdit         = false,
+                    isOverseas      = isOverseas,
                     onStartEditing      = { scheduleViewModel.startEditing(bandId) },
                     onFinishEditing     = { scheduleViewModel.finishEditing(bandId) },
                     onSwapSlot          = { sid, pid -> scheduleViewModel.swapSlot(bandId, sid, pid) },
