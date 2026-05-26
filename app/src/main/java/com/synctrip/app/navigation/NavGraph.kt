@@ -593,11 +593,14 @@ fun SyncTripNavGraph(
                 selectedCategory  = selectedCategory,
                 onCategoryChange  = { cat ->
                     selectedCategory = cat
-                    bandViewModel.searchPlaces(
-                        bandId   = bandId,
-                        keyword  = query.takeIf { it.isNotBlank() },
-                        category = if (cat == PlaceCategory.ALL) null else cat.name,
-                    )
+                    // 키워드 없이 카테고리만 바꿔도 API를 호출하지 않음 — keyword 필수 정책
+                    if (query.isNotBlank()) {
+                        bandViewModel.searchPlaces(
+                            bandId   = bandId,
+                            keyword  = query,
+                            category = if (cat == PlaceCategory.ALL) null else cat.name,
+                        )
+                    }
                 },
                 onSearch = {
                     bandViewModel.searchPlaces(
