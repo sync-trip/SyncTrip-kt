@@ -57,6 +57,8 @@ fun HomeScreen(
     onJoinWithCode: (String) -> Unit,
     onLogout: () -> Unit,
     onWithdrawClick: () -> Unit = {},
+    onAlarmSettingsClick: () -> Unit = {},
+    onProfileEditClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     hasUnreadNotifications: Boolean = false,
@@ -168,16 +170,18 @@ fun HomeScreen(
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     ModalDrawerSheet(modifier = Modifier.width(280.dp)) {
                         HomeDrawerContent(
-                            userName             = userName,
-                            userProfileImageUrl  = userProfileImageUrl,
-                            upcomingBand         = upcomingBand,
-                            onClose              = { scope.launch { drawerState.close() } },
-                            onBandClick          = { bandId -> scope.launch { drawerState.close() }; onTripBandClick(bandId) },
-                            onPassportClick      = { scope.launch { drawerState.close() }; onPassportClick() },
-                            onNotificationsClick = { scope.launch { drawerState.close() }; onNotificationsClick() },
-                            onJoinWithCode       = { scope.launch { drawerState.close() }; showJoinSheet = true },
-                            onLogout             = { scope.launch { drawerState.close() }; showLogoutDialog = true },
-                            onWithdraw           = { scope.launch { drawerState.close() }; showWithdrawDialog = true },
+                            userName              = userName,
+                            userProfileImageUrl   = userProfileImageUrl,
+                            upcomingBand          = upcomingBand,
+                            onClose               = { scope.launch { drawerState.close() } },
+                            onBandClick           = { bandId -> scope.launch { drawerState.close() }; onTripBandClick(bandId) },
+                            onPassportClick       = { scope.launch { drawerState.close() }; onPassportClick() },
+                            onNotificationsClick  = { scope.launch { drawerState.close() }; onNotificationsClick() },
+                            onJoinWithCode        = { scope.launch { drawerState.close() }; showJoinSheet = true },
+                            onAlarmSettingsClick  = { scope.launch { drawerState.close() }; onAlarmSettingsClick() },
+                            onProfileEditClick    = { scope.launch { drawerState.close() }; onProfileEditClick() },
+                            onLogout              = { scope.launch { drawerState.close() }; showLogoutDialog = true },
+                            onWithdraw            = { scope.launch { drawerState.close() }; showWithdrawDialog = true },
                         )
                     }
                 }
@@ -293,6 +297,8 @@ private fun HomeDrawerContent(
     onPassportClick: () -> Unit,
     onNotificationsClick: () -> Unit,
     onJoinWithCode: () -> Unit,
+    onAlarmSettingsClick: () -> Unit,
+    onProfileEditClick: () -> Unit,
     onLogout: () -> Unit,
     onWithdraw: () -> Unit,
 ) {
@@ -407,23 +413,39 @@ private fun HomeDrawerContent(
             Spacer(Modifier.height(24.dp))
         }
 
-        // ── 퀵 액션 ──────────────────────────────────────────────────────
-        Row(
-            modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        // ── 퀵 액션 (2×2 그리드) ─────────────────────────────────────────
+        Column(
+            modifier            = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            DrawerQuickItem(
-                icon     = Icons.Outlined.CardTravel,
-                label    = "내 여권",
-                modifier = Modifier.weight(1f),
-                onClick  = onPassportClick,
-            )
-            DrawerQuickItem(
-                icon     = Icons.Outlined.PersonAdd,
-                label    = "코드 참여",
-                modifier = Modifier.weight(1f),
-                onClick  = onJoinWithCode,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DrawerQuickItem(
+                    icon     = Icons.Outlined.CardTravel,
+                    label    = "내 여권",
+                    modifier = Modifier.weight(1f),
+                    onClick  = onPassportClick,
+                )
+                DrawerQuickItem(
+                    icon     = Icons.Outlined.PersonAdd,
+                    label    = "코드 참여",
+                    modifier = Modifier.weight(1f),
+                    onClick  = onJoinWithCode,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DrawerQuickItem(
+                    icon     = Icons.Outlined.NotificationsActive,
+                    label    = "알림 설정",
+                    modifier = Modifier.weight(1f),
+                    onClick  = onAlarmSettingsClick,
+                )
+                DrawerQuickItem(
+                    icon     = Icons.Outlined.ManageAccounts,
+                    label    = "프로필 편집",
+                    modifier = Modifier.weight(1f),
+                    onClick  = onProfileEditClick,
+                )
+            }
         }
 
         Spacer(Modifier.weight(1f))

@@ -179,10 +179,11 @@ fun SyncTripNavGraph(
             val bandUiState     by bandViewModel.uiState.collectAsState()
             val snackbarState   = remember { SnackbarHostState() }
 
-            // 화면 진입 시 밴드 목록 + 유저 프로필 로드
+            // 화면 진입 시 밴드 목록 + 유저 프로필 + 추천 여행지 로드
             LaunchedEffect(Unit) {
                 bandViewModel.loadBands()
                 bandViewModel.loadMyProfile()
+                bandViewModel.loadRecommendedDestinations()
             }
 
             // BottomSheet 수동 코드 입력 에러 → 스낵바 표시
@@ -194,7 +195,7 @@ fun SyncTripNavGraph(
             }
 
             HomeScreen(
-                recommendedContent   = emptyList(),
+                recommendedContent   = bandUiState.recommendedDestinations,
                 myTripBands          = bandUiState.bands.reversed().map { it.toTripBand() },
                 userName             = bandUiState.userProfile?.name ?: "",
                 userProfileImageUrl  = bandUiState.userProfile?.profileImageUrl,
@@ -205,6 +206,8 @@ fun SyncTripNavGraph(
                 onTripBandClick      = { bandId -> navController.navigate("tripLobby/$bandId") },
                 onCreateTripClick    = { navController.navigate("createTrip") },
                 onPassportClick      = { navController.navigate("passport") },
+                onAlarmSettingsClick = { navController.navigate("notificationSettings") },
+                onProfileEditClick   = { navController.navigate("profileEdit") },
                 onJoinWithCode       = { code ->
                     bandViewModel.joinBand(code) { band ->
                         bandViewModel.loadBands()
@@ -751,6 +754,43 @@ fun SyncTripNavGraph(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     PlaneLoadingIndicator()
                 }
+            }
+        }
+
+        // ── 알림 설정 화면 ─────────────────────────────────────────────────
+        composable("notificationSettings") {
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState by bandViewModel.uiState.collectAsState()
+            LaunchedEffect(Unit) { bandViewModel.loadNotificationSettings() }
+            NotificationSettingsScreen(
+                settings    = uiState.notificationSettings,
+                isLoading   = uiState.isNotificationSettingsLoading,
+                onToggle    = { type, enabled -> bandViewModel.updateNotificationSetting(type, enabled) },
+                onBackClick = { navController.popBackStack() },
+            )
+        }
+
+        // ── 프로필 편집 화면 ────────────────────────────────────────────────
+        composable("profileEdit") {
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState by bandViewModel.uiState.collectAsState()
+            val snackbarState = remember { SnackbarHostState() }
+            LaunchedEffect(Unit) { bandViewModel.loadMyProfile() }
+            Scaffold(snackbarHost = { SnackbarHost(snackbarState) }) { _ ->
+                ProfileEditScreen(
+                    initialName            = uiState.userProfile?.name ?: "",
+                    initialProfileImageUrl = uiState.userProfile?.profileImageUrl,
+                    isLoading              = uiState.isLoading,
+                    onSave                 = { name, imageUrl ->
+                        bandViewModel.updateProfile(
+                            name            = name,
+                            profileImageUrl = imageUrl,
+                            onSuccess       = { navController.popBackStack() },
+                            onError         = { msg -> scope.launch { snackbarState.showSnackbar(msg) } },
+                        )
+                    },
+                    onBackClick = { navController.popBackStack() },
+                )
             }
         }
     }

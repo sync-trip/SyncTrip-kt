@@ -43,7 +43,7 @@
 | USR-001 | JWT DataStore 저장 | ✅ 구현 | `core/TokenDataStore.kt` | access + refresh + userId 영속 저장 |
 | USR-001 | 401 토큰 자동 갱신 | ✅ 구현 | `network/ApiClient.kt` | OkHttp Authenticator — refresh 후 재시도 |
 | USR-001 | 앱 시작 자동 로그인 | ✅ 구현 | `navigation/NavGraph.kt` Splash | DataStore 토큰 복구 → 토큰 있으면 Home 직행 |
-| USR-002 | 프로필 수정 화면 | ❌ 미구현 | — | 화면 없음 |
+| USR-002 | 프로필 수정 화면 | ✅ 구현 | `ProfileAndSettingsScreens.kt` `ProfileEditScreen` + `NavGraph "profileEdit"` | 이름 텍스트필드 + 갤러리 사진 선택(Base64 인코딩) + PUT /api/users/me 연결 |
 | USR-002 | 회원 탈퇴 | ✅ 구현 | `HomeScreen.kt` 드로어 하단 | "회원탈퇴" 텍스트 버튼 + 확인 다이얼로그 + API 연결 |
 | USR-029 | 로그아웃 | ✅ 구현 | `HomeScreen.kt` 드로어 + `AuthViewModel.logout()` | 확인 다이얼로그 → 토큰 삭제 → 로그인 이동 |
 
@@ -134,7 +134,7 @@
 | USR-026 | 알림 목록 화면 UI | ✅ 구현 | `NotificationScreen` + `NotificationViewModel` | 날짜별 그룹핑. loadNotifications/markAllRead/markRead/deleteNotification API 연결 |
 | USR-026 | FCM 토큰 등록 API | ✅ 구현 | `SyncTripFirebaseService.onNewToken()` | 로그인 상태 시 자동 서버 등록 |
 | USR-026 | FCM 푸시 알림 수신 | ✅ 구현 | `SyncTripFirebaseService` | 시스템 알림 채널 생성 + 표시 |
-| USR-027 | 알림 토글 설정 | ❌ 미구현 | — | — |
+| USR-027 | 알림 토글 설정 | ✅ 구현 | `ProfileAndSettingsScreens.kt` `NotificationSettingsScreen` + `NavGraph "notificationSettings"` | GET /api/users/notification-settings 조회 + PATCH 개별 토글. 낙관적 업데이트. 드로어 "알림 설정" 퀵 아이템으로 진입 |
 | USR-030 | 공휴일 달력 표시 | ✅ 구현 | `TripCreationScreens.kt` `DateRangePickerDialog` | `GET /api/holidays?countryCode=JP&year=2026` 연동. 달력 진입 시 자동 fetch(다중 연도 지원). `CalendarDay`에 공휴일 날짜 빨간색 + 현지어명 최대 4자 표시. 날짜 선택 후 확인 버튼 위에 "여행 기간 내 공휴일 N개" 주황 배너 + 날짜/공휴일명 목록 표시(최대 3건 + "외 N개 더"). 공휴일 알림(Push) 자체는 백엔드 미구현 |
 
 ---
@@ -226,5 +226,7 @@
 | 2026-05-26 | **정산 백엔드-Android 불일치 수정** — `MemberSettlementSummary` 필드명 `name`→`userName`, `balance`→`netAmount`, `profileImageUrl` 제거. `SettlementTransaction` 필드명 `fromName`→`fromUserName`, `toName`→`toUserName`. `toUiSettlement()` `myBalance` 현재 userId 기준으로 수정 |
 | 2026-05-26 | **지출 입력/삭제 (USR-020)** — `SettlementContent`에 지출 추가 FAB + `ExpenseInputSheet` BottomSheet 추가. 항목명·금액·통화·분담자 입력. `ExpenseCard` 실제 지출 목록 표시(본인 것만 삭제). `BandViewModel`에 `loadExpenses·createExpense·deleteExpense·updateExpense` 추가. `SyncTripApiService`에 `updateExpense·deleteExpense` API 추가. SETTLEMENT 탭 진입 시 지출 목록 자동 로드 |
 | 2026-05-26 | **영수증 OCR (USR-019)** — `ExpenseInputSheet`에 "영수증 스캔" 버튼 추가. 갤러리 이미지 선택 → multipart POST → 항목명·금액·통화 자동 채우기. `SyncTripApiService.scanReceipt` 추가. `OcrReceiptResponse·OcrItemResult` DataModel 추가 |
+| 2026-05-26 | **홈 화면 추천 여행지 API 연동** — `BandViewModel.loadRecommendedDestinations()` 추가. 계절 가중치(봄=일본·유럽, 여름=국내·미주오세아니아, 가을=일본·유럽·동남아, 겨울=동남아·미주오세아니아·일본) 기반 그룹 분리 후 각 그룹 내 셔플 → 6개 선택. `HomeScreen` `recommendedContent` 실 데이터 연결 |
+| 2026-05-26 | **사이드 드로어 메뉴 확장 + 설정 화면 신규 구현** — 드로어 퀵 액션을 2×2 그리드로 확장(내 여권·코드 참여·알림 설정·프로필 편집). `ProfileAndSettingsScreens.kt` 신규 파일에 `NotificationSettingsScreen`(알림 5종 Switch + PATCH API 낙관적 업데이트) + `ProfileEditScreen`(이름 텍스트필드 + 갤러리 이미지 선택·Base64 인코딩·PUT API). `BandViewModel`에 `loadNotificationSettings·updateNotificationSetting·updateProfile` 추가. NavGraph `notificationSettings`, `profileEdit` 라우트 추가. USR-002, USR-027 완료 |
 
 **마지막 수정:** 2026-05-26 | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

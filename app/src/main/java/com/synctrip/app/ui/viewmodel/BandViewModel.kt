@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
+import java.time.LocalDate
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
@@ -36,6 +37,11 @@ data class BandUiState(
     val settlement: Settlement?                = null,
     val expenses: List<ExpenseResponse>        = emptyList(),
     val isExpensesLoading: Boolean             = false,
+    // 홈 화면 추천 여행지
+    val recommendedDestinations: List<RecommendedContent> = emptyList(),
+    // 알림 설정
+    val notificationSettings: NotificationSettingsResponse? = null,
+    val isNotificationSettingsLoading: Boolean = false,
 )
 
 class BandViewModel : ViewModel() {
@@ -369,8 +375,107 @@ class BandViewModel : ViewModel() {
         }
     }
 
+    /**
+     * 인기 여행지 28개를 받아 계절 가중치 + 셔플로 6개 추천을 뽑는다.
+     * 봄(3~5월)=일본·유럽, 여름(6~8월)=국내·미주오세아니아, 가을(9~11월)=일본·유럽·동남아, 겨울=동남아·미주오세아니아
+     */
+    fun loadRecommendedDestinations() {
+        viewModelScope.launch {
+            runCatching { ApiClient.api.getPopularDestinations() }
+                .onSuccess { all ->
+                    val picks = pickSeasonalDestinations(all)
+                    _uiState.update { it.copy(recommendedDestinations = picks) }
+                }
+        }
+    }
+
+    private fun pickSeasonalDestinations(all: List<DestinationResponse>): List<RecommendedContent> {
+        val month = LocalDate.now().monthValue
+        // 계절별 선호 지역 — 앞에 있을수록 우선순위 높음
+        val preferred = when (month) {
+            3, 4, 5   -> listOf("일본", "유럽", "중화권")
+            6, 7, 8   -> listOf("국내", "미주/오세아니아", "유럽")
+            9, 10, 11 -> listOf("일본", "유럽", "동남아시아")
+            else      -> listOf("동남아시아", "미주/오세아니아", "일본")
+        }
+        // 선호 지역 여부로 두 그룹으로 나눠 선호 그룹을 먼저 배치
+        val (high, low) = all.partition { preferred.contains(it.region) }
+        // 각 그룹 내부 셔플 후 합쳐서 앞 6개 선택
+        return (high.shuffled() + low.shuffled()).take(6).map { it.toRecommendedContent() }
+    }
+
+    private fun DestinationResponse.toRecommendedContent() = RecommendedContent(
+        id          = "$name-$countryCode",
+        title       = "$name, $country",
+        imageUrl    = thumbnailUrl ?: "",
+        category    = region ?: "해외",
+        destination = name,
+    )
+
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    /** GET /api/users/notification-settings — 알림 설정 조회 */
+    fun loadNotificationSettings() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isNotificationSettingsLoading = true) }
+            runCatching { ApiClient.api.getNotificationSettings() }
+                .onSuccess { settings ->
+                    _uiState.update { it.copy(notificationSettings = settings, isNotificationSettingsLoading = false) }
+                }
+                .onFailure {
+                    _uiState.update { it.copy(isNotificationSettingsLoading = false) }
+                }
+        }
+    }
+
+    /** PATCH /api/users/notification-settings — 알림 타입 하나 on/off */
+    fun updateNotificationSetting(type: ApiNotificationType, enabled: Boolean) {
+        // 낙관적 업데이트 — UI를 즉시 반영 후 서버 동기화
+        val current = _uiState.value.notificationSettings ?: return
+        val optimistic = when (type) {
+            ApiNotificationType.VOTE_STARTED        -> current.copy(voteStarted = enabled)
+            ApiNotificationType.SCHEDULE_UPDATED    -> current.copy(scheduleUpdated = enabled)
+            ApiNotificationType.SETTLEMENT_REQUEST  -> current.copy(settlementRequest = enabled)
+            ApiNotificationType.MEMBER_READY        -> current.copy(memberReady = enabled)
+            ApiNotificationType.MEMBER_JOINED       -> current.copy(memberJoined = enabled)
+            else                                    -> current
+        }
+        _uiState.update { it.copy(notificationSettings = optimistic) }
+
+        viewModelScope.launch {
+            runCatching {
+                ApiClient.api.updateNotificationSettings(NotificationSettingUpdateRequest(type, enabled))
+            }.onFailure {
+                // 실패 시 원복
+                _uiState.update { it.copy(notificationSettings = current) }
+            }
+        }
+    }
+
+    /**
+     * PUT /api/users/me — 프로필 이름·사진 수정.
+     * 성공 시 userProfile 갱신 후 onSuccess 콜백.
+     */
+    fun updateProfile(
+        name: String,
+        profileImageUrl: String?,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            runCatching {
+                ApiClient.api.updateProfile(UserProfileUpdateRequest(name = name, profileImageUrl = profileImageUrl))
+            }.onSuccess { updated ->
+                _uiState.update { it.copy(userProfile = updated, isLoading = false) }
+                onSuccess()
+            }.onFailure { e ->
+                _uiState.update { it.copy(isLoading = false) }
+                onError(e.message ?: "프로필 저장 실패")
+            }
+        }
     }
 
     /** SettlementResponse(백엔드) → Settlement(UI) 변환 */
