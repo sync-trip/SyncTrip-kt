@@ -43,7 +43,7 @@
 | USR-001 | JWT DataStore 저장 | ✅ 구현 | `core/TokenDataStore.kt` | access + refresh + userId 영속 저장 |
 | USR-001 | 401 토큰 자동 갱신 | ✅ 구현 | `network/ApiClient.kt` | OkHttp Authenticator — refresh 후 재시도 |
 | USR-001 | 앱 시작 자동 로그인 | ✅ 구현 | `navigation/NavGraph.kt` Splash | DataStore 토큰 복구 → 토큰 있으면 Home 직행 |
-| USR-002 | 프로필 수정 화면 | ❌ 미구현 | — | 화면 없음 |
+| USR-002 | 프로필 수정 화면 | ✅ 구현 | `ProfileAndSettingsScreens.kt` `ProfileEditScreen` + `NavGraph "profileEdit"` | 이름 텍스트필드 + 갤러리 사진 선택(Base64 인코딩) + PUT /api/users/me 연결 |
 | USR-002 | 회원 탈퇴 | ✅ 구현 | `HomeScreen.kt` 드로어 하단 | "회원탈퇴" 텍스트 버튼 + 확인 다이얼로그 + API 연결 |
 | USR-029 | 로그아웃 | ✅ 구현 | `HomeScreen.kt` 드로어 + `AuthViewModel.logout()` | 확인 다이얼로그 → 토큰 삭제 → 로그인 이동 |
 
@@ -120,10 +120,10 @@
 
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
-| USR-019 | 영수증 OCR | ❌ 미구현 | — | 백엔드 완성, Android UI 없음 |
-| USR-020 | 지출 입력/수정 UI | ❌ 미구현 | — | 구 앱도 더미 데이터만 |
+| USR-019 | 영수증 OCR | ✅ 구현 | `ExpenseInputSheet` (갤러리 선택 → multipart POST → 자동 채우기) | `POST /api/bands/{bandId}/expenses/ocr` 연동. 항목명·금액·통화 자동 채우기. OCR 실패 시 수동 입력 유지 |
+| USR-020 | 지출 입력/삭제 UI | ✅ 구현 | `SettlementContent` 내 `ExpenseInputSheet` + `ExpenseCard` | 지출 추가 FAB → BottomSheet. 실제 지출 목록(ExpenseResponse) 표시. 본인 지출만 삭제 버튼 노출. 낙관적 삭제. CRUD API 연결 |
 | USR-021 | 다통화 환율 표시 | ❌ 미구현 | — | 구 앱도 미구현 |
-| USR-022 | 더치페이 정산 UI | ✅ 구현 | `SettlementContent` (hub SETTLEMENT 탭) + `BandViewModel.loadSettlement()` | `SettlementResponse → Settlement` 변환. hub 탭 진입 시 자동 로드 |
+| USR-022 | 더치페이 정산 UI | ✅ 구현 | `SettlementContent` (hub SETTLEMENT 탭) + `BandViewModel.loadSettlement()` | `SettlementResponse → Settlement` 변환. hub 탭 진입 시 자동 로드. `myBalance` 현재 userId 기준 수정 |
 
 ---
 
@@ -134,7 +134,7 @@
 | USR-026 | 알림 목록 화면 UI | ✅ 구현 | `NotificationScreen` + `NotificationViewModel` | 날짜별 그룹핑. loadNotifications/markAllRead/markRead/deleteNotification API 연결 |
 | USR-026 | FCM 토큰 등록 API | ✅ 구현 | `SyncTripFirebaseService.onNewToken()` | 로그인 상태 시 자동 서버 등록 |
 | USR-026 | FCM 푸시 알림 수신 | ✅ 구현 | `SyncTripFirebaseService` | 시스템 알림 채널 생성 + 표시 |
-| USR-027 | 알림 토글 설정 | ❌ 미구현 | — | — |
+| USR-027 | 알림 토글 설정 | ✅ 구현 | `ProfileAndSettingsScreens.kt` `NotificationSettingsScreen` + `NavGraph "notificationSettings"` | GET /api/users/notification-settings 조회 + PATCH 개별 토글. 낙관적 업데이트. 드로어 "알림 설정" 퀵 아이템으로 진입 |
 | USR-030 | 공휴일 달력 표시 | ✅ 구현 | `TripCreationScreens.kt` `DateRangePickerDialog` | `GET /api/holidays?countryCode=JP&year=2026` 연동. 달력 진입 시 자동 fetch(다중 연도 지원). `CalendarDay`에 공휴일 날짜 빨간색 + 현지어명 최대 4자 표시. 날짜 선택 후 확인 버튼 위에 "여행 기간 내 공휴일 N개" 주황 배너 + 날짜/공휴일명 목록 표시(최대 3건 + "외 N개 더"). 공휴일 알림(Push) 자체는 백엔드 미구현 |
 
 ---
@@ -144,7 +144,7 @@
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
 | USR-023 | 공유 앨범 | ✅ 구현 | `ui/screens/AlbumScreen.kt` + `AlbumViewModel` + `AlbumRepository` | 인스타그램 피드 형식. 피드/지도 탭 전환. EXIF(위도·경도·촬영시각) 추출. Base64 업로드. 낙관적 삭제. 지도 핀 클릭 → 피드 스크롤 |
-| USR-024 | 여권 스탬프 UI | ⚠️ 부분 구현 | `MyPassportScreen` | 스탬프 그리드 UI 있음, DONE 밴드 필터 미연결 |
+| USR-024 | 여권 스탬프 UI + API 연동 | ✅ 구현 | `MyPassportScreen` + `BandViewModel.loadPassportStamps()` | `GET /api/users/me/stamps` 연동. DESC→ASC 역순 정렬(오래된 스탬프 먼저). ISO/배열 두 날짜 포맷 모두 파싱. 로딩 중 CircularProgressIndicator 표시 |
 | USR-025 | 과거 여행 기록 | ❌ 미구현 | — | 전용 화면 없음 |
 
 ---
@@ -223,5 +223,13 @@
 ---
 
 | 2026-05-26 | **공유 앨범 (USR-023)** — `AlbumScreen.kt` 신규 (인스타그램 피드 + Google Maps 지도 핀 탭). `AlbumViewModel`, `AlbumRepository` 신규. `DataModels` 앨범 4개 모델 추가. `SyncTripApiService` 앨범 API 6개 추가. EXIF 메타데이터(위도·경도·촬영시각) 추출. Base64 이미지 업로드. 낙관적 삭제. 지도 핀 클릭 시 피드 탭으로 전환 + 스크롤. `TripBandHubScreen` PHOTO 탭 `AlbumContent` 연결. Google Maps SDK 첫 연결(지도 SDK 미구현 → 구현) |
+| 2026-05-26 | **정산 백엔드-Android 불일치 수정** — `MemberSettlementSummary` 필드명 `name`→`userName`, `balance`→`netAmount`, `profileImageUrl` 제거. `SettlementTransaction` 필드명 `fromName`→`fromUserName`, `toName`→`toUserName`. `toUiSettlement()` `myBalance` 현재 userId 기준으로 수정 |
+| 2026-05-26 | **지출 입력/삭제 (USR-020)** — `SettlementContent`에 지출 추가 FAB + `ExpenseInputSheet` BottomSheet 추가. 항목명·금액·통화·분담자 입력. `ExpenseCard` 실제 지출 목록 표시(본인 것만 삭제). `BandViewModel`에 `loadExpenses·createExpense·deleteExpense·updateExpense` 추가. `SyncTripApiService`에 `updateExpense·deleteExpense` API 추가. SETTLEMENT 탭 진입 시 지출 목록 자동 로드 |
+| 2026-05-26 | **영수증 OCR (USR-019)** — `ExpenseInputSheet`에 "영수증 스캔" 버튼 추가. 갤러리 이미지 선택 → multipart POST → 항목명·금액·통화 자동 채우기. `SyncTripApiService.scanReceipt` 추가. `OcrReceiptResponse·OcrItemResult` DataModel 추가 |
+| 2026-05-26 | **홈 화면 추천 여행지 API 연동** — `BandViewModel.loadRecommendedDestinations()` 추가. 계절 가중치(봄=일본·유럽, 여름=국내·미주오세아니아, 가을=일본·유럽·동남아, 겨울=동남아·미주오세아니아·일본) 기반 그룹 분리 후 각 그룹 내 셔플 → 6개 선택. `HomeScreen` `recommendedContent` 실 데이터 연결 |
+| 2026-05-26 | **여권 스탬프 API 연동 (USR-024)** — `ApiPassportStampResponse` DataModel 추가. `SyncTripApiService.getMyStamps()` 추가. `BandViewModel.loadPassportStamps()` + `toPassportStamp()` + `parseStampDate()` 추가(ISO/배열 두 포맷 처리). `BandUiState`에 `passportStamps`·`isPassportLoading` 추가. NavGraph `"passport"` composable에서 실 데이터 로드. `MyPassportScreen`에 `isLoading` 파라미터 추가 + 로딩 스피너 |
+| 2026-05-26 | **홈 추천 여행지 UX 강화** — 섹션 헤더 아래 계절별 서브타이틀 문구 표시(봄/여름/가을/겨울 4종). 카드 클릭 시 여행지 상세 ModalBottomSheet 표시(이미지·지역 카테고리 칩·계절별 추천 문구·"여행 계획 만들기" CTA 버튼). 버튼 클릭 시 createTrip 화면으로 진입 |
+| 2026-05-26 | **여권 스탬프 도장 찍기 애니메이션** — `PassportStampGrid` 를 순차 stagger(190ms 간격) + spring 바운스로 교체. 각 스탬프가 1.4× 크기에서 튕기며 찍히는 rubber stamp 효과. 신규 스탬프(`newestStampId`)는 1.7× 스케일 + DampingRatioMediumBouncy + 찍힌 직후 잉크 번짐 링(8dp 테두리) fade-out. `LazyVerticalGrid` → `Column+Row` chunked 수동 그리드로 교체(AnimatedVisibility 지원). `AnimatedVisibility`, `scaleIn`, `tween`, `delay` import 추가 |
+| 2026-05-26 | **사이드 드로어 메뉴 확장 + 설정 화면 신규 구현** — 드로어 퀵 액션을 2×2 그리드로 확장(내 여권·코드 참여·알림 설정·프로필 편집). `ProfileAndSettingsScreens.kt` 신규 파일에 `NotificationSettingsScreen`(알림 5종 Switch + PATCH API 낙관적 업데이트) + `ProfileEditScreen`(이름 텍스트필드 + 갤러리 이미지 선택·Base64 인코딩·PUT API). `BandViewModel`에 `loadNotificationSettings·updateNotificationSetting·updateProfile` 추가. NavGraph `notificationSettings`, `profileEdit` 라우트 추가. USR-002, USR-027 완료 |
 
 **마지막 수정:** 2026-05-26 | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

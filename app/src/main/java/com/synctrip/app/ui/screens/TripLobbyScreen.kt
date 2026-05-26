@@ -69,6 +69,8 @@ fun TripBandHubScreen(
     isScheduleLoading: Boolean,
     isEditing: Boolean,
     settlement: Settlement?,
+    expenses: List<com.synctrip.app.data.models.ExpenseResponse>,
+    isExpensesLoading: Boolean,
     selectedTab: BandHubTab,
     onTabSelected: (BandHubTab) -> Unit,
     snackbarHostState: SnackbarHostState,
@@ -86,6 +88,8 @@ fun TripBandHubScreen(
     onFinishEditing: () -> Unit,
     // 정산 탭 콜백
     onSettleClick: (transferId: String) -> Unit,
+    onAddExpense: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+    onDeleteExpense: (expenseId: Long) -> Unit,
     // 사진 탭 — 앨범 상태 + 콜백
     albumPhotos: List<com.synctrip.app.data.models.AlbumPhotoResponse>,
     albumMapPins: List<com.synctrip.app.data.models.AlbumPhotoMapResponse>,
@@ -231,9 +235,16 @@ fun TripBandHubScreen(
                 }
 
                 BandHubTab.SETTLEMENT -> SettlementContent(
-                    settlement    = settlement,
-                    onSettleClick = onSettleClick,
-                    modifier      = Modifier.fillMaxSize(),
+                    bandId            = band.id,
+                    settlement        = settlement,
+                    expenses          = expenses,
+                    members           = members,
+                    currentUserId     = currentUserId,
+                    isExpensesLoading = isExpensesLoading,
+                    onAddExpense      = onAddExpense,
+                    onDeleteExpense   = onDeleteExpense,
+                    onSettleClick     = onSettleClick,
+                    modifier          = Modifier.fillMaxSize(),
                 )
 
                 BandHubTab.PHOTO -> AlbumContent(

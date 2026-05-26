@@ -1,6 +1,7 @@
 package com.synctrip.app.network
 
 import com.synctrip.app.data.models.*
+import okhttp3.MultipartBody
 import retrofit2.http.*
 
 interface SyncTripApiService {
@@ -103,6 +104,13 @@ interface SyncTripApiService {
 
     // ── Expense ───────────────────────────────────────────────────────────────
 
+    @Multipart
+    @POST("api/bands/{bandId}/expenses/ocr")
+    suspend fun scanReceipt(
+        @Path("bandId") bandId: Long,
+        @Part image: MultipartBody.Part,
+    ): OcrReceiptResponse
+
     @GET("api/bands/{bandId}/expenses")
     suspend fun getExpenses(@Path("bandId") bandId: Long): List<ExpenseResponse>
 
@@ -111,6 +119,19 @@ interface SyncTripApiService {
         @Path("bandId") bandId: Long,
         @Body body: ExpenseCreateRequest,
     ): ExpenseResponse
+
+    @PUT("api/bands/{bandId}/expenses/{expenseId}")
+    suspend fun updateExpense(
+        @Path("bandId") bandId: Long,
+        @Path("expenseId") expenseId: Long,
+        @Body body: ExpenseUpdateRequest,
+    ): ExpenseResponse
+
+    @DELETE("api/bands/{bandId}/expenses/{expenseId}")
+    suspend fun deleteExpense(
+        @Path("bandId") bandId: Long,
+        @Path("expenseId") expenseId: Long,
+    )
 
     // ── Settlement ────────────────────────────────────────────────────────────
 
@@ -199,6 +220,12 @@ interface SyncTripApiService {
 
     @DELETE("api/notifications/{id}")
     suspend fun deleteNotification(@Path("id") notificationId: Long)
+
+    // ── Passport Stamps ───────────────────────────────────────────────────────
+
+    /** 내 여권 스탬프 목록 — stampedAt DESC 정렬 */
+    @GET("api/users/me/stamps")
+    suspend fun getMyStamps(): List<ApiPassportStampResponse>
 
     // ── Notification Settings ─────────────────────────────────────────────────
 
