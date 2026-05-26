@@ -208,6 +208,7 @@ fun SyncTripNavGraph(
                 onPassportClick      = { navController.navigate("passport") },
                 onAlarmSettingsClick = { navController.navigate("notificationSettings") },
                 onProfileEditClick   = { navController.navigate("profileEdit") },
+                onPastTripsClick     = { navController.navigate("pastTrips") },
                 onJoinWithCode       = { code ->
                     bandViewModel.joinBand(code) { band ->
                         bandViewModel.loadBands()
@@ -797,6 +798,20 @@ fun SyncTripNavGraph(
                 settings    = uiState.notificationSettings,
                 isLoading   = uiState.isNotificationSettingsLoading,
                 onToggle    = { type, enabled -> bandViewModel.updateNotificationSetting(type, enabled) },
+                onBackClick = { navController.popBackStack() },
+            )
+        }
+
+        // ── 지난 여행 기록 화면 (USR-025) ───────────────────────────────────
+        composable("pastTrips") {
+            val bandViewModel: BandViewModel = viewModel()
+            val uiState by bandViewModel.uiState.collectAsState()
+            // 밴드 목록이 아직 없으면 로드
+            LaunchedEffect(Unit) { if (uiState.bands.isEmpty()) bandViewModel.loadBands() }
+            PastTripsScreen(
+                // DONE 상태 밴드만 최신순으로 정렬하여 전달
+                pastBands   = uiState.bands.reversed().filter { it.status == BandStatus.DONE },
+                onBandClick = { bandId -> navController.navigate("tripLobby/$bandId") },
                 onBackClick = { navController.popBackStack() },
             )
         }

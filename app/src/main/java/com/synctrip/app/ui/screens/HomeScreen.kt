@@ -3,6 +3,7 @@ package com.synctrip.app.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -62,6 +63,7 @@ fun HomeScreen(
     onWithdrawClick: () -> Unit = {},
     onAlarmSettingsClick: () -> Unit = {},
     onProfileEditClick: () -> Unit = {},
+    onPastTripsClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     hasUnreadNotifications: Boolean = false,
@@ -336,6 +338,7 @@ fun HomeScreen(
                             onJoinWithCode        = { scope.launch { drawerState.close() }; showJoinSheet = true },
                             onAlarmSettingsClick  = { scope.launch { drawerState.close() }; onAlarmSettingsClick() },
                             onProfileEditClick    = { scope.launch { drawerState.close() }; onProfileEditClick() },
+                            onPastTripsClick      = { scope.launch { drawerState.close() }; onPastTripsClick() },
                             onLogout              = { scope.launch { drawerState.close() }; showLogoutDialog = true },
                             onWithdraw            = { scope.launch { drawerState.close() }; showWithdrawDialog = true },
                         )
@@ -461,6 +464,7 @@ private fun HomeDrawerContent(
     onJoinWithCode: () -> Unit,
     onAlarmSettingsClick: () -> Unit,
     onProfileEditClick: () -> Unit,
+    onPastTripsClick: () -> Unit,
     onLogout: () -> Unit,
     onWithdraw: () -> Unit,
 ) {
@@ -609,6 +613,17 @@ private fun HomeDrawerContent(
                 )
             }
         }
+
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        NavigationDrawerItem(
+            icon     = { Icon(Icons.Outlined.History, null) },
+            label    = { Text("지난 여행") },
+            selected = false,
+            onClick  = onPastTripsClick,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
 
         Spacer(Modifier.weight(1f))
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -859,6 +874,186 @@ private val previewContent = listOf(
     RecommendedContent("c1", "교토의 자연과 산책", "", "NATURE", "Kyoto"),
     RecommendedContent("c2", "Canal City 하카타", "", "URBAN", "Fukuoka"),
 )
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 지난 여행 기록 화면 (USR-025)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 지난 여행 기록 화면.
+ * DONE 상태의 밴드 목록을 표시하며, 각 카드 클릭 시 해당 밴드 허브로 이동한다.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PastTripsScreen(
+    pastBands: List<BandResponse>,
+    onBandClick: (String) -> Unit,
+    onBackClick: () -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        "지난 여행",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.Outlined.ArrowBack, "뒤로")
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        if (pastBands.isEmpty()) {
+            // 빈 상태
+            Box(
+                modifier         = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        Icons.Outlined.History,
+                        contentDescription = null,
+                        tint     = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                        modifier = Modifier.size(56.dp),
+                    )
+                    Text(
+                        text  = "완료된 여행이 없어요",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                    Text(
+                        text  = "여행을 마치면 여기에 기록이 남아요",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        ),
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier            = Modifier.fillMaxSize().padding(innerPadding),
+                contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(pastBands, key = { it.id }) { band ->
+                    PastTripCard(
+                        band    = band,
+                        onClick = { onBandClick(band.id.toString()) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 지난 여행 목록 카드 — 여행지·기간·인원수 표시 */
+@Composable
+private fun PastTripCard(
+    band: BandResponse,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier  = Modifier.fillMaxWidth(),
+        shape     = RoundedCornerShape(16.dp),
+        onClick   = onClick,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Row(
+            modifier              = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+        ) {
+            // 썸네일 (없으면 그라디언트 플레이스홀더)
+            Box(
+                modifier         = Modifier
+                    .size(68.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
+                                MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
+                            ),
+                        ),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (band.thumbnailUrl != null) {
+                    AsyncImage(
+                        model              = band.thumbnailUrl,
+                        contentDescription = band.destination,
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.FlightTakeoff,
+                        contentDescription = null,
+                        tint     = Color.White,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+            }
+
+            // 여행 정보
+            Column(
+                modifier            = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text     = band.destination,
+                    style    = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                )
+                Text(
+                    text  = "${band.startDate} ~ ${band.endDate}",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment     = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.People,
+                        contentDescription = null,
+                        tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Text(
+                        text  = "${band.memberCount}명",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
+            }
+
+            // 완료 뱃지
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+            ) {
+                Text(
+                    text     = "완료",
+                    style    = MaterialTheme.typography.labelSmall.copy(
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+        }
+    }
+}
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable

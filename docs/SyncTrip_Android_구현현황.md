@@ -145,7 +145,7 @@
 |---|---|---|---|---|
 | USR-023 | 공유 앨범 | ✅ 구현 | `ui/screens/AlbumScreen.kt` + `AlbumViewModel` + `AlbumRepository` | 인스타그램 피드 형식. 피드/지도 탭 전환. EXIF(위도·경도·촬영시각) 추출. Base64 업로드. 낙관적 삭제. 지도 핀 클릭 → 피드 스크롤 |
 | USR-024 | 여권 스탬프 UI + API 연동 | ✅ 구현 | `MyPassportScreen` + `BandViewModel.loadPassportStamps()` | `GET /api/users/me/stamps` 연동. DESC→ASC 역순 정렬(오래된 스탬프 먼저). ISO/배열 두 날짜 포맷 모두 파싱. 로딩 중 CircularProgressIndicator 표시 |
-| USR-025 | 과거 여행 기록 | ❌ 미구현 | — | 전용 화면 없음 |
+| USR-025 | 과거 여행 기록 | ✅ 구현 | `HomeScreen.kt` `PastTripsScreen` + `NavGraph "pastTrips"` | DONE 밴드 필터링. 홈 드로어 "지난 여행" 항목으로 진입. 썸네일·기간·인원수 카드 표시 |
 
 ---
 
@@ -231,5 +231,7 @@
 | 2026-05-26 | **홈 추천 여행지 UX 강화** — 섹션 헤더 아래 계절별 서브타이틀 문구 표시(봄/여름/가을/겨울 4종). 카드 클릭 시 여행지 상세 ModalBottomSheet 표시(이미지·지역 카테고리 칩·계절별 추천 문구·"여행 계획 만들기" CTA 버튼). 버튼 클릭 시 createTrip 화면으로 진입 |
 | 2026-05-26 | **여권 스탬프 도장 찍기 애니메이션** — `PassportStampGrid` 를 순차 stagger(190ms 간격) + spring 바운스로 교체. 각 스탬프가 1.4× 크기에서 튕기며 찍히는 rubber stamp 효과. 신규 스탬프(`newestStampId`)는 1.7× 스케일 + DampingRatioMediumBouncy + 찍힌 직후 잉크 번짐 링(8dp 테두리) fade-out. `LazyVerticalGrid` → `Column+Row` chunked 수동 그리드로 교체(AnimatedVisibility 지원). `AnimatedVisibility`, `scaleIn`, `tween`, `delay` import 추가 |
 | 2026-05-26 | **사이드 드로어 메뉴 확장 + 설정 화면 신규 구현** — 드로어 퀵 액션을 2×2 그리드로 확장(내 여권·코드 참여·알림 설정·프로필 편집). `ProfileAndSettingsScreens.kt` 신규 파일에 `NotificationSettingsScreen`(알림 5종 Switch + PATCH API 낙관적 업데이트) + `ProfileEditScreen`(이름 텍스트필드 + 갤러리 이미지 선택·Base64 인코딩·PUT API). `BandViewModel`에 `loadNotificationSettings·updateNotificationSetting·updateProfile` 추가. NavGraph `notificationSettings`, `profileEdit` 라우트 추가. USR-002, USR-027 완료 |
+
+| 2026-05-26 | **과거 여행 기록 (USR-025)** — `PastTripsScreen` 신규 (`HomeScreen.kt`). 홈 드로어에 "지난 여행" `NavigationDrawerItem` 추가. NavGraph `"pastTrips"` 라우트 추가. DONE 상태 밴드를 최신순으로 표시. 썸네일(없으면 그라디언트 플레이스홀더)·여행기간·인원수·완료 뱃지 카드 구성 |
 
 **마지막 수정:** 2026-05-26 | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
