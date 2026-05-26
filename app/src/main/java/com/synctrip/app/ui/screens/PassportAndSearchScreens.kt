@@ -563,7 +563,7 @@ private fun PlaceSearchDetailBottomSheet(
 
             Spacer(Modifier.height(8.dp))
 
-            // Google 지도에서 장소 상세 보기
+            // 설치된 지도 앱(카카오/네이버/구글)으로 장소 상세 보기
             OutlinedButton(
                 onClick  = {
                     val uri = Uri.parse("geo:${place.latitude},${place.longitude}?q=${Uri.encode(place.name)}")
@@ -574,7 +574,7 @@ private fun PlaceSearchDetailBottomSheet(
             ) {
                 Icon(Icons.Outlined.Map, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Google 지도에서 보기", style = MaterialTheme.typography.titleMedium)
+                Text("지도에서 보기", style = MaterialTheme.typography.titleMedium)
             }
         }
     }
