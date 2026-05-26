@@ -83,4 +83,6 @@ com/synctrip/app/
 - Category tab order (do not change): ALL → FOOD → CULTURE → ACTIVITY → SHOPPING → NATURE
     - ALL sends `null`; others send their `.name` string
 - On enter: call `bandViewModel.loadPicks(bandId)` only — `searchPlaces` is NOT called on enter (user must type keyword and press search)
+- **keyword 필수**: `onCategoryChange` / `onSearch` 모두 `query.isBlank()`이면 `searchPlaces` 호출 생략. 빈 keyword로 호출 시 백엔드 400 반환
 - Cart toggle: `bandViewModel.togglePick(bandId, externalId)` — includes optimistic update
+- 바텀시트 지도 버튼: `geo:` URI (Intent.ACTION_VIEW) — 기기에 설치된 지도 앱(카카오/네이버/구글) 선택 팝업. 버튼 텍스트 "지도에서 보기"
