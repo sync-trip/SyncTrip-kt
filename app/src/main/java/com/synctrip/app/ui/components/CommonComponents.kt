@@ -224,6 +224,17 @@ fun TripTicketCard(
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
+                // 밴드 이름 — 사용자가 직접 지은 여행 이름
+                Text(
+                    text     = band.name,
+                    style    = MaterialTheme.typography.titleMedium.copy(
+                        color      = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text  = "DESTINATION",
                     style = MaterialTheme.typography.labelMedium.copy(

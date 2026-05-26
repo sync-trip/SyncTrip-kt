@@ -622,6 +622,7 @@ private fun EmptyTripsPlaceholder(
 private val previewBands = listOf(
     TripBand(
         id                = "1",
+        name              = "여름 제주 여행",
         destination       = "제주도",
         heroImageUrl      = "",
         startDate         = "Aug 12",
@@ -632,6 +633,7 @@ private val previewBands = listOf(
     ),
     TripBand(
         id                = "2",
+        name              = "도쿄 겨울 여행",
         destination       = "도쿄",
         heroImageUrl      = "",
         startDate         = "Sep 3",

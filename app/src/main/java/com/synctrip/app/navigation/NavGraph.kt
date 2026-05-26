@@ -788,6 +788,7 @@ private fun AiLoadingSimulated(onComplete: () -> Unit) {
  */
 private fun BandResponse.toTripBand() = TripBand(
     id                = id.toString(),
+    name              = name,
     destination       = destination,
     heroImageUrl      = thumbnailUrl ?: "",   // 여행지 생성 시 저장된 썸네일, 없으면 그라디언트 플레이스홀더
     startDate         = startDate,

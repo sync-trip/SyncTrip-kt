@@ -40,6 +40,7 @@ data class RecommendedContent(
 
 data class TripBand(
     val id: String,
+    val name: String,
     val destination: String,
     val heroImageUrl: String,
     val startDate: String,
