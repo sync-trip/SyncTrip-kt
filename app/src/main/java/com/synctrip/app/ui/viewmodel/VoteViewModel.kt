@@ -39,8 +39,8 @@ class VoteViewModel : ViewModel() {
             token       = token,
             bandId      = bandId,
             onEvent     = { _: VoteEvent ->
-                // 다른 멤버 투표 이벤트 수신 → 그룹 진행 현황 서버에서 재조회
-                refreshStatus()
+                // 다른 멤버 투표 이벤트 수신 → 그룹 진행 현황만 재조회 (내 상태는 로컬에서 관리)
+                refreshGroupStatus()
             },
             onConnected = { refreshStatus() },
         )
@@ -58,9 +58,26 @@ class VoteViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             runCatching { VoteRepository.getVotePlaces(bandId) }
                 .onSuccess { all ->
-                    // 아직 투표 안 한 것만 pendingPlaces로
-                    val pending = all.filter { it.myVoteResult == null }
-                    _uiState.value = _uiState.value.copy(pendingPlaces = pending, isLoading = false)
+                    // 이미 투표된 장소 (자동 LIKE 포함)
+                    val voted    = all.filter { it.myVoteResult != null }
+                    // 내가 담았지만 아직 자동 LIKE 미제출 — 카드에 표시하지 않고 백그라운드 제출
+                    val autoLike = all.filter { it.myBookmark && it.myVoteResult == null }
+                    // 실제 투표 카드에 표시할 장소 — 내 북마크 제외
+                    val pending  = all.filter { !it.myBookmark && it.myVoteResult == null }
+
+                    _uiState.value = _uiState.value.copy(
+                        pendingPlaces = pending,
+                        votedPlaces   = voted,
+                        isLoading     = false,
+                    )
+
+                    // 내가 담은 장소들에 자동 LIKE 순차 제출 (백엔드에서 result=0으로 저장)
+                    // result=1로 보내도 백엔드가 myBookmark 확인 후 0으로 고정함
+                    autoLike.forEach { place ->
+                        runCatching { VoteRepository.submitVote(bandId, place.placeId, 1) }
+                        // CONFLICT(이미 투표)는 무시 — 화면 재진입 시 중복 방지
+                    }
+                    if (autoLike.isNotEmpty()) refreshStatus()
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
         }
@@ -104,6 +121,7 @@ class VoteViewModel : ViewModel() {
         }
     }
 
+    /** 내 상태 + 그룹 상태 모두 재조회 — 투표 완료 직후 등 전체 동기화가 필요할 때 */
     fun refreshStatus() {
         viewModelScope.launch {
             runCatching {
@@ -111,6 +129,14 @@ class VoteViewModel : ViewModel() {
                 val group = VoteRepository.getGroupVoteStatus(currentBandId)
                 _uiState.value = _uiState.value.copy(myStatus = my, groupStatus = group)
             }
+        }
+    }
+
+    /** 그룹 상태만 재조회 — WebSocket 이벤트 수신 시 사용 (내 상태는 로컬에서 최신 유지됨) */
+    private fun refreshGroupStatus() {
+        viewModelScope.launch {
+            runCatching { VoteRepository.getGroupVoteStatus(currentBandId) }
+                .onSuccess { group -> _uiState.value = _uiState.value.copy(groupStatus = group) }
         }
     }
 

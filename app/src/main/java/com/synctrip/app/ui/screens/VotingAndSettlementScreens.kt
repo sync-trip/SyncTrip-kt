@@ -53,6 +53,8 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
  * @param isLoading        장소 목록 로딩 중 여부
  * @param onVote           투표 콜백 (placeId, result: 1=좋아요/-1=싫어요)
  * @param onBackClick      뒤로가기
+ * @param isOwner          방장 여부 — true이면 "마감하기" 버튼 표시
+ * @param onForceClose     방장 강제 마감 콜백 (advanceBandStatus 재활용)
  * @param onVotingDone     전원 투표 완료 감지 시 호출 → 일정 생성 화면으로 이동 (현재 미사용)
  */
 @Composable
@@ -65,11 +67,32 @@ fun SwipeVotingScreen(
     onVote: (placeId: Long, result: Int) -> Unit,
     onBackClick: () -> Unit,
     onVotingDone: () -> Unit,
+    isOwner: Boolean = false,
+    onForceClose: () -> Unit = {},
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier,
 ) {
     val totalCount   = votedCount + pendingPlaces.size
     val currentPlace = pendingPlaces.firstOrNull()
     val scope        = rememberCoroutineScope()
+    // 방장 강제 마감 확인 다이얼로그
+    var showForceCloseDialog by remember { mutableStateOf(false) }
+
+    if (showForceCloseDialog) {
+        AlertDialog(
+            onDismissRequest = { showForceCloseDialog = false },
+            title            = { Text("투표 마감") },
+            text             = { Text("아직 투표 중인 멤버가 있어도 지금 투표를 마감할까요?") },
+            confirmButton    = {
+                TextButton(onClick = { showForceCloseDialog = false; onForceClose() }) {
+                    Text("마감", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton    = {
+                TextButton(onClick = { showForceCloseDialog = false }) { Text("취소") }
+            },
+        )
+    }
 
     // 카드 수평 이탈 애니메이션 값
     val cardOffsetX  = remember { Animatable(0f) }
@@ -83,8 +106,8 @@ fun SwipeVotingScreen(
     fun vote(result: Int) {
         val place = currentPlace ?: return
         scope.launch {
-            val target = if (result == 1) 1400f else -1400f
-            cardOffsetX.animateTo(target, tween(270, easing = FastOutLinearInEasing))
+            val target = if (result == 1) 1300f else -1300f
+            cardOffsetX.animateTo(target, tween(220, easing = FastOutLinearInEasing))
             onVote(place.placeId, result)
         }
     }
@@ -92,6 +115,7 @@ fun SwipeVotingScreen(
     Scaffold(
         modifier       = modifier,
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost   = { SnackbarHost(snackbarHostState) },
         topBar         = {
             @OptIn(ExperimentalMaterial3Api::class)
             TopAppBar(
@@ -110,12 +134,23 @@ fun SwipeVotingScreen(
                     }
                 },
                 actions = {
-                    Icon(
-                        Icons.Outlined.HowToVote,
-                        null,
-                        tint     = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(end = 16.dp),
-                    )
+                    // 방장 전용 강제 마감 버튼
+                    if (isOwner) {
+                        TextButton(onClick = { showForceCloseDialog = true }) {
+                            Text(
+                                "마감하기",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            )
+                        }
+                    } else {
+                        Icon(
+                            Icons.Outlined.HowToVote,
+                            null,
+                            tint     = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(end = 16.dp),
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -172,14 +207,19 @@ fun SwipeVotingScreen(
 
                 // 투표 중: 카드 + 액션 버튼
                 currentPlace != null -> {
-                    // 카드 영역 — 이탈 방향에 따라 기울어짐
+                    // 카드 영역
+                    // translationY: 좋아요(오른쪽) → 상승, 싫어요(왼쪽) → 하강 — 포물선 궤적
+                    // alpha: 이동 거리에 비례해 페이드 아웃
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
                             .graphicsLayer {
-                                translationX = cardOffsetX.value
-                                rotationZ    = cardOffsetX.value / 30f
+                                val offset = cardOffsetX.value
+                                translationX = offset
+                                translationY = -offset * 0.13f
+                                rotationZ    = offset / 26f
+                                alpha        = (1f - kotlin.math.abs(offset) / 480f).coerceIn(0f, 1f)
                             },
                     ) {
                         VotingPlaceCard(
@@ -370,6 +410,37 @@ private fun VotingPlaceCard(place: VotePlaceResponse, modifier: Modifier = Modif
                     PlaceCategoryBadge(category = place.category)
                     if (place.rating != null) {
                         PlaceRatingBadge(rating = place.rating)
+                    }
+                }
+
+                // 내가 담은 장소 배지 (우상단)
+                if (place.myBookmark) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp),
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                    ) {
+                        Row(
+                            modifier              = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment     = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                Icons.Outlined.Bookmark,
+                                contentDescription = null,
+                                tint     = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(13.dp),
+                            )
+                            Text(
+                                "내가 담은 곳",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color      = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                            )
+                        }
                     }
                 }
             }

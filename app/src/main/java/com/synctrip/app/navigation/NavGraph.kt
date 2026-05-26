@@ -646,6 +646,10 @@ fun SyncTripNavGraph(
                 onPlaceClick      = {},
                 onCartToggle      = { externalId -> bandViewModel.togglePick(bandId, externalId) },
                 onBackClick       = { navController.popBackStack() },
+                onReadyClick      = {
+                    bandViewModel.setReady(bandId)
+                    navController.popBackStack()
+                },
                 snackbarHostState = snackbarState,
             )
 
@@ -666,7 +670,11 @@ fun SyncTripNavGraph(
         composable("blindVoting/{bandId}") { backStackEntry ->
             val bandId        = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
             val voteViewModel: VoteViewModel = viewModel()
+            val bandViewModel: BandViewModel = viewModel()
             val uiState       by voteViewModel.uiState.collectAsState()
+            val bandUiState   by bandViewModel.uiState.collectAsState()
+
+            val voteSnackbarState = remember { SnackbarHostState() }
 
             // 화면 진입 시 투표 장소 로드 + WebSocket 연결
             LaunchedEffect(bandId) {
@@ -674,9 +682,18 @@ fun SyncTripNavGraph(
                 voteViewModel.connectWebSocket(ApiClient.accessToken ?: "", bandId)
             }
 
+            // 투표 실패 에러 스낵바
+            LaunchedEffect(uiState.error) {
+                uiState.error?.let { err ->
+                    voteSnackbarState.showSnackbar(err)
+                    voteViewModel.clearError()
+                }
+            }
+
             // 내 투표 완료 여부: pendingPlaces 소진 또는 서버 응답 isComplete
+            // 로딩 중에는 초기 빈 상태를 완료로 잘못 판단하지 않도록 isLoading 가드 추가
             val isMyComplete  = uiState.myStatus?.isComplete == true ||
-                (uiState.pendingPlaces.isEmpty() && uiState.votedPlaces.isNotEmpty())
+                (!uiState.isLoading && uiState.pendingPlaces.isEmpty() && uiState.votedPlaces.isNotEmpty())
             // 전원 투표 완료 여부: 서버 groupStatus 기준
             val isAllComplete = uiState.groupStatus?.isAllComplete == true
 
@@ -688,7 +705,19 @@ fun SyncTripNavGraph(
                 isLoading        = uiState.isLoading,
                 onVote           = { placeId, result -> voteViewModel.voteForPlace(placeId, result) },
                 onBackClick      = { navController.popBackStack() },
-                onVotingDone     = {},
+                onVotingDone      = {},
+                isOwner           = bandUiState.selectedBand?.isOwner == true,
+                snackbarHostState = voteSnackbarState,
+                onForceClose     = {
+                    bandViewModel.advanceBandStatus(bandId) { transition ->
+                        when (transition.currentStatus) {
+                            BandStatus.GENERATING -> navController.navigate("aiLoading/$bandId") {
+                                popUpTo("blindVoting/$bandId") { inclusive = true }
+                            }
+                            else -> navController.popBackStack()
+                        }
+                    }
+                },
             )
         }
 

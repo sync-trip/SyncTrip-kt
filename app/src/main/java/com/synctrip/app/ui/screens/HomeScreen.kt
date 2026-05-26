@@ -31,7 +31,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.LayoutDirection
@@ -70,6 +73,7 @@ fun HomeScreen(
     userName: String = "",
     userProfileImageUrl: String? = null,
 ) {
+    val context          = LocalContext.current
     val drawerState      = rememberDrawerState(DrawerValue.Closed)
     val scope            = rememberCoroutineScope()
     var showLogoutDialog     by remember { mutableStateOf(false) }
@@ -249,9 +253,16 @@ fun HomeScreen(
                             )
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 items(landmarks.size) { idx ->
+                                    // 랜드마크 칩 클릭 → 기기에 설치된 지도 앱에서 해당 장소 검색
                                     Surface(
-                                        shape = RoundedCornerShape(50),
-                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        shape   = RoundedCornerShape(50),
+                                        color   = MaterialTheme.colorScheme.secondaryContainer,
+                                        onClick = {
+                                            val query = "${landmarks[idx]}, ${dest.title}"
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(query)}"))
+                                            )
+                                        },
                                     ) {
                                         Text(
                                             text     = landmarks[idx],

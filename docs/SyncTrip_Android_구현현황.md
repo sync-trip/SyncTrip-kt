@@ -1,5 +1,5 @@
 # SyncTrip Android 클라이언트 구현 현황
-**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-26
+**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-26 (버그 수정 + 투표 UX 개선)
 
 > 이 문서는 기능이 구현되거나 수정될 때마다 업데이트합니다.  
 > 기준: `SyncTrip_인수인계문서_v6.md` USR-001 ~ USR-031 + 기존 SyncTrip-Android 앱 기능 동등성
@@ -27,7 +27,7 @@
 | Repository 레이어 | ✅ 구현 | `AuthRepository`, `BandRepository`, `VoteRepository`, `ScheduleRepository`, `AlbumRepository` |
 | 네트워크 (Retrofit) | ✅ 구현 | `ApiClient` Bearer 자동첨부 + 401 자동 갱신 Authenticator |
 | JWT 토큰 저장소 | ✅ 구현 | `core/TokenDataStore.kt` — DataStore<Preferences> 기반 |
-| WebSocket (STOMP) | ✅ 구현 | `network/VoteStompClient.kt` — OkHttp3 STOMP 직접 구현, VoteViewModel 통합 |
+| WebSocket (STOMP) | ✅ 구현 | `network/VoteStompClient.kt` — OkHttp3 STOMP 직접 구현, VoteViewModel 통합. URL `ApiClient.wsUrl` 동적화(BuildConfig 기반). 지수 백오프 재연결(최대 5회, 최대 30s) |
 | 지도 SDK (Google Maps Compose) | ✅ 구현 | 앨범 지도 탭 + 일정 지도(ScheduleDayMapView) 두 곳에서 활용. `maps-compose` 의존성 활용 |
 | FCM 클라이언트 | ✅ 구현 | `SyncTripFirebaseService.kt` — 토큰 등록 + 푸시 알림 표시 |
 
@@ -60,8 +60,9 @@
 | USR-004 | 딥링크 (`synctrip://`) 처리 | ✅ 구현 | `AndroidManifest.xml` + `MainActivity.kt` | synctrip://band/join + https://test.sync-trip.app/invite 두 scheme. onNewIntent + AlertDialog 확인 후 참여 |
 | USR-005 | 최대 인원 제한 표시 | ⚠️ 부분 구현 | 스낵바 에러 메시지 | 409 → 스낵바. 별도 UI 없음 |
 | USR-006 | 초대 코드 생성 + 공유 | ✅ 구현 | `InviteScreen.kt` + `invite/{bandId}` 라우트 | 코드 자동 발급, 클립보드 복사, 링크 공유 Intent |
-| USR-009 | Ready 상태 전환 버튼 | ✅ 구현 | `TripBandHubScreen` + `BandViewModel.setReady()` | 장바구니 1개 이상 조건 적용 |
-| USR-014 | 상태 전환 (방장) | ✅ 구현 | `BandViewModel.advanceBandStatus()` | `BandStatusTransitionResponse` 반환 — 전/후 status 모두 포함. 미Ready 경고 AlertDialog |
+| USR-009 | Ready 상태 전환 버튼 | ✅ 구현 | `TripBandHubScreen` + `BandViewModel.setReady()` | 장바구니 1개 이상 조건 적용. `PlaceSearchScreen` 하단 장바구니 바에도 "준비 완료" 버튼 추가 (장바구니 화면에서 바로 제출 가능) |
+| USR-014 | 상태 전환 (방장) | ✅ 구현 | `BandViewModel.advanceBandStatus()` | 투표 시작 전 픽 수 부족 시 에러 팝업(멤버 수 × 2 기준). 미Ready 경고 AlertDialog |
+| USR-014 | 방장 수동 투표 마감 | ✅ 구현 | `SwipeVotingScreen` TopBar + `BandViewModel.advanceBandStatus()` 재활용 | 방장 전용 "마감하기" TextButton — 확인 다이얼로그 → GENERATING 전환 → aiLoading 이동 |
 | USR-028 | 밴드 삭제 (방장) | ✅ 구현 | `TripBandHubScreen` 우측 상단 + `BandViewModel.deleteBand()` | 방장만 노출되는 빨간 "방 삭제" TextButton → 확인 AlertDialog("방을 삭제하시겠습니까?" + "7일 후 영구 삭제, 7일 이내 복구 요청 가능" 안내) → 삭제 후 홈 이동. 백엔드 소프트 딜리트 → 7일 후 하드 딜리트 구조 |
 | USR-028 | 여행 종료 처리 표시 | ⚠️ 부분 구현 | `TripBandHubScreen` 밴드 탭 | DONE 상태 일정/정산 탭 표시. 별도 종료 화면 없음 |
 
@@ -74,7 +75,7 @@
 | USR-007 | 장소 검색 UI | ✅ 구현 | `PassportAndSearchScreens.kt` | 카테고리 탭 6개(전체/음식점/관광지/액티비티/쇼핑/자연). 키워드 입력 후 검색 버튼 클릭 시에만 API 호출. 카테고리 탭 전환 시에도 keyword 있을 때만 API 호출(빈 값이면 생략). "지도에서 보기" geo: URI로 기기 설치 지도 앱 선택 |
 | USR-007 | 장소 검색 API | ✅ 구현 | `BandRepository.searchPlaces()` | 국내/해외 모두 Google Places Text Search. keyword 필수(빈 값이면 API 호출 생략). `radiusMeters` 파라미터 제거 |
 | USR-007 | 여행지 인기/검색 API | ✅ 구현 | `NavGraph.kt` createTrip composable | `GET api/destinations/popular` 진입 시 로드. `GET api/destinations/search` 키보드 검색 시에만 호출 |
-| USR-007 | 지도 뷰 | ❌ 미구현 | — | 지도 SDK 미연동 |
+| USR-007 | 지도 뷰 (장소 탐색 화면) | ❌ 미구현 | — | PlaceSearchScreen 전용 독립 지도 미연동. 일정 화면 지도(`ScheduleDayMapView`)는 별도로 구현됨 |
 | USR-008 | 장바구니 담기/삭제/목록 | ✅ 구현 | `BandViewModel.togglePick()` | 낙관적 업데이트 — UI 선반영 후 API, 실패 시 롤백. 5개 초과 시 다이얼로그 |
 | USR-008 | 장바구니 인터랙션 애니메이션 | ➕ 구현 | `PassportAndSearchScreens.kt` `PlaceCard` | 담기: 아이콘 1.45× 스프링 바운스 + 버튼 배경 Primary 컬러 전환. 삭제: 아이콘 0.75× 축소 바운스. 카운트 슬라이드 애니메이션(`AnimatedContent`) |
 
@@ -84,10 +85,11 @@
 
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
-| USR-010 | 스와이프 투표 UI | ✅ 구현 | `VotingAndSettlementScreens.kt` `SwipeVotingScreen` | 카드 1장씩 표시, 좋아요/싫어요 버튼, 카드 이탈 애니메이션, 진행률 배지 |
-| USR-010 | 투표 API 연결 | ✅ 구현 | `VoteViewModel.voteForPlace()` | placeId 기반 투표. 내 투표 완료 시 대기 UI, 전원 완료(`isAllComplete`) 시 aiLoading 이동 |
-| USR-010 | WebSocket 실시간 투표 | ✅ 구현 | `network/VoteStompClient.kt` + `VoteViewModel.connectWebSocket()` | 투표 화면 진입 시 자동 연결, 이벤트 수신 시 groupStatus 갱신 |
-| USR-010 | 내가 담은 장소 자동 좋아요 | ❌ 미구현 | — | 구 앱에서 구현됨, 미이식 |
+| USR-010 | 스와이프 투표 UI | ✅ 구현 | `VotingAndSettlementScreens.kt` `SwipeVotingScreen` | 카드 1장씩 표시, 좋아요/싫어요 버튼, 카드 이탈 애니메이션, 진행률 배지. 투표 실패 시 Snackbar 에러 표시 |
+| USR-010 | 투표 API 연결 | ✅ 구현 | `VoteViewModel.voteForPlace()` | placeId 기반 투표. 내 투표 완료 시 대기 UI, 전원 완료(`isAllComplete`) 시 aiLoading 이동. `isMyComplete` 타이밍 버그 수정(isLoading 가드 추가) |
+| USR-010 | WebSocket 실시간 투표 | ✅ 구현 | `network/VoteStompClient.kt` + `VoteViewModel.connectWebSocket()` | 투표 화면 진입 시 자동 연결. 이벤트 수신 시 groupStatus만 재조회(`refreshGroupStatus`) — 불필요한 내 상태 API 재호출 제거 |
+| USR-010 | 내가 담은 장소 자동 좋아요 | ✅ 구현 | `VoteViewModel.loadVotePlaces()` | 투표 화면 진입 시 myBookmark=true 장소를 pending에서 제외 + result=1 순차 자동 제출(백엔드에서 0으로 저장). 화면 재진입 시 CONFLICT 무시. votedPlaces 초기값 올바르게 설정됨(재진입 시 진행률 0 표시 버그 없음) |
+| ➕ | 투표 카드 — 내가 담은 장소 배지 | ✅ 구현 | `VotingPlaceCard` | `myBookmark=true`이면 이미지 우상단에 Primary 색 "내가 담은 곳" 배지 표시 |
 | USR-011 | 카테고리별 순위 풀 표시 | ❌ 미구현 | — | 투표 결과 목록 UI 없음 |
 | USR-012 | Density 기반 슬롯 편입 | — | 백엔드 전담 | Android 클라이언트 별도 구현 불필요 |
 | USR-013 | 최종 결과 확인 | ⚠️ 부분 구현 | `BlindVotingScreen` (레거시) | 결과 바 UI 있음, 실 데이터 미연결 |
@@ -166,7 +168,7 @@
 | `SwipeVotingScreen` | `VotingAndSettlementScreens.kt` | ✅ | ✅ | VoteViewModel 완전 연결. WebSocket 실시간 groupStatus 갱신 |
 | `PlaceSearchScreen` | `PassportAndSearchScreens.kt` | ✅ | ✅ | 장바구니 토글(낙관적 업데이트) + 스프링 바운스/색상/카운트 슬라이드 애니메이션 |
 | `NotificationScreen` | `PassportAndSearchScreens.kt` | ✅ | ✅ | NotificationViewModel 연결. 읽음/삭제 처리 |
-| `MyPassportScreen` | `PassportAndSearchScreens.kt` | ✅ | ❌ | DONE 밴드 필터 미연결 |
+| `MyPassportScreen` | `PassportAndSearchScreens.kt` | ✅ | ✅ | `BandViewModel.loadPassportStamps()` + `getMyStamps()` API 연결 완료 (2026-05-26) |
 | `BlindVotingScreen` | `VotingAndSettlementScreens.kt` | ✅ | ❌ | 레거시 — 현재 미사용 |
 | 가계부 입력 화면 | ❌ 없음 | ❌ | ❌ | 구 앱도 더미 |
 | 프로필 편집 화면 | ❌ 없음 | ❌ | ❌ | — |
@@ -239,4 +241,17 @@
 | 2026-05-26 | **Plan B (USR-018/031)** — `ScheduleViewModel`에 `planBResults`·`isPlanBLoading` 상태 + `loadPlanB()`·`executePlanBSwap()` 함수 추가. `ScheduleScreen`/`ScheduleContent`에 슬롯별 "Plan B 추천받기" 버튼(항상 노출) + `PlanBBottomSheet` + `PlanBOptionCard` 추가. `TripBandHubScreen`·NavGraph(두 call site) Plan B 파라미터 연결. |
 | 2026-05-26 | **일정 지도 뷰 (Option B 분할화면)** — `ScheduleScreen`/`ScheduleContent` else 브랜치를 지도(240dp 고정)·타임라인 분할 레이아웃으로 변경. `ScheduleDayMapView`(Google Maps + 번호 마커), `NumberedMarker`(카테고리 색 원+흰 숫자), `MapPlaceBottomSheet`(썸네일·정보·길찾기 버튼), `openDirections()`(국내=geo: URI 선택기, 해외=Google Maps) 추가. `isOverseas: Boolean` 파라미터 `ScheduleScreen`·`ScheduleContent`·`TripBandHubScreen`·NavGraph 두 call site 전파. |
 
-**마지막 수정:** 2026-05-26 (일정 지도 뷰 구현 완료) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+| 2026-05-26 | **홈 추천 여행지 랜드마크 지도 연동** — 상세 팝업 "이런 곳이 있어요" 칩 클릭 시 `geo:0,0?q=장소명,여행지` Intent.ACTION_VIEW 실행. 기기 설치 지도 앱(구글/카카오/네이버) 선택 팝업 표시. `HomeScreen.kt` Surface onClick + LocalContext import 추가. |
+
+| 2026-05-26 | **밴드홈 장소 탐색 버튼 중복 제거** — `MyStatusSection` 내 "장소 탐색" OutlinedButton 제거. 하단 BandActionArea의 "장소 탐색하기" 버튼으로 단일화. "준비 완료" 버튼을 `MyStatusSection` 카드 내 전체 너비 버튼으로 정리 |
+| 2026-05-26 | **장소 탐색 화면 "준비 완료" 버튼 추가 (USR-009)** — `PlaceSearchScreen` 하단 CartBottomBar에 "준비 완료" 버튼 추가(장바구니 1개 이상 활성화). NavGraph `placeSearch/{bandId}` 라우트에서 `setReady` 호출 후 뒤로가기 |
+| 2026-05-26 | **투표 시작 전 픽 수 검증 (USR-014)** — `TripBandHubScreen`에서 투표 시작 버튼 클릭 시 `members.sumOf { it.bookmarkCount } < members.size * 2` 조건 미충족 시 에러 다이얼로그 표시 후 차단. 조건 충족 시 기존 미Ready 경고 다이얼로그 표시 |
+| 2026-05-26 | **isMyVoteComplete 타이밍 버그 수정** — `NavGraph.kt` blindVoting 라우트에서 `isMyComplete` 계산 시 `!uiState.isLoading` 가드 추가. 로딩 직후 pendingPlaces 빈 상태를 완료로 잘못 판단하던 오판 제거 |
+| 2026-05-26 | **방장 수동 투표 마감 (USR-014)** — `SwipeVotingScreen` TopBar에 방장 전용 "마감하기" TextButton 추가. 확인 AlertDialog 경유 → `advanceBandStatus` 호출 → GENERATING 전환 시 aiLoading 화면 이동. NavGraph `blindVoting` 라우트에 `BandViewModel` 추가 연결 |
+| 2026-05-26 | **WebSocket URL 하드코딩 제거** — `ApiClient`에 `wsUrl`/`wsHost` 속성 추가(BuildConfig.BASE_URL 기반 동적 변환). `VoteStompClient`의 `wss://test.sync-trip.app/ws` 하드코딩 제거 |
+| 2026-05-26 | **WebSocket 재연결 로직 추가** — `VoteStompClient` `onFailure`/`onClosed`(비정상 코드)에서 지수 백오프 재연결(2s~30s, 최대 5회). `disconnect()` 호출 시 재연결 억제(`intentionalDisconnect`). `onOpen`에서 카운터 리셋 |
+| 2026-05-26 | **투표 카드 내가 담은 장소 배지 추가** — `VotingPlaceCard` 이미지 우상단에 `myBookmark=true` 시 Primary 색 "내가 담은 곳" 배지 표시(Bookmark 아이콘 + 라벨) |
+| 2026-05-26 | **WebSocket 이벤트 처리 최적화** — `VoteViewModel.connectWebSocket()` `onEvent` 콜백에서 `refreshStatus()`(내 상태+그룹 상태 2 API) → `refreshGroupStatus()`(그룹 상태만 1 API)로 교체. 불필요한 내 상태 재조회 제거. `refreshGroupStatus()` private 메서드 분리 |
+| 2026-05-26 | **투표 실패 에러 UI 추가** — `SwipeVotingScreen`에 `snackbarHostState` 파라미터 + `Scaffold` `snackbarHost` 추가. NavGraph에서 `uiState.error` LaunchedEffect 감지 → 스낵바 표시 후 `clearError()` 호출 |
+
+**마지막 수정:** 2026-05-26 (투표 UX 개선 + 버그 수정 일괄) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

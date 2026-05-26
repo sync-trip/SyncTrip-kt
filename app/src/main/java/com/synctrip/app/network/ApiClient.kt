@@ -103,4 +103,16 @@ object ApiClient {
         .build()
 
     val api: SyncTripApiService = retrofit.create(SyncTripApiService::class.java)
+
+    /** WebSocket 접속 URL — BASE_URL의 스킴을 ws(s)로 변환 후 /ws 경로 추가 */
+    val wsUrl: String = BuildConfig.BASE_URL
+        .replace("https://", "wss://")
+        .replace("http://", "ws://")
+        .trimEnd('/') + "/ws"
+
+    /** STOMP CONNECT 프레임의 host 헤더용 호스트명 */
+    val wsHost: String = BuildConfig.BASE_URL
+        .removePrefix("https://")
+        .removePrefix("http://")
+        .trimEnd('/')
 }
