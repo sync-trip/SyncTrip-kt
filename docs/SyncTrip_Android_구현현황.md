@@ -120,10 +120,10 @@
 
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
-| USR-019 | 영수증 OCR | ❌ 미구현 | — | 백엔드 완성, Android UI 없음 |
-| USR-020 | 지출 입력/수정 UI | ❌ 미구현 | — | 구 앱도 더미 데이터만 |
+| USR-019 | 영수증 OCR | ✅ 구현 | `ExpenseInputSheet` (갤러리 선택 → multipart POST → 자동 채우기) | `POST /api/bands/{bandId}/expenses/ocr` 연동. 항목명·금액·통화 자동 채우기. OCR 실패 시 수동 입력 유지 |
+| USR-020 | 지출 입력/삭제 UI | ✅ 구현 | `SettlementContent` 내 `ExpenseInputSheet` + `ExpenseCard` | 지출 추가 FAB → BottomSheet. 실제 지출 목록(ExpenseResponse) 표시. 본인 지출만 삭제 버튼 노출. 낙관적 삭제. CRUD API 연결 |
 | USR-021 | 다통화 환율 표시 | ❌ 미구현 | — | 구 앱도 미구현 |
-| USR-022 | 더치페이 정산 UI | ✅ 구현 | `SettlementContent` (hub SETTLEMENT 탭) + `BandViewModel.loadSettlement()` | `SettlementResponse → Settlement` 변환. hub 탭 진입 시 자동 로드 |
+| USR-022 | 더치페이 정산 UI | ✅ 구현 | `SettlementContent` (hub SETTLEMENT 탭) + `BandViewModel.loadSettlement()` | `SettlementResponse → Settlement` 변환. hub 탭 진입 시 자동 로드. `myBalance` 현재 userId 기준 수정 |
 
 ---
 
@@ -223,5 +223,8 @@
 ---
 
 | 2026-05-26 | **공유 앨범 (USR-023)** — `AlbumScreen.kt` 신규 (인스타그램 피드 + Google Maps 지도 핀 탭). `AlbumViewModel`, `AlbumRepository` 신규. `DataModels` 앨범 4개 모델 추가. `SyncTripApiService` 앨범 API 6개 추가. EXIF 메타데이터(위도·경도·촬영시각) 추출. Base64 이미지 업로드. 낙관적 삭제. 지도 핀 클릭 시 피드 탭으로 전환 + 스크롤. `TripBandHubScreen` PHOTO 탭 `AlbumContent` 연결. Google Maps SDK 첫 연결(지도 SDK 미구현 → 구현) |
+| 2026-05-26 | **정산 백엔드-Android 불일치 수정** — `MemberSettlementSummary` 필드명 `name`→`userName`, `balance`→`netAmount`, `profileImageUrl` 제거. `SettlementTransaction` 필드명 `fromName`→`fromUserName`, `toName`→`toUserName`. `toUiSettlement()` `myBalance` 현재 userId 기준으로 수정 |
+| 2026-05-26 | **지출 입력/삭제 (USR-020)** — `SettlementContent`에 지출 추가 FAB + `ExpenseInputSheet` BottomSheet 추가. 항목명·금액·통화·분담자 입력. `ExpenseCard` 실제 지출 목록 표시(본인 것만 삭제). `BandViewModel`에 `loadExpenses·createExpense·deleteExpense·updateExpense` 추가. `SyncTripApiService`에 `updateExpense·deleteExpense` API 추가. SETTLEMENT 탭 진입 시 지출 목록 자동 로드 |
+| 2026-05-26 | **영수증 OCR (USR-019)** — `ExpenseInputSheet`에 "영수증 스캔" 버튼 추가. 갤러리 이미지 선택 → multipart POST → 항목명·금액·통화 자동 채우기. `SyncTripApiService.scanReceipt` 추가. `OcrReceiptResponse·OcrItemResult` DataModel 추가 |
 
 **마지막 수정:** 2026-05-26 | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

@@ -28,9 +28,14 @@ import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
 import java.text.NumberFormat
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 1. Swipe Voting Screen  ← 메인 투표 화면 (스와이프 카드 방식)
@@ -740,47 +745,332 @@ private fun ExpenseItemRow(item: SettlementItem) {
 
 /**
  * 정산 탭 콘텐츠.
- * SettlementScreen과 동일한 목록 UI지만 Scaffold 없이 콘텐츠만 포함한다.
+ * 정산 요약(송금 목록/잔액) + 실제 지출 목록 + 지출 추가 FAB를 포함한다.
  * TripBandHubScreen의 정산 탭에서 호출한다.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettlementContent(
+    bandId: Long,
     settlement: Settlement?,
+    expenses: List<ExpenseResponse>,
+    members: List<BandMemberResponse>,
+    currentUserId: Long,
+    isExpensesLoading: Boolean,
+    onAddExpense: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+    onDeleteExpense: (expenseId: Long) -> Unit,
     onSettleClick: (transferId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 데이터 미로드 시 중앙 로딩 스피너
-    if (settlement == null) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            PlaneLoadingIndicator()
+    var showAddSheet by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        if (settlement == null && isExpensesLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                PlaneLoadingIndicator()
+            }
+        } else {
+            LazyColumn(
+                modifier            = Modifier.fillMaxSize(),
+                contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (settlement != null) {
+                    item { TotalAmountCard(settlement = settlement) }
+                    item { MyBalanceCard(balance = settlement.myBalance, currency = settlement.currency) }
+                    if (settlement.pendingTransfers.isNotEmpty()) {
+                        item {
+                            Text(
+                                "정산 현황",
+                                style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                            )
+                        }
+                        items(settlement.pendingTransfers) { transfer ->
+                            TransferCard(transfer = transfer, onSettleClick = onSettleClick)
+                        }
+                    }
+                }
+
+                item {
+                    Row(
+                        modifier            = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment   = Alignment.CenterVertically,
+                    ) {
+                        Text("지출 내역", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            "${expenses.size}건",
+                            style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        )
+                    }
+                }
+
+                if (isExpensesLoading) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        }
+                    }
+                } else if (expenses.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "아직 등록된 지출이 없어요",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
+                    }
+                } else {
+                    items(expenses, key = { it.id }) { expense ->
+                        ExpenseCard(
+                            expense       = expense,
+                            isOwner       = expense.payerId == currentUserId,
+                            onDelete      = { onDeleteExpense(expense.id) },
+                        )
+                    }
+                }
+            }
         }
-        return
+
+        // 지출 추가 FAB
+        FloatingActionButton(
+            onClick           = { showAddSheet = true },
+            modifier          = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            containerColor    = MaterialTheme.colorScheme.primary,
+        ) {
+            Icon(Icons.Outlined.Add, contentDescription = "지출 추가", tint = MaterialTheme.colorScheme.onPrimary)
+        }
     }
 
-    LazyColumn(
-        modifier            = modifier.fillMaxSize(),
-        contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    if (showAddSheet) {
+        ExpenseInputSheet(
+            bandId         = bandId,
+            members        = members,
+            currentUserId  = currentUserId,
+            baseCurrency   = settlement?.currency ?: "KRW",
+            onDismiss      = { showAddSheet = false },
+            onConfirm      = { itemName, amount, currency, memberIds ->
+                onAddExpense(itemName, amount, currency, memberIds)
+                showAddSheet = false
+            },
+        )
+    }
+}
+
+/** 지출 카드 — 항목명/금액/결제자/날짜 표시. 본인 지출에만 삭제 버튼 표시 */
+@Composable
+private fun ExpenseCard(
+    expense: ExpenseResponse,
+    isOwner: Boolean,
+    onDelete: () -> Unit,
+) {
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title            = { Text("지출 삭제") },
+            text             = { Text("'${expense.itemName}' 지출을 삭제할까요?") },
+            confirmButton    = {
+                TextButton(onClick = { showDeleteDialog = false; onDelete() }) {
+                    Text("삭제", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton    = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("취소") }
+            },
+        )
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape    = RoundedCornerShape(12.dp),
+        colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        item {
-            Text(
-                settlement.tripTitle,
-                style = MaterialTheme.typography.displayLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        Row(
+            modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(expense.itemName, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "결제자: ${expense.payerName}",
+                    style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                )
+                if (expense.memberIds.isNotEmpty()) {
+                    Text(
+                        "${expense.memberIds.size}명 분담",
+                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    )
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    "${NumberFormat.getNumberInstance(Locale.KOREA).format(expense.amount.toLong())} ${expense.currency}",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color      = MaterialTheme.colorScheme.primary,
+                    ),
+                )
+                if (isOwner) {
+                    IconButton(onClick = { showDeleteDialog = true }, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Outlined.Delete,
+                            contentDescription = "삭제",
+                            tint     = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 지출 입력 BottomSheet — 항목명, 금액, 통화, 분담자 선택, 영수증 OCR */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExpenseInputSheet(
+    bandId: Long,
+    members: List<BandMemberResponse>,
+    currentUserId: Long,
+    baseCurrency: String,
+    onDismiss: () -> Unit,
+    onConfirm: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+) {
+    var itemName    by remember { mutableStateOf("") }
+    var amountText  by remember { mutableStateOf("") }
+    var currency    by remember { mutableStateOf(baseCurrency) }
+    var isOcrLoading by remember { mutableStateOf(false) }
+    // 분담자: 기본값은 전체 멤버
+    val selectedIds = remember { mutableStateListOf<Long>().apply { addAll(members.map { it.userId }) } }
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope      = rememberCoroutineScope()
+    val context    = androidx.compose.ui.platform.LocalContext.current
+
+    // 갤러리에서 이미지 선택 → OCR 자동 채우기
+    val imageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            isOcrLoading = true
+            val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
+            if (bytes != null) {
+                runCatching {
+                    val requestFile = bytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
+                    val part = MultipartBody.Part.createFormData("image", "receipt.jpg", requestFile)
+                    com.synctrip.app.network.ApiClient.api.scanReceipt(bandId, part)
+                }.onSuccess { result ->
+                    if (itemName.isBlank()) itemName = result.storeName ?: ""
+                    if (amountText.isBlank()) amountText = result.total?.toString() ?: ""
+                    if (result.currency != null) currency = result.currency
+                }
+            }
+            isOcrLoading = false
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Text("지출 추가", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                OutlinedButton(
+                    onClick  = { imageLauncher.launch("image/*") },
+                    enabled  = !isOcrLoading,
+                    shape    = RoundedCornerShape(8.dp),
+                ) {
+                    if (isOcrLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("스캔 중…")
+                    } else {
+                        Icon(Icons.Outlined.DocumentScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("영수증 스캔")
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value         = itemName,
+                onValueChange = { itemName = it },
+                label         = { Text("항목명") },
+                singleLine    = true,
+                modifier      = Modifier.fillMaxWidth(),
             )
-        }
-        item { TotalAmountCard(settlement = settlement) }
-        item { MyBalanceCard(balance = settlement.myBalance, currency = settlement.currency) }
-        item {
-            Text("정산 현황", style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.onSurface))
-        }
-        items(settlement.pendingTransfers) { transfer ->
-            TransferCard(transfer = transfer, onSettleClick = onSettleClick)
-        }
-        item {
-            Text("상세 지출 내역", style = MaterialTheme.typography.titleLarge)
-        }
-        items(settlement.summary) { item ->
-            ExpenseItemRow(item = item)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value         = amountText,
+                    onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' } },
+                    label         = { Text("금액") },
+                    singleLine    = true,
+                    modifier      = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value         = currency,
+                    onValueChange = { if (it.length <= 3) currency = it.uppercase() },
+                    label         = { Text("통화") },
+                    singleLine    = true,
+                    modifier      = Modifier.width(90.dp),
+                )
+            }
+
+            Text("분담자", style = MaterialTheme.typography.titleMedium)
+            members.forEach { member ->
+                Row(
+                    verticalAlignment  = Alignment.CenterVertically,
+                    modifier           = Modifier.fillMaxWidth(),
+                ) {
+                    Checkbox(
+                        checked         = selectedIds.contains(member.userId),
+                        onCheckedChange = { checked ->
+                            if (checked) selectedIds.add(member.userId) else selectedIds.remove(member.userId)
+                        },
+                    )
+                    Text(
+                        member.name + if (member.userId == currentUserId) " (나)" else "",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+
+            Button(
+                onClick  = {
+                    val amount = amountText.toDoubleOrNull() ?: return@Button
+                    if (itemName.isBlank()) return@Button
+                    onConfirm(itemName.trim(), amount, currency.ifBlank { "KRW" }, selectedIds.toList())
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled  = itemName.isNotBlank() && amountText.isNotBlank() && !isOcrLoading,
+            ) {
+                Text("추가")
+            }
         }
     }
 }

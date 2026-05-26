@@ -34,6 +34,8 @@ data class BandUiState(
     val userProfile: UserProfileResponse?      = null,
     // 정산 화면 데이터
     val settlement: Settlement?                = null,
+    val expenses: List<ExpenseResponse>        = emptyList(),
+    val isExpensesLoading: Boolean             = false,
 )
 
 class BandViewModel : ViewModel() {
@@ -300,12 +302,57 @@ class BandViewModel : ViewModel() {
     /** GET /api/bands/{bandId}/settlement → UI Settlement 모델로 변환 */
     fun loadSettlement(bandId: Long) {
         viewModelScope.launch {
+            val currentUserId = _uiState.value.userProfile?.id
             runCatching { ApiClient.api.getSettlement(bandId) }
                 .onSuccess { resp ->
-                    val ui = resp.toUiSettlement(bandId)
+                    val ui = resp.toUiSettlement(bandId, currentUserId)
                     _uiState.update { it.copy(settlement = ui) }
                 }
                 .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+        }
+    }
+
+    /** GET /api/bands/{bandId}/expenses — 지출 목록 로드 */
+    fun loadExpenses(bandId: Long) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isExpensesLoading = true) }
+            runCatching { ApiClient.api.getExpenses(bandId) }
+                .onSuccess { list -> _uiState.update { it.copy(expenses = list, isExpensesLoading = false) } }
+                .onFailure { e -> _uiState.update { it.copy(isExpensesLoading = false, error = e.message) } }
+        }
+    }
+
+    /** POST /api/bands/{bandId}/expenses — 지출 추가, 성공 시 목록 맨 앞에 추가 */
+    fun createExpense(bandId: Long, request: ExpenseCreateRequest) {
+        viewModelScope.launch {
+            runCatching { ApiClient.api.createExpense(bandId, request) }
+                .onSuccess { created ->
+                    _uiState.update { it.copy(expenses = listOf(created) + it.expenses) }
+                }
+                .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+        }
+    }
+
+    /** PUT /api/bands/{bandId}/expenses/{expenseId} — 지출 수정 */
+    fun updateExpense(bandId: Long, expenseId: Long, request: ExpenseUpdateRequest) {
+        viewModelScope.launch {
+            runCatching { ApiClient.api.updateExpense(bandId, expenseId, request) }
+                .onSuccess { updated ->
+                    _uiState.update { state ->
+                        state.copy(expenses = state.expenses.map { if (it.id == expenseId) updated else it })
+                    }
+                }
+                .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+        }
+    }
+
+    /** DELETE /api/bands/{bandId}/expenses/{expenseId} — 지출 삭제 (낙관적 업데이트) */
+    fun deleteExpense(bandId: Long, expenseId: Long) {
+        val prev = _uiState.value.expenses
+        _uiState.update { it.copy(expenses = it.expenses.filter { e -> e.id != expenseId }) }
+        viewModelScope.launch {
+            runCatching { ApiClient.api.deleteExpense(bandId, expenseId) }
+                .onFailure { e -> _uiState.update { it.copy(expenses = prev, error = e.message) } }
         }
     }
 
@@ -327,25 +374,25 @@ class BandViewModel : ViewModel() {
     }
 
     /** SettlementResponse(백엔드) → Settlement(UI) 변환 */
-    private fun SettlementResponse.toUiSettlement(bandId: Long) = Settlement(
+    private fun SettlementResponse.toUiSettlement(bandId: Long, currentUserId: Long?) = Settlement(
         tripId    = bandId.toString(),
         tripTitle = "정산",
         totalAmount = totalExpense.toLong(),
         currency  = baseCurrency,
-        myBalance = memberSummaries.firstOrNull()?.balance?.toLong() ?: 0L,
+        myBalance = memberSummaries.firstOrNull { it.userId == currentUserId }?.netAmount?.toLong() ?: 0L,
         summary   = memberSummaries.map { m ->
             SettlementItem(
                 id          = m.userId.toString(),
                 category    = "지출",
-                description = "${m.name} 정산",
+                description = "${m.userName} 정산",
                 amount      = m.totalPaid.toLong(),
-                paidBy      = m.name,
+                paidBy      = m.userName,
             )
         },
         pendingTransfers = transactions.map { t ->
             PendingTransfer(
-                fromNickname = t.fromName,
-                toNickname   = t.toName,
+                fromNickname = t.fromUserName,
+                toNickname   = t.toUserName,
                 amount       = t.amount.toLong(),
                 isResolved   = false,
             )

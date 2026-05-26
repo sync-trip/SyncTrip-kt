@@ -35,6 +35,8 @@ import com.synctrip.app.ui.viewmodel.ScheduleViewModel
 import com.synctrip.app.ui.viewmodel.VoteViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 
 @Composable
@@ -416,6 +418,8 @@ fun SyncTripNavGraph(
                         if (bandUiState.settlement == null) {
                             bandViewModel.loadSettlement(bandIdLong)
                         }
+                        // 지출 목록은 탭 진입마다 최신화 (추가/삭제 후 재진입 시 반영)
+                        bandViewModel.loadExpenses(bandIdLong)
                     }
                     BandHubTab.PHOTO -> {
                         // 사진 탭 최초 진입 시 피드 + 지도 핀 로드
@@ -457,6 +461,8 @@ fun SyncTripNavGraph(
                     isScheduleLoading = scheduleUiState.isLoading,
                     isEditing         = scheduleUiState.isEditing,
                     settlement        = bandUiState.settlement,
+                    expenses          = bandUiState.expenses,
+                    isExpensesLoading = bandUiState.isExpensesLoading,
                     selectedTab       = selectedTab,
                     onTabSelected     = { tab -> selectedTab = tab },
                     snackbarHostState = snackbarState,
@@ -479,6 +485,20 @@ fun SyncTripNavGraph(
                     onStartEditing    = { scheduleViewModel.startEditing(bandIdLong) },
                     onFinishEditing   = { scheduleViewModel.finishEditing(bandIdLong) },
                     onSettleClick     = {},
+                    onAddExpense      = { itemName, amount, currency, memberIds ->
+                        val now = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                        bandViewModel.createExpense(
+                            bandIdLong,
+                            ExpenseCreateRequest(
+                                itemName  = itemName,
+                                amount    = amount,
+                                currency  = currency,
+                                paidAt    = now,
+                                memberIds = memberIds,
+                            ),
+                        )
+                    },
+                    onDeleteExpense   = { expenseId -> bandViewModel.deleteExpense(bandIdLong, expenseId) },
                     // 앨범 탭 연결
                     albumPhotos       = albumUiState.photos,
                     albumMapPins      = albumUiState.mapPins,

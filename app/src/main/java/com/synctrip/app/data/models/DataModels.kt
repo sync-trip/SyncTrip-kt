@@ -486,6 +486,21 @@ data class ApiPlaceSearchResult(
 // Backend – Expense
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** POST /api/bands/{bandId}/expenses/ocr 응답 */
+data class OcrReceiptResponse(
+    val storeName: String?,
+    val currency: String?,
+    val total: Double?,
+    val items: List<OcrItemResult>,
+    val ocrRaw: String?,
+)
+
+data class OcrItemResult(
+    val itemNameOriginal: String?,
+    val itemNameKo: String?,
+    val amount: Double?,
+)
+
 data class ExpenseResponse(
     val id: Long,
     val payerId: Long,
@@ -508,6 +523,14 @@ data class ExpenseCreateRequest(
     val memberIds: List<Long>,
 )
 
+data class ExpenseUpdateRequest(
+    val itemName: String,
+    val amount: Double,
+    val currency: String,
+    val paidAt: String,
+    val memberIds: List<Long>,
+)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Backend – Settlement  (GET /api/bands/{bandId}/settlement)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -521,18 +544,17 @@ data class SettlementResponse(
 
 data class MemberSettlementSummary(
     val userId: Long,
-    val name: String,
-    val profileImageUrl: String?,
+    val userName: String,
     val totalPaid: Double,
     val totalShare: Double,
-    val balance: Double,
+    val netAmount: Double,
 )
 
 data class SettlementTransaction(
     val fromUserId: Long,
-    val fromName: String,
+    val fromUserName: String,
     val toUserId: Long,
-    val toName: String,
+    val toUserName: String,
     val amount: Double,
 )
 
