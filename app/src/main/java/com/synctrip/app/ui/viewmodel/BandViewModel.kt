@@ -230,7 +230,7 @@ class BandViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(isSearchLoading = true)
             runCatching { BandRepository.searchPlaces(bandId, keyword, category) }
                 .onSuccess { _uiState.value = _uiState.value.copy(searchResults = it, isSearchLoading = false) }
-                .onFailure { _uiState.value = _uiState.value.copy(isSearchLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isSearchLoading = false, error = it.message ?: it.toString()) }
         }
     }
 
