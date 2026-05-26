@@ -40,6 +40,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.*
 import com.synctrip.app.ui.theme.SynctripTheme
@@ -67,6 +68,8 @@ fun HomeScreen(
     onAlarmSettingsClick: () -> Unit = {},
     onProfileEditClick: () -> Unit = {},
     onPastTripsClick: () -> Unit = {},
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     hasUnreadNotifications: Boolean = false,
@@ -380,11 +383,15 @@ fun HomeScreen(
                         )
                     },
                 ) { innerPadding ->
+                    PullToRefreshBox(
+                        isRefreshing = isRefreshing,
+                        onRefresh    = onRefresh,
+                        modifier     = Modifier.padding(innerPadding),
+                    ) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
-                            .padding(innerPadding)
                             .padding(bottom = 16.dp),
                     ) {
                         Spacer(Modifier.height(8.dp))
@@ -447,6 +454,7 @@ fun HomeScreen(
                                 }
                             }
                         }
+                    }
                     }
                 }
             }

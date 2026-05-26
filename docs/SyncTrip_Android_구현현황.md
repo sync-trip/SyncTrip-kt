@@ -253,5 +253,6 @@
 | 2026-05-26 | **투표 카드 내가 담은 장소 배지 추가** — `VotingPlaceCard` 이미지 우상단에 `myBookmark=true` 시 Primary 색 "내가 담은 곳" 배지 표시(Bookmark 아이콘 + 라벨) |
 | 2026-05-26 | **WebSocket 이벤트 처리 최적화** — `VoteViewModel.connectWebSocket()` `onEvent` 콜백에서 `refreshStatus()`(내 상태+그룹 상태 2 API) → `refreshGroupStatus()`(그룹 상태만 1 API)로 교체. 불필요한 내 상태 재조회 제거. `refreshGroupStatus()` private 메서드 분리 |
 | 2026-05-26 | **투표 실패 에러 UI 추가** — `SwipeVotingScreen`에 `snackbarHostState` 파라미터 + `Scaffold` `snackbarHost` 추가. NavGraph에서 `uiState.error` LaunchedEffect 감지 → 스낵바 표시 후 `clearError()` 호출 |
+| 2026-05-27 | **Pull-to-Refresh 전 화면 구현 (➕)** — `HomeScreen`, `NotificationScreen`, `MyPassportScreen`, `VoteResultScreen`, `TripBandHubScreen` 전 탭에 스와이프 새로고침 추가. `PullToRefreshBox` (material3.pulltorefresh 서브패키지) 사용. 탭별 새로고침 로직 분기: BAND·SETTLEMENT는 `TripBandHubScreen` 레벨 `PullToRefreshBox`로 처리, SCHEDULE은 `ScheduleContent` 내부 타임라인(`SlotTimeline`) 영역에 직접 `PullToRefreshBox` 배치(구글맵이 제스처 소비하므로 지도 아래 LazyColumn만 감쌈), PHOTO는 `AlbumContent` 내부 FEED 탭 `AlbumFeedList`에 직접 `PullToRefreshBox` 배치. NavGraph 각 라우트에 `isRefreshing` 상태 + `LaunchedEffect(isLoading)` 리셋 + `onRefresh` 콜백 연결 |
 
-**마지막 수정:** 2026-05-26 (투표 UX 개선 + 버그 수정 일괄) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+**마지막 수정:** 2026-05-27 (Pull-to-Refresh 전 화면 구현) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
