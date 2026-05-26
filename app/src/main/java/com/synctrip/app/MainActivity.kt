@@ -14,7 +14,9 @@ import com.synctrip.app.ui.theme.SynctripTheme
 class MainActivity : ComponentActivity() {
 
     // Compose와 딥링크 코드를 공유하는 상태 — onNewIntent에서도 갱신됨
-    private val deepLinkCode = mutableStateOf<String?>(null)
+    private val deepLinkCode  = mutableStateOf<String?>(null)
+    // FCM 알림 탭 시 이동할 bandId
+    private val fcmBandId     = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -23,6 +25,7 @@ class MainActivity : ComponentActivity() {
         Log.d("KakaoKeyHash", "Key Hash: $keyHash")
 
         deepLinkCode.value = extractCode(intent)
+        fcmBandId.value    = intent?.getStringExtra("bandId")
 
         enableEdgeToEdge()
         setContent {
@@ -30,16 +33,19 @@ class MainActivity : ComponentActivity() {
                 SyncTripNavGraph(
                     pendingDeepLinkCode = deepLinkCode.value,
                     onDeepLinkConsumed  = { deepLinkCode.value = null },
+                    pendingFcmBandId    = fcmBandId.value,
+                    onFcmBandConsumed   = { fcmBandId.value = null },
                 )
             }
         }
     }
 
-    // 앱이 이미 실행 중일 때 딥링크 수신 (launchMode="singleTop")
+    // 앱이 이미 실행 중일 때 딥링크/FCM 알림 수신 (launchMode="singleTop")
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         deepLinkCode.value = extractCode(intent)
+        fcmBandId.value    = intent.getStringExtra("bandId")
     }
 
     private fun extractCode(intent: Intent?): String? =

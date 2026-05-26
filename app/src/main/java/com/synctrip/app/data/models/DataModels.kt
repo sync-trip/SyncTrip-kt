@@ -570,7 +570,7 @@ data class SettlementTransaction(
 
 enum class ApiNotificationType {
     MEMBER_READY, MEMBER_JOINED, VOTE_STARTED, SCHEDULE_UPDATED, SETTLEMENT_REQUEST,
-    TRIP_ENDED,  // 2026-05-23 백엔드 추가
+    TRIP_ENDED, HOLIDAY_WARNING,  // 백엔드 전체 타입 동기화
 }
 
 /**
@@ -579,7 +579,7 @@ enum class ApiNotificationType {
 data class NotificationResponse(
     val id: Long,
     val bandId: Long?,
-    val type: ApiNotificationType,
+    val type: ApiNotificationType?,  // 미지원 타입은 null로 역직렬화됨
     val title: String,
     val content: String,
     val isRead: Boolean,

@@ -88,11 +88,12 @@ class NotificationViewModel : ViewModel() {
         }
     }
 
-    /** ApiNotificationType(백엔드) → NotificationType(UI 모델) 변환 */
-    private fun ApiNotificationType.toUiType(): NotificationType = when (this) {
+    /** ApiNotificationType(백엔드) → NotificationType(UI 모델) 변환. null(미지원 타입)은 GENERAL */
+    private fun ApiNotificationType?.toUiType(): NotificationType = when (this) {
         ApiNotificationType.VOTE_STARTED       -> NotificationType.VOTING
         ApiNotificationType.SETTLEMENT_REQUEST -> NotificationType.SETTLEMENT
         ApiNotificationType.SCHEDULE_UPDATED   -> NotificationType.SCHEDULE_CHANGE
+        ApiNotificationType.HOLIDAY_WARNING    -> NotificationType.GENERAL
         else                                   -> NotificationType.GENERAL
     }
 

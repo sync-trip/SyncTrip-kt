@@ -1,9 +1,14 @@
 package com.synctrip.app.data.repository
 
 import android.content.Context
+import com.google.firebase.messaging.FirebaseMessaging
 import com.synctrip.app.core.TokenDataStore
+import com.synctrip.app.data.models.FcmTokenRequest
 import com.synctrip.app.data.models.LoginResponse
 import com.synctrip.app.network.ApiClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 object AuthRepository {
 
@@ -45,10 +50,16 @@ object AuthRepository {
     fun restoreToken(context: Context): kotlinx.coroutines.flow.Flow<String?> =
         TokenDataStore.accessTokenFlow(context)
 
-    // JWT를 ApiClient(메모리)와 DataStore(영구) 양쪽에 저장
+    // JWT를 ApiClient(메모리)와 DataStore(영구) 양쪽에 저장, FCM 토큰 등록
     private suspend fun persistTokens(context: Context, response: LoginResponse) {
         ApiClient.accessToken  = response.accessToken
-        ApiClient.refreshToken = response.refreshToken   // 401 자동 갱신에 사용
+        ApiClient.refreshToken = response.refreshToken
         TokenDataStore.save(context, response.accessToken, response.refreshToken, response.userId)
+        // 로그인 직후 FCM 토큰 등록 — onNewToken은 설치 시점에만 호출되므로 여기서 직접 등록
+        FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching { ApiClient.api.registerFcmToken(FcmTokenRequest(fcmToken)) }
+            }
+        }
     }
 }

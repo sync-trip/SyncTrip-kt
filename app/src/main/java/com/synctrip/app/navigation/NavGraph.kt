@@ -33,6 +33,10 @@ import com.synctrip.app.ui.viewmodel.BandViewModel
 import com.synctrip.app.ui.viewmodel.NotificationViewModel
 import com.synctrip.app.ui.viewmodel.ScheduleViewModel
 import com.synctrip.app.ui.viewmodel.VoteViewModel
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.ui.unit.dp
+import com.synctrip.app.core.FcmEventBus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import java.time.LocalDateTime
@@ -43,9 +47,29 @@ import kotlinx.coroutines.launch
 fun SyncTripNavGraph(
     pendingDeepLinkCode: String? = null,
     onDeepLinkConsumed: () -> Unit = {},
+    pendingFcmBandId: String? = null,
+    onFcmBandConsumed: () -> Unit = {},
 ) {
-    val navController = rememberNavController()
-    val scope         = rememberCoroutineScope()
+    val navController   = rememberNavController()
+    val scope           = rememberCoroutineScope()
+    val fcmSnackbar     = remember { SnackbarHostState() }
+
+    // FCM 알림 탭 → 해당 방으로 이동
+    LaunchedEffect(pendingFcmBandId) {
+        val bandId = pendingFcmBandId?.toLongOrNull() ?: return@LaunchedEffect
+        onFcmBandConsumed()
+        navController.navigate("tripLobby/$bandId")
+    }
+
+    // FCM 포그라운드 알림 수신 → 상단 Snackbar 표시
+    LaunchedEffect(Unit) {
+        FcmEventBus.events.collect { event ->
+            fcmSnackbar.showSnackbar(
+                message  = "${event.title}\n${event.body}",
+                duration = SnackbarDuration.Short,
+            )
+        }
+    }
 
     // 딥링크 초대 코드 상태 — NavHost 밖에 선언해야 어느 화면에서도 다이얼로그 표시 가능
     var pendingJoinCode by remember { mutableStateOf<String?>(null) }
@@ -91,6 +115,7 @@ fun SyncTripNavGraph(
         )
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     NavHost(navController = navController, startDestination = "splash") {
 
         composable("splash") {
@@ -875,6 +900,13 @@ fun SyncTripNavGraph(
             }
         }
     }
+
+    // 포그라운드 FCM 알림 — 상단에 오버레이
+    SnackbarHost(
+        hostState = fcmSnackbar,
+        modifier  = Modifier.align(Alignment.TopCenter).padding(top = 48.dp),
+    )
+    } // Box
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

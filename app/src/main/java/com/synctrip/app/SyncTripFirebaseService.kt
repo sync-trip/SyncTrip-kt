@@ -4,9 +4,13 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.synctrip.app.core.FcmEventBus
 import com.synctrip.app.data.models.FcmTokenRequest
 import com.synctrip.app.network.ApiClient
 import kotlinx.coroutines.CoroutineScope
@@ -31,25 +35,40 @@ class SyncTripFirebaseService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        val title = message.notification?.title ?: return
-        val body  = message.notification?.body  ?: return
-        showNotification(title, body)
+        // notification 필드 또는 data 필드에서 title/body 추출
+        val title  = message.notification?.title ?: message.data["title"] ?: return
+        val body   = message.notification?.body  ?: message.data["body"]  ?: return
+        val type   = message.data["type"]
+        val bandId = message.data["bandId"]
+
+        // 인앱 Toast — 앱 프로세스가 살아 있을 때 항상 표시
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(applicationContext, "$title\n$body", Toast.LENGTH_LONG).show()
+        }
+        FcmEventBus.send(title, body)
+
+        // 시스템 알림 — 화면 꺼짐/백그라운드 대비
+        showNotification(title, body, type, bandId)
     }
 
-    private fun showNotification(title: String, body: String) {
-        val channelId = "synctrip_notifications"
-        val manager   = getSystemService(NotificationManager::class.java)
+    private fun showNotification(title: String, body: String, type: String?, bandId: String?) {
+        val channelId      = "synctrip_notifications"
+        val notificationId = System.currentTimeMillis().toInt()
+        val manager        = getSystemService(NotificationManager::class.java)
 
         manager.createNotificationChannel(
             NotificationChannel(channelId, "SyncTrip 알림", NotificationManager.IMPORTANCE_DEFAULT)
         )
 
+        // bandId, type을 Intent extras에 담아 탭 시 해당 화면으로 이동 가능하게
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            bandId?.let { putExtra("bandId", it) }
+            type?.let   { putExtra("fcmType", it) }
         }
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
+            this, notificationId, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
         val notification = NotificationCompat.Builder(this, channelId)
@@ -60,6 +79,6 @@ class SyncTripFirebaseService : FirebaseMessagingService() {
             .setContentIntent(pendingIntent)
             .build()
 
-        manager.notify(System.currentTimeMillis().toInt(), notification)
+        manager.notify(notificationId, notification)
     }
 }
