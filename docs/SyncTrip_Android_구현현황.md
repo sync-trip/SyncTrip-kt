@@ -90,7 +90,7 @@
 | USR-010 | WebSocket 실시간 투표 | ✅ 구현 | `network/VoteStompClient.kt` + `VoteViewModel.connectWebSocket()` | 투표 화면 진입 시 자동 연결. 이벤트 수신 시 groupStatus만 재조회(`refreshGroupStatus`) — 불필요한 내 상태 API 재호출 제거 |
 | USR-010 | 내가 담은 장소 자동 좋아요 | ✅ 구현 | `VoteViewModel.loadVotePlaces()` | 투표 화면 진입 시 myBookmark=true 장소를 pending에서 제외 + result=1 순차 자동 제출(백엔드에서 0으로 저장). 화면 재진입 시 CONFLICT 무시. votedPlaces 초기값 올바르게 설정됨(재진입 시 진행률 0 표시 버그 없음) |
 | ➕ | 투표 카드 — 내가 담은 장소 배지 | ✅ 구현 | `VotingPlaceCard` | `myBookmark=true`이면 이미지 우상단에 Primary 색 "내가 담은 곳" 배지 표시 |
-| USR-011 | 카테고리별 순위 풀 표시 | ❌ 미구현 | — | 투표 결과 목록 UI 없음 |
+| USR-011 | 투표 결과 화면 | ✅ 구현 (2026-05-26) | `VoteResultScreen` + `VoteViewModel.loadVoteResults()` + `GET /api/bands/{bandId}/votes/results` (백엔드 신규) | 장소별 좋아요/싫어요 집계 표시, 통과/탈락 배지, likeCount 내림차순 정렬. 투표 완료 시 blindVoting → voteResults 자동 이동 후 "일정 만들기" → aiLoading 이동 |
 | USR-012 | Density 기반 슬롯 편입 | — | 백엔드 전담 | Android 클라이언트 별도 구현 불필요 |
 | USR-013 | 최종 결과 확인 | ⚠️ 부분 구현 | `BlindVotingScreen` (레거시) | 결과 바 UI 있음, 실 데이터 미연결 |
 

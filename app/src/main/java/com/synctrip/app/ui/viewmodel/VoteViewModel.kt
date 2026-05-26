@@ -17,6 +17,7 @@ data class VoteUiState(
     val votedPlaces:   List<VotePlaceResponse>  = emptyList(),
     val myStatus:      VoteStatusResponse?       = null,
     val groupStatus:   GroupVoteStatusResponse?  = null,
+    val voteResults:   List<VotePlaceResult>     = emptyList(),
     val isLoading: Boolean                       = false,
     val error: String?                           = null,
 )
@@ -137,6 +138,16 @@ class VoteViewModel : ViewModel() {
         viewModelScope.launch {
             runCatching { VoteRepository.getGroupVoteStatus(currentBandId) }
                 .onSuccess { group -> _uiState.value = _uiState.value.copy(groupStatus = group) }
+        }
+    }
+
+    /** 투표 결과 조회 — 투표 종료 후 결과 화면 진입 시 호출 */
+    fun loadVoteResults(bandId: Long) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            runCatching { VoteRepository.getVoteResults(bandId) }
+                .onSuccess { results -> _uiState.update { it.copy(voteResults = results, isLoading = false) } }
+                .onFailure { err -> _uiState.update { it.copy(isLoading = false, error = err.message) } }
         }
     }
 

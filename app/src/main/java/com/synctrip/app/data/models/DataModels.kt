@@ -457,14 +457,40 @@ data class VoteResponse(
 
 data class VoteStatusResponse(
     val totalPlaces: Int,
-    val votedCount: Int,
-    val isComplete: Boolean,
+    val myVotedCount: Int,  // 백엔드 필드명: myVotedCount
+    val myComplete: Boolean, // 백엔드 필드명: myComplete
 )
 
+/** 그룹 투표 완료 현황 — 멤버별 상세 포함 */
 data class GroupVoteStatusResponse(
-    val totalMembers: Int,
-    val completedMembers: Int,
-    val isAllComplete: Boolean,
+    val totalPlaces: Int,
+    val totalVotingMembers: Int,
+    val memberStatuses: List<MemberVoteStatus>,
+) {
+    /** 자격 있는 멤버 전원이 모든 장소에 투표 완료했는지 */
+    val isAllComplete: Boolean
+        get() = memberStatuses.isNotEmpty() && memberStatuses.all { it.complete }
+}
+
+data class MemberVoteStatus(
+    val userId: Long,
+    val name: String,
+    val votedCount: Int,
+    val complete: Boolean,
+)
+
+data class VotePlaceResult(
+    val placeId: Long,
+    val name: String,
+    val category: ApiPlaceCategory,
+    val thumbnailUrl: String?,
+    val address: String?,
+    val latitude: Double,
+    val longitude: Double,
+    val likeCount: Int,
+    val dislikeCount: Int,
+    val passed: Boolean,
+    val myVoteResult: Int?,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

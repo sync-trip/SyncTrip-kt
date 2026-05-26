@@ -92,6 +92,9 @@ interface SyncTripApiService {
     @GET("api/bands/{bandId}/votes/status/group")
     suspend fun getGroupVoteStatus(@Path("bandId") bandId: Long): GroupVoteStatusResponse
 
+    @GET("api/bands/{bandId}/votes/results")
+    suspend fun getVoteResults(@Path("bandId") bandId: Long): List<VotePlaceResult>
+
     // ── Place Search ──────────────────────────────────────────────────────────
 
     @GET("api/bands/{bandId}/places/search")
