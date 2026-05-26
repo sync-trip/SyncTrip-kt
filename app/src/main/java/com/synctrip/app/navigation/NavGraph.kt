@@ -629,7 +629,7 @@ fun SyncTripNavGraph(
             }
         }
 
-        // 투표 화면 — 스와이프 카드 방식, 완료 시 일정 생성 화면으로 이동
+        // 투표 화면 — 스와이프 카드 방식, 전원 완료 시 완료 화면 표시 (자동 이동 없음)
         composable("blindVoting/{bandId}") { backStackEntry ->
             val bandId        = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
             val voteViewModel: VoteViewModel = viewModel()
@@ -642,7 +642,7 @@ fun SyncTripNavGraph(
             }
 
             // 내 투표 완료 여부: pendingPlaces 소진 또는 서버 응답 isComplete
-            val isMyComplete = uiState.myStatus?.isComplete == true ||
+            val isMyComplete  = uiState.myStatus?.isComplete == true ||
                 (uiState.pendingPlaces.isEmpty() && uiState.votedPlaces.isNotEmpty())
             // 전원 투표 완료 여부: 서버 groupStatus 기준
             val isAllComplete = uiState.groupStatus?.isAllComplete == true
@@ -655,12 +655,7 @@ fun SyncTripNavGraph(
                 isLoading        = uiState.isLoading,
                 onVote           = { placeId, result -> voteViewModel.voteForPlace(placeId, result) },
                 onBackClick      = { navController.popBackStack() },
-                onVotingDone     = {
-                    // 전원 투표 완료 → 일정 생성 로딩 화면으로 이동 (투표 화면 백스택 제거)
-                    navController.navigate("aiLoading/$bandId") {
-                        popUpTo("blindVoting/$bandId") { inclusive = true }
-                    }
-                },
+                onVotingDone     = {},
             )
         }
 
