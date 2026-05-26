@@ -16,6 +16,10 @@ data class ScheduleUiState(
     val destination: String                  = "",
     val isLoading: Boolean                   = false,
     val isEditing: Boolean                   = false,
+    /** Plan B 추천 결과 목록 */
+    val planBResults: List<PlanBResponse>    = emptyList(),
+    /** Plan B 추천 로딩 중 여부 */
+    val isPlanBLoading: Boolean              = false,
     val error: String?                       = null,
 )
 
@@ -75,6 +79,44 @@ class ScheduleViewModel : ViewModel() {
             runCatching { ScheduleRepository.finishEditing(bandId) }
                 .onSuccess { _uiState.update { it.copy(isEditing = false) } }
                 .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+        }
+    }
+
+    /**
+     * POST /api/bands/{bandId}/schedule/plan-b
+     * 현재 슬롯 장소 근처의 대안 장소 추천 (최대 7개)
+     */
+    fun loadPlanB(bandId: Long, targetPlaceId: Long) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(planBResults = emptyList(), isPlanBLoading = true) }
+            runCatching { ScheduleRepository.getPlanB(bandId, targetPlaceId) }
+                .onSuccess { results ->
+                    _uiState.update { it.copy(planBResults = results, isPlanBLoading = false) }
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(isPlanBLoading = false, error = e.message) }
+                }
+        }
+    }
+
+    /**
+     * Plan B 교체 — 편집 락 획득 → 교체 → 락 반환을 순서대로 원자적으로 실행.
+     * UI에서 별도의 편집 모드 진입 없이 호출 가능.
+     */
+    fun executePlanBSwap(bandId: Long, scheduleId: Long, newPlaceId: Long) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, planBResults = emptyList()) }
+            runCatching {
+                ScheduleRepository.startEditing(bandId)
+                ScheduleRepository.swapSlot(bandId, scheduleId, newPlaceId)
+                ScheduleRepository.finishEditing(bandId)
+            }
+            .onSuccess { loadSchedule(bandId) }
+            .onFailure { e ->
+                // 교체 실패 시에도 락 반환 시도
+                runCatching { ScheduleRepository.finishEditing(bandId) }
+                _uiState.update { it.copy(isLoading = false, error = e.message) }
+            }
         }
     }
 

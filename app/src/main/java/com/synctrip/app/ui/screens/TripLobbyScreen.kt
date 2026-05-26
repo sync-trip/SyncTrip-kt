@@ -84,6 +84,10 @@ fun TripBandHubScreen(
     onSwapSlot: (scheduleId: Long, newPlaceId: Long) -> Unit,
     onStartEditing: () -> Unit,
     onFinishEditing: () -> Unit,
+    planBResults: List<PlanBResponse>,
+    isPlanBLoading: Boolean,
+    onRequestPlanB: (targetPlaceId: Long) -> Unit,
+    onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
     // 정산 탭 콜백
     onSettleClick: (transferId: String) -> Unit,
     // 사진 탭 — 앨범 상태 + 콜백
@@ -216,16 +220,20 @@ fun TripBandHubScreen(
                         }
                     } else {
                         ScheduleContent(
-                            schedule        = schedule,
-                            altOptions      = altOptions,
-                            isLoading       = isScheduleLoading,
-                            isEditing       = isEditing,
-                            canEdit         = false,
-                            onStartEditing  = onStartEditing,
-                            onFinishEditing = onFinishEditing,
-                            onSwapSlot      = onSwapSlot,
-                            onLoadAlts      = onLoadAlts,
-                            modifier        = Modifier.fillMaxSize(),
+                            schedule            = schedule,
+                            altOptions          = altOptions,
+                            planBResults        = planBResults,
+                            isPlanBLoading      = isPlanBLoading,
+                            isLoading           = isScheduleLoading,
+                            isEditing           = isEditing,
+                            canEdit             = false,
+                            onStartEditing      = onStartEditing,
+                            onFinishEditing     = onFinishEditing,
+                            onSwapSlot          = onSwapSlot,
+                            onLoadAlts          = onLoadAlts,
+                            onRequestPlanB      = onRequestPlanB,
+                            onExecutePlanBSwap  = onExecutePlanBSwap,
+                            modifier            = Modifier.fillMaxSize(),
                         )
                     }
                 }

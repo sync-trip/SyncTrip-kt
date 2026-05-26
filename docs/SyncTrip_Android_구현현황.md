@@ -111,8 +111,8 @@
 | USR-015 | 대체 장소(alts) 카테고리 필터 | ✅ 구현 | `ScheduleScreen.kt` `SlotSwapBottomSheet` | `altOptions`를 `swapSlot.place.category`로 필터링하여 동일 카테고리만 표시 |
 | USR-016 | 이상치 배지 표시 | ❌ 미구현 | — | 배지 UI 없음 |
 | USR-017 | Drag & Drop 순서 변경 | ❌ 미구현 | — | 구 앱도 미구현 |
-| USR-018 | Plan B 대안 팝업 | ❌ 미구현 | — | 구 앱도 미구현 |
-| USR-031 | 실시간 Plan B 추천 | ❌ 미구현 | — | 구 앱도 미구현 |
+| USR-018 | Plan B 대안 팝업 | ✅ 구현 | 2026-05-26 | `ScheduleScreen.kt` `PlanBBottomSheet` — 각 슬롯 카드 아래 "Plan B 추천받기" 버튼, 선택 시 락 획득·교체·락 반환 원자 처리 |
+| USR-031 | 실시간 Plan B 추천 | ✅ 구현 | 2026-05-26 | `ScheduleViewModel.loadPlanB()` → `POST /schedule/plan-b` → `PlanBBottomSheet` 결과 표시 (최대 7개, 거리 표시) |
 
 ---
 
@@ -226,4 +226,6 @@
 | 2026-05-26 | **공유 앨범 (USR-023)** — `AlbumScreen.kt` 신규 (인스타그램 피드 + Google Maps 지도 핀 탭). `AlbumViewModel`, `AlbumRepository` 신규. `DataModels` 앨범 4개 모델 추가. `SyncTripApiService` 앨범 API 6개 추가. EXIF 메타데이터(위도·경도·촬영시각) 추출. Base64 이미지 업로드. 낙관적 삭제. 지도 핀 클릭 시 피드 탭으로 전환 + 스크롤. `TripBandHubScreen` PHOTO 탭 `AlbumContent` 연결. Google Maps SDK 첫 연결(지도 SDK 미구현 → 구현) |
 | 2026-05-26 | **장소 검색 Google 통일 반영** — `BandRepository.searchPlaces()` `radiusMeters` 파라미터 제거. `SyncTripApiService.searchPlaces()` `@Query("radiusMeters")` 제거. `NavGraph.kt` `onCategoryChange` / `onSearch` keyword 빈 값 가드 추가(빈 상태에서 API 호출 생략). `PassportAndSearchScreens.kt` 바텀시트 "Google 지도에서 보기" → "지도에서 보기". |
 
-**마지막 수정:** 2026-05-26 (장소 검색 Google 통일, radiusMeters 제거, NavGraph 빈 keyword 가드) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+| 2026-05-26 | **Plan B (USR-018/031)** — `ScheduleViewModel`에 `planBResults`·`isPlanBLoading` 상태 + `loadPlanB()`·`executePlanBSwap()` 함수 추가. `ScheduleScreen`/`ScheduleContent`에 슬롯별 "Plan B 추천받기" 버튼(항상 노출) + `PlanBBottomSheet` + `PlanBOptionCard` 추가. `TripBandHubScreen`·NavGraph(두 call site) Plan B 파라미터 연결. |
+
+**마지막 수정:** 2026-05-26 (Plan B USR-018/031 구현 완료) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
