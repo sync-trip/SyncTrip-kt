@@ -643,6 +643,7 @@ private fun VoteCandidateCard(
 @Composable
 fun SettlementScreen(
     settlement: Settlement,
+    currentUserId: Long,
     onSettleClick: (transferId: String) -> Unit,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -686,7 +687,7 @@ fun SettlementScreen(
             }
 
             items(settlement.pendingTransfers) { transfer ->
-                TransferCard(transfer = transfer, onSettleClick = onSettleClick)
+                TransferCard(transfer = transfer, currentUserId = currentUserId, onSettleClick = onSettleClick)
             }
 
             item {
@@ -739,7 +740,14 @@ private fun MyBalanceCard(balance: Long, currency: String) {
 }
 
 @Composable
-private fun TransferCard(transfer: PendingTransfer, onSettleClick: (String) -> Unit) {
+private fun TransferCard(
+    transfer: PendingTransfer,
+    currentUserId: Long,
+    onSettleClick: (String) -> Unit,
+) {
+    // 내가 받는 사람이면 true, 보내는 사람이면 false
+    val isReceiver = transfer.toUserId == currentUserId
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape    = RoundedCornerShape(12.dp),
@@ -758,10 +766,21 @@ private fun TransferCard(transfer: PendingTransfer, onSettleClick: (String) -> U
                     style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold),
                 )
             }
-            if (!transfer.isResolved) {
-                OutlinedButton(onClick = { onSettleClick("") }, shape = RoundedCornerShape(8.dp)) { Text("정산 완료") }
-            } else {
-                Icon(Icons.Outlined.CheckCircle, "완료", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            when {
+                transfer.isResolved -> Icon(Icons.Outlined.CheckCircle, "완료", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                // 받는 사람만 정산 완료 버튼 표시
+                isReceiver -> OutlinedButton(onClick = { onSettleClick("") }, shape = RoundedCornerShape(8.dp)) { Text("정산 완료") }
+                // 보내는 사람은 송금 대기 상태 표시
+                else -> Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ) {
+                    Text(
+                        "송금 대기중",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    )
+                }
             }
         }
     }
@@ -800,7 +819,7 @@ internal fun SettlementContent(
     members: List<BandMemberResponse>,
     currentUserId: Long,
     isExpensesLoading: Boolean,
-    onAddExpense: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+    onAddExpense: (itemName: String, amount: Double, currency: String, payerId: Long, memberIds: List<Long>) -> Unit,
     onDeleteExpense: (expenseId: Long) -> Unit,
     onSettleClick: (transferId: String) -> Unit,
     modifier: Modifier = Modifier,
@@ -829,7 +848,7 @@ internal fun SettlementContent(
                             )
                         }
                         items(settlement.pendingTransfers) { transfer ->
-                            TransferCard(transfer = transfer, onSettleClick = onSettleClick)
+                            TransferCard(transfer = transfer, currentUserId = currentUserId, onSettleClick = onSettleClick)
                         }
                     }
                 }
@@ -899,8 +918,8 @@ internal fun SettlementContent(
             currentUserId  = currentUserId,
             baseCurrency   = settlement?.currency ?: "KRW",
             onDismiss      = { showAddSheet = false },
-            onConfirm      = { itemName, amount, currency, memberIds ->
-                onAddExpense(itemName, amount, currency, memberIds)
+            onConfirm      = { itemName, amount, currency, payerId, memberIds ->
+                onAddExpense(itemName, amount, currency, payerId, memberIds)
                 showAddSheet = false
             },
         )
@@ -989,12 +1008,15 @@ private fun ExpenseInputSheet(
     currentUserId: Long,
     baseCurrency: String,
     onDismiss: () -> Unit,
-    onConfirm: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+    onConfirm: (itemName: String, amount: Double, currency: String, payerId: Long, memberIds: List<Long>) -> Unit,
 ) {
-    var itemName    by remember { mutableStateOf("") }
-    var amountText  by remember { mutableStateOf("") }
-    var currency    by remember { mutableStateOf(baseCurrency) }
+    var itemName     by remember { mutableStateOf("") }
+    var amountText   by remember { mutableStateOf("") }
+    var currency     by remember { mutableStateOf(baseCurrency) }
     var isOcrLoading by remember { mutableStateOf(false) }
+    // 결제자: 기본값은 현재 사용자
+    var selectedPayerId by remember { mutableStateOf(currentUserId) }
+    var payerDropdownExpanded by remember { mutableStateOf(false) }
     // 분담자: 기본값은 전체 멤버
     val selectedIds = remember { mutableStateListOf<Long>().apply { addAll(members.map { it.userId }) } }
 
@@ -1067,6 +1089,36 @@ private fun ExpenseInputSheet(
                 modifier      = Modifier.fillMaxWidth(),
             )
 
+            // 결제자 선택 드롭다운
+            val selectedPayerName = members.firstOrNull { it.userId == selectedPayerId }?.name ?: ""
+            ExposedDropdownMenuBox(
+                expanded         = payerDropdownExpanded,
+                onExpandedChange = { payerDropdownExpanded = it },
+            ) {
+                OutlinedTextField(
+                    value         = selectedPayerName + if (selectedPayerId == currentUserId) " (나)" else "",
+                    onValueChange = {},
+                    readOnly      = true,
+                    label         = { Text("결제자") },
+                    trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = payerDropdownExpanded) },
+                    modifier      = Modifier.fillMaxWidth().menuAnchor(),
+                )
+                ExposedDropdownMenu(
+                    expanded         = payerDropdownExpanded,
+                    onDismissRequest = { payerDropdownExpanded = false },
+                ) {
+                    members.forEach { member ->
+                        DropdownMenuItem(
+                            text    = { Text(member.name + if (member.userId == currentUserId) " (나)" else "") },
+                            onClick = {
+                                selectedPayerId = member.userId
+                                payerDropdownExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value         = amountText,
@@ -1107,7 +1159,7 @@ private fun ExpenseInputSheet(
                 onClick  = {
                     val amount = amountText.toDoubleOrNull() ?: return@Button
                     if (itemName.isBlank()) return@Button
-                    onConfirm(itemName.trim(), amount, currency.ifBlank { "KRW" }, selectedIds.toList())
+                    onConfirm(itemName.trim(), amount, currency.ifBlank { "KRW" }, selectedPayerId, selectedIds.toList())
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled  = itemName.isNotBlank() && amountText.isNotBlank() && !isOcrLoading,
@@ -1232,13 +1284,13 @@ private val previewSettlement = Settlement(
         SettlementItem("s1", "숙박", "제주 호텔 2박", 280_000L, "Alex"),
         SettlementItem("s2", "식사", "흑돼지 저녁", 120_000L, "Jamie"),
     ),
-    pendingTransfers = listOf(PendingTransfer("나", "Alex", 45_000L, false)),
+    pendingTransfers = listOf(PendingTransfer("나", "Alex", toUserId = 2L, 45_000L, false)),
 )
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
 private fun SettlementPreview() {
     SynctripTheme {
-        SettlementScreen(settlement = previewSettlement, onSettleClick = {}, onBackClick = {})
+        SettlementScreen(settlement = previewSettlement, currentUserId = 1L, onSettleClick = {}, onBackClick = {})
     }
 }
