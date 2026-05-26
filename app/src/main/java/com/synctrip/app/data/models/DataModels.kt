@@ -195,6 +195,7 @@ data class SettlementItem(
 data class PendingTransfer(
     val fromNickname: String,
     val toNickname: String,
+    val toUserId: Long,
     val amount: Long,
     val isResolved: Boolean,
 )
@@ -520,6 +521,7 @@ data class ExpenseCreateRequest(
     val itemName: String,
     val amount: Double,
     val currency: String,
+    val payerId: Long,
     val receiptUrl: String? = null,
     val ocrRaw: String? = null,
     val paidAt: String,

@@ -423,10 +423,8 @@ fun SyncTripNavGraph(
                         }
                     }
                     BandHubTab.SETTLEMENT -> {
-                        if (bandUiState.settlement == null) {
-                            bandViewModel.loadSettlement(bandIdLong)
-                        }
-                        // 지출 목록은 탭 진입마다 최신화 (추가/삭제 후 재진입 시 반영)
+                        // settlement null 여부 무관하게 항상 재조회 — 다른 멤버 지출 반영
+                        bandViewModel.loadSettlement(bandIdLong, currentUserId)
                         bandViewModel.loadExpenses(bandIdLong)
                     }
                     BandHubTab.PHOTO -> {
@@ -499,7 +497,7 @@ fun SyncTripNavGraph(
                     onRequestPlanB    = { pid -> scheduleViewModel.loadPlanB(bandIdLong, pid) },
                     onExecutePlanBSwap = { sid, pid -> scheduleViewModel.executePlanBSwap(bandIdLong, sid, pid) },
                     onSettleClick     = {},
-                    onAddExpense      = { itemName, amount, currency, memberIds ->
+                    onAddExpense      = { itemName, amount, currency, payerId, memberIds ->
                         val now = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
                         bandViewModel.createExpense(
                             bandIdLong,
@@ -507,12 +505,14 @@ fun SyncTripNavGraph(
                                 itemName  = itemName,
                                 amount    = amount,
                                 currency  = currency,
+                                payerId   = payerId,
                                 paidAt    = now,
                                 memberIds = memberIds,
                             ),
+                            currentUserId,
                         )
                     },
-                    onDeleteExpense   = { expenseId -> bandViewModel.deleteExpense(bandIdLong, expenseId) },
+                    onDeleteExpense   = { expenseId -> bandViewModel.deleteExpense(bandIdLong, expenseId, currentUserId) },
                     // 앨범 탭 연결
                     albumPhotos       = albumUiState.photos,
                     albumMapPins      = albumUiState.mapPins,
@@ -830,13 +830,19 @@ fun SyncTripNavGraph(
             val bandId = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
             val bandViewModel: BandViewModel = viewModel()
             val uiState by bandViewModel.uiState.collectAsState()
+            var settleCurrentUserId by remember { mutableStateOf(0L) }
 
-            LaunchedEffect(bandId) { bandViewModel.loadSettlement(bandId) }
+            val context = LocalContext.current
+            LaunchedEffect(bandId) {
+                settleCurrentUserId = TokenDataStore.userIdFlow(context).first() ?: 0L
+                bandViewModel.loadSettlement(bandId, settleCurrentUserId)
+            }
 
             val settlement = uiState.settlement
             if (settlement != null) {
                 SettlementScreen(
                     settlement    = settlement,
+                    currentUserId = settleCurrentUserId,
                     onSettleClick = {},
                     onBackClick   = { navController.popBackStack() },
                 )

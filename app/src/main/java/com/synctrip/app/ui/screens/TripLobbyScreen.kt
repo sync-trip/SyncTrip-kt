@@ -92,7 +92,7 @@ fun TripBandHubScreen(
     onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
     // 정산 탭 콜백
     onSettleClick: (transferId: String) -> Unit,
-    onAddExpense: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+    onAddExpense: (itemName: String, amount: Double, currency: String, payerId: Long, memberIds: List<Long>) -> Unit,
     onDeleteExpense: (expenseId: Long) -> Unit,
     // 사진 탭 — 앨범 상태 + 콜백
     albumPhotos: List<com.synctrip.app.data.models.AlbumPhotoResponse>,

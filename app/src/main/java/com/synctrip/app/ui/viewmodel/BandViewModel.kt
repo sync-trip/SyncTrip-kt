@@ -348,9 +348,8 @@ class BandViewModel : ViewModel() {
     }
 
     /** GET /api/bands/{bandId}/settlement → UI Settlement 모델로 변환 */
-    fun loadSettlement(bandId: Long) {
+    fun loadSettlement(bandId: Long, currentUserId: Long) {
         viewModelScope.launch {
-            val currentUserId = _uiState.value.userProfile?.id
             runCatching { ApiClient.api.getSettlement(bandId) }
                 .onSuccess { resp ->
                     val ui = resp.toUiSettlement(bandId, currentUserId)
@@ -370,12 +369,13 @@ class BandViewModel : ViewModel() {
         }
     }
 
-    /** POST /api/bands/{bandId}/expenses — 지출 추가, 성공 시 목록 맨 앞에 추가 */
-    fun createExpense(bandId: Long, request: ExpenseCreateRequest) {
+    /** POST /api/bands/{bandId}/expenses — 지출 추가, 성공 시 목록 맨 앞에 추가 후 정산 재조회 */
+    fun createExpense(bandId: Long, request: ExpenseCreateRequest, currentUserId: Long) {
         viewModelScope.launch {
             runCatching { ApiClient.api.createExpense(bandId, request) }
                 .onSuccess { created ->
                     _uiState.update { it.copy(expenses = listOf(created) + it.expenses) }
+                    loadSettlement(bandId, currentUserId)
                 }
                 .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
         }
@@ -394,12 +394,13 @@ class BandViewModel : ViewModel() {
         }
     }
 
-    /** DELETE /api/bands/{bandId}/expenses/{expenseId} — 지출 삭제 (낙관적 업데이트) */
-    fun deleteExpense(bandId: Long, expenseId: Long) {
+    /** DELETE /api/bands/{bandId}/expenses/{expenseId} — 지출 삭제 (낙관적 업데이트), 성공 시 정산 재조회 */
+    fun deleteExpense(bandId: Long, expenseId: Long, currentUserId: Long) {
         val prev = _uiState.value.expenses
         _uiState.update { it.copy(expenses = it.expenses.filter { e -> e.id != expenseId }) }
         viewModelScope.launch {
             runCatching { ApiClient.api.deleteExpense(bandId, expenseId) }
+                .onSuccess { loadSettlement(bandId, currentUserId) }
                 .onFailure { e -> _uiState.update { it.copy(expenses = prev, error = e.message) } }
         }
     }
@@ -595,7 +596,7 @@ class BandViewModel : ViewModel() {
     }
 
     /** SettlementResponse(백엔드) → Settlement(UI) 변환 */
-    private fun SettlementResponse.toUiSettlement(bandId: Long, currentUserId: Long?) = Settlement(
+    private fun SettlementResponse.toUiSettlement(bandId: Long, currentUserId: Long) = Settlement(
         tripId    = bandId.toString(),
         tripTitle = "정산",
         totalAmount = totalExpense.toLong(),
@@ -614,6 +615,7 @@ class BandViewModel : ViewModel() {
             PendingTransfer(
                 fromNickname = t.fromUserName,
                 toNickname   = t.toUserName,
+                toUserId     = t.toUserId,
                 amount       = t.amount.toLong(),
                 isResolved   = false,
             )
