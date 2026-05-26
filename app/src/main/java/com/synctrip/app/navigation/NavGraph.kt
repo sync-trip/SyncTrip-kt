@@ -572,18 +572,26 @@ fun SyncTripNavGraph(
             val uiState          by bandViewModel.uiState.collectAsState()
             var query            by remember { mutableStateOf("") }
             var selectedCategory by remember { mutableStateOf(PlaceCategory.ALL) }
+            val snackbarState    = remember { SnackbarHostState() }
 
-            // 진입 시 픽 목록 + 전체 장소 초기 로드
+            // 진입 시 픽 목록만 로드 — 장소 검색은 키워드 입력 후 수동 실행
             LaunchedEffect(bandId) {
                 bandViewModel.loadPicks(bandId)
-                bandViewModel.searchPlaces(bandId)
+            }
+
+            // 검색 에러 스낵바 — 실패 원인을 사용자에게 표시
+            LaunchedEffect(uiState.error) {
+                uiState.error?.let { err ->
+                    snackbarState.showSnackbar(err)
+                    bandViewModel.clearError()
+                }
             }
 
             PlaceSearchScreen(
-                query            = query,
-                onQueryChange    = { query = it },
-                selectedCategory = selectedCategory,
-                onCategoryChange = { cat ->
+                query             = query,
+                onQueryChange     = { query = it },
+                selectedCategory  = selectedCategory,
+                onCategoryChange  = { cat ->
                     selectedCategory = cat
                     bandViewModel.searchPlaces(
                         bandId   = bandId,
@@ -598,13 +606,14 @@ fun SyncTripNavGraph(
                         category = if (selectedCategory == PlaceCategory.ALL) null else selectedCategory.name,
                     )
                 },
-                places           = uiState.searchResults,
-                isLoading        = uiState.isSearchLoading,
-                picks            = uiState.picks?.items ?: emptyList(),
-                maxPickCount     = uiState.picks?.maxCount ?: 5,
-                onPlaceClick     = {},
-                onCartToggle     = { externalId -> bandViewModel.togglePick(bandId, externalId) },
-                onBackClick      = { navController.popBackStack() },
+                places            = uiState.searchResults,
+                isLoading         = uiState.isSearchLoading,
+                picks             = uiState.picks?.items ?: emptyList(),
+                maxPickCount      = uiState.picks?.maxCount ?: 5,
+                onPlaceClick      = {},
+                onCartToggle      = { externalId -> bandViewModel.togglePick(bandId, externalId) },
+                onBackClick       = { navController.popBackStack() },
+                snackbarHostState = snackbarState,
             )
 
             // 장바구니 한도 초과 다이얼로그
