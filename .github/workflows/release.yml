@@ -1,0 +1,34 @@
+name: Android 빌드
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: self-hosted  # 학교 PC Windows runner
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      # gitignore된 local.properties에 API 키 주입
+      - name: API 키 주입
+        shell: pwsh
+        run: |
+          Add-Content -Path local.properties -Value "GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}"
+          Add-Content -Path local.properties -Value "KAKAO_NATIVE_KEY=${{ secrets.KAKAO_NATIVE_KEY }}"
+          Add-Content -Path local.properties -Value "KAKAO_REST_KEY=${{ secrets.KAKAO_REST_KEY }}"
+          Add-Content -Path local.properties -Value "GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}"
+
+      - name: Debug APK 빌드
+        shell: pwsh
+        run: .\gradlew assembleDebug
+
+      - name: APK 아티팩트 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk-${{ github.run_number }}
+          path: app\build\outputs\apk\debug\*.apk
+          retention-days: 14
