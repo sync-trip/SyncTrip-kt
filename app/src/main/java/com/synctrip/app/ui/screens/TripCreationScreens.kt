@@ -580,8 +580,9 @@ private fun TripInfoPage(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("여행 기간", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
             DateRangeCard(
-                startDate          = startDate,
-                endDate            = endDate,
+                startDate           = startDate,
+                endDate             = endDate,
+                countryCode         = selectedDestination.countryCode,
                 onDateRangeSelected = { start, end ->
                     onStartDateChange(start)
                     onEndDateChange(end)
@@ -613,6 +614,7 @@ private fun TripInfoPage(
 private fun DateRangeCard(
     startDate: String,
     endDate: String,
+    countryCode: String,
     onDateRangeSelected: (start: String, end: String) -> Unit,
 ) {
     var showPicker by remember { mutableStateOf(false) }
@@ -661,6 +663,7 @@ private fun DateRangeCard(
         DateRangePickerDialog(
             initialStart = startDate,
             initialEnd   = endDate,
+            countryCode  = countryCode,
             onConfirm    = { start, end ->
                 onDateRangeSelected(start, end)
                 showPicker = false
@@ -675,12 +678,13 @@ private fun DateRangeCard(
  * - 현재 달~11개월 후 세로 스크롤 캘린더
  * - 일/토 빨간색, 오늘 "오늘" 라벨, 과거 날짜 비활성
  * - 첫 탭 = 출발일, 두 번째 탭 = 귀국일, 선택 범위 파란 하이라이트
- * - 공휴일 API 없이 DayOfWeek 으로 일/토 판별
+ * - countryCode 기반으로 GET /api/holidays 호출, 공휴일 날짜에 빨간 점 표시
  */
 @Composable
 private fun DateRangePickerDialog(
     initialStart: String,
     initialEnd: String,
+    countryCode: String,
     onConfirm: (start: String, end: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -692,6 +696,28 @@ private fun DateRangePickerDialog(
     var endDate   by remember { mutableStateOf(runCatching { LocalDate.parse(initialEnd, fmt) }.getOrNull()) }
 
     val months = remember { (0..11).map { YearMonth.now().plusMonths(it.toLong()) } }
+
+    // 달력 범위에 포함된 연도 목록 (최대 2개: 현재 연도, 내년)
+    val years = remember(months) { months.map { it.year }.distinct() }
+    // 공휴일 맵: "yyyy-MM-dd" → 현지어 공휴일명
+    var holidays by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    // 다이얼로그 진입 시 공휴일 일괄 fetch — 연도별로 병렬 요청 후 합침
+    LaunchedEffect(countryCode) {
+        if (countryCode.isBlank()) return@LaunchedEffect
+        runCatching {
+            val result = mutableMapOf<String, String>()
+            years.forEach { year ->
+                val list = com.synctrip.app.network.ApiClient.api.getHolidays(countryCode, year)
+                android.util.Log.d("Holiday", "[$countryCode/$year] ${list.size}개 수신: ${list.map { it.date }}")
+                list.forEach { result[it.date] = it.localName }
+            }
+            holidays = result
+            android.util.Log.d("Holiday", "holidays 최종 ${holidays.size}개: ${holidays.keys.take(5)}")
+        }.onFailure { e ->
+            android.util.Log.e("Holiday", "공휴일 fetch 실패 countryCode=$countryCode", e)
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -764,6 +790,7 @@ private fun DateRangePickerDialog(
                                 today      = today,
                                 startDate  = startDate,
                                 endDate    = endDate,
+                                holidays   = holidays,
                                 onDayClick = { date ->
                                     when {
                                         // 범위 완성됐거나 출발일 없으면 → 출발일 재설정
@@ -783,23 +810,82 @@ private fun DateRangePickerDialog(
                     }
                 }
 
-                // ── 확인 버튼 ─────────────────────────────────────────────
+                // ── 공휴일 안내 배너 + 확인 버튼 ────────────────────────────
                 Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surface) {
-                    Button(
-                        onClick  = { if (startDate != null && endDate != null) onConfirm(startDate!!.format(fmt), endDate!!.format(fmt)) },
-                        enabled  = startDate != null && endDate != null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
-                            .height(52.dp),
-                        shape    = RoundedCornerShape(999.dp),
-                        colors   = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor   = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                    ) {
-                        Text("확인", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                    Column {
+                        // 선택 기간 내 공휴일이 있으면 주황 안내 배너 표시
+                        val rangeHolidays = remember(startDate, endDate, holidays) {
+                            if (startDate != null && endDate != null) {
+                                holidays.entries
+                                    .filter { (dateStr, _) ->
+                                        runCatching {
+                                            val d = java.time.LocalDate.parse(dateStr)
+                                            !d.isBefore(startDate!!) && !d.isAfter(endDate!!)
+                                        }.getOrDefault(false)
+                                    }
+                                    .sortedBy { it.key }
+                            } else emptyList()
+                        }
+                        if (rangeHolidays.isNotEmpty()) {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFFFFF8E1),
+                            ) {
+                                Column(
+                                    modifier            = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Row(
+                                        verticalAlignment     = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.Info, null,
+                                            tint     = Color(0xFFF57C00),
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                        Text(
+                                            "여행 기간 내 공휴일 ${rangeHolidays.size}개",
+                                            style = MaterialTheme.typography.labelLarge.copy(
+                                                color      = Color(0xFFF57C00),
+                                                fontWeight = FontWeight.SemiBold,
+                                            ),
+                                        )
+                                    }
+                                    rangeHolidays.take(3).forEach { (dateStr, name) ->
+                                        Text(
+                                            "• ${dateStr.substring(5).replace("-", "/")}  $name",
+                                            style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF8D4E00)),
+                                        )
+                                    }
+                                    if (rangeHolidays.size > 3) {
+                                        Text(
+                                            "외 ${rangeHolidays.size - 3}개 더",
+                                            style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFF57C00)),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Button(
+                            onClick  = { if (startDate != null && endDate != null) onConfirm(startDate!!.format(fmt), endDate!!.format(fmt)) },
+                            enabled  = startDate != null && endDate != null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(horizontal = 20.dp, vertical = 12.dp)
+                                .height(52.dp),
+                            shape    = RoundedCornerShape(999.dp),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor   = MaterialTheme.colorScheme.onPrimary,
+                            ),
+                        ) {
+                            Text("확인", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                        }
                     }
                 }
             }
@@ -836,6 +922,7 @@ private fun CalendarMonth(
     today: LocalDate,
     startDate: LocalDate?,
     endDate: LocalDate?,
+    holidays: Map<String, String>,
     onDayClick: (LocalDate) -> Unit,
 ) {
     val firstDay    = yearMonth.atDay(1)
@@ -856,13 +943,15 @@ private fun CalendarMonth(
                     val dayNumber = row * 7 + col - startOffset + 1
                     Box(modifier = Modifier.weight(1f)) {
                         if (dayNumber in 1..daysInMonth) {
+                            val date = yearMonth.atDay(dayNumber)
                             CalendarDay(
-                                date       = yearMonth.atDay(dayNumber),
-                                today      = today,
-                                startDate  = startDate,
-                                endDate    = endDate,
-                                col        = col,
-                                onDayClick = onDayClick,
+                                date         = date,
+                                today        = today,
+                                startDate    = startDate,
+                                endDate      = endDate,
+                                col          = col,
+                                holidayName  = holidays[date.toString()],
+                                onDayClick   = onDayClick,
                             )
                         }
                     }
@@ -873,7 +962,7 @@ private fun CalendarMonth(
     }
 }
 
-/** 날짜 셀 — 범위 배경 레이어 + 선택 원 + 텍스트 */
+/** 날짜 셀 — 범위 배경 레이어 + 선택 원 + 텍스트 + 공휴일 점 */
 @Composable
 private fun CalendarDay(
     date: LocalDate,
@@ -881,13 +970,16 @@ private fun CalendarDay(
     startDate: LocalDate?,
     endDate: LocalDate?,
     col: Int,
+    holidayName: String?,
     onDayClick: (LocalDate) -> Unit,
 ) {
-    val isStart   = date == startDate
-    val isEnd     = date == endDate
-    val isInRange = startDate != null && endDate != null && date > startDate && date < endDate
-    val isToday   = date == today
-    val isPast    = date < today
+    val isStart     = date == startDate
+    val isEnd       = date == endDate
+    val isInRange   = startDate != null && endDate != null && date > startDate && date < endDate
+    val isToday     = date == today
+    val isPast      = date < today
+    val isHoliday   = holidayName != null
+    val holidayColor = Color(0xFFE53935)
 
     val primary    = MaterialTheme.colorScheme.primary
     val rangeColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
@@ -895,7 +987,7 @@ private fun CalendarDay(
     Box(
         modifier         = Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(48.dp)
             .clickable(enabled = !isPast) { onDayClick(date) },
         contentAlignment = Alignment.Center,
     ) {
@@ -916,24 +1008,34 @@ private fun CalendarDay(
             // 오늘 테두리 원
             Box(Modifier.size(36.dp).clip(CircleShape).border(1.5.dp, primary, CircleShape))
         }
-        // 날짜 숫자 + 오늘 라벨
+        // 날짜 숫자 + 오늘/공휴일 라벨
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text  = date.dayOfMonth.toString(),
                 style = MaterialTheme.typography.bodyMedium.copy(
                     color = when {
-                        isPast           -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        isStart || isEnd -> Color.White
-                        col == 0 || col == 6 -> Color(0xFFE53935)   // 일/토
-                        else             -> MaterialTheme.colorScheme.onSurface
+                        isPast               -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        isStart || isEnd     -> Color.White
+                        isHoliday            -> holidayColor
+                        col == 0 || col == 6 -> holidayColor   // 일/토
+                        else                 -> MaterialTheme.colorScheme.onSurface
                     },
                     fontWeight = if (isStart || isEnd || isToday) FontWeight.Bold else FontWeight.Normal,
                 ),
             )
-            if (isToday && !isStart && !isEnd) {
-                Text(
+            when {
+                isToday && !isStart && !isEnd -> Text(
                     "오늘",
                     style = MaterialTheme.typography.labelSmall.copy(color = primary, fontSize = 9.sp),
+                )
+                // 공휴일명을 최대 4자까지 잘라 표시 (셀 너비 초과 방지)
+                isHoliday && !isStart && !isEnd -> Text(
+                    holidayName!!.take(4),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color    = if (isPast) holidayColor.copy(alpha = 0.3f) else holidayColor,
+                        fontSize = 8.sp,
+                    ),
+                    maxLines = 1,
                 )
             }
         }

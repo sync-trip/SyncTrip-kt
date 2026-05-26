@@ -25,8 +25,8 @@ import com.synctrip.app.core.TokenDataStore
 import com.synctrip.app.data.models.*
 import com.synctrip.app.data.repository.BandRepository
 import com.synctrip.app.network.ApiClient
-import com.synctrip.app.ui.components.BottomNavDestination
 import com.synctrip.app.ui.screens.*
+import com.synctrip.app.ui.viewmodel.AlbumViewModel
 import com.synctrip.app.ui.viewmodel.AuthUiState
 import com.synctrip.app.ui.viewmodel.AuthViewModel
 import com.synctrip.app.ui.viewmodel.BandViewModel
@@ -175,7 +175,6 @@ fun SyncTripNavGraph(
             val bandViewModel   = viewModel<BandViewModel>()
             val authViewModel   = viewModel<AuthViewModel>()
             val bandUiState     by bandViewModel.uiState.collectAsState()
-            var selectedNavItem by remember { mutableStateOf(BottomNavDestination.Home) }
             val snackbarState   = remember { SnackbarHostState() }
 
             // 화면 진입 시 밴드 목록 + 유저 프로필 로드
@@ -197,16 +196,7 @@ fun SyncTripNavGraph(
                 myTripBands          = bandUiState.bands.reversed().map { it.toTripBand() },
                 userName             = bandUiState.userProfile?.name ?: "",
                 userProfileImageUrl  = bandUiState.userProfile?.profileImageUrl,
-                selectedNavItem      = selectedNavItem,
                 snackbarHostState    = snackbarState,
-                onNavItemSelected    = { dest ->
-                    selectedNavItem = dest
-                    when (dest) {
-                        BottomNavDestination.Explore  -> navController.navigate("placeSearch")
-                        BottomNavDestination.Passport -> navController.navigate("passport")
-                        else                          -> {}
-                    }
-                },
                 onSearchClick        = {},
                 onNotificationsClick = { navController.navigate("notifications") },
                 onContentCardClick   = {},
@@ -366,12 +356,14 @@ fun SyncTripNavGraph(
         // 밴드 방 허브 — 하단 탭(밴드·일정·정산·사진)을 통해 모든 기능 접근
         // ──────────────────────────────────────────────────────────────────────
         composable("tripLobby/{bandId}") { backStackEntry ->
-            val context       = LocalContext.current
-            val bandViewModel = viewModel<BandViewModel>()
+            val context           = LocalContext.current
+            val bandViewModel     = viewModel<BandViewModel>()
             val scheduleViewModel = viewModel<ScheduleViewModel>()
-            val bandUiState   by bandViewModel.uiState.collectAsState()
-            val scheduleUiState by scheduleViewModel.uiState.collectAsState()
-            val snackbarState = remember { SnackbarHostState() }
+            val albumViewModel    = viewModel<AlbumViewModel>()
+            val bandUiState       by bandViewModel.uiState.collectAsState()
+            val scheduleUiState   by scheduleViewModel.uiState.collectAsState()
+            val albumUiState      by albumViewModel.uiState.collectAsState()
+            val snackbarState     = remember { SnackbarHostState() }
 
             val bandIdLong = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: 0L
             var currentUserId by remember { mutableStateOf(0L) }
@@ -427,6 +419,12 @@ fun SyncTripNavGraph(
                     BandHubTab.SETTLEMENT -> {
                         if (bandUiState.settlement == null) {
                             bandViewModel.loadSettlement(bandIdLong)
+                        }
+                    }
+                    BandHubTab.PHOTO -> {
+                        // 사진 탭 최초 진입 시 피드 + 지도 핀 로드
+                        if (albumUiState.photos.isEmpty() && !albumUiState.isLoading) {
+                            albumViewModel.loadAlbum(bandIdLong)
                         }
                     }
                     else -> {}
@@ -487,9 +485,19 @@ fun SyncTripNavGraph(
                     onStartEditing    = { scheduleViewModel.startEditing(bandIdLong) },
                     onFinishEditing   = { scheduleViewModel.finishEditing(bandIdLong) },
                     onSettleClick     = {},
+                    // 앨범 탭 연결
+                    albumPhotos       = albumUiState.photos,
+                    albumMapPins      = albumUiState.mapPins,
+                    isAlbumLoading    = albumUiState.isLoading,
+                    isAlbumUploading  = albumUiState.isUploading,
+                    onUploadAlbumPhoto = { photoData, caption, lat, lng, takenAt ->
+                        albumViewModel.uploadPhoto(bandIdLong, photoData, caption, lat, lng, takenAt)
+                    },
+                    onDeleteAlbumPhoto = { photoId ->
+                        albumViewModel.deletePhoto(bandIdLong, photoId)
+                    },
                     onDeleteBand      = {
                         bandViewModel.deleteBand(bandIdLong) {
-                            // 삭제 성공 → 밴드 목록(홈)으로 복귀
                             navController.navigate("home") {
                                 popUpTo("tripLobby/$bandIdLong") { inclusive = true }
                             }

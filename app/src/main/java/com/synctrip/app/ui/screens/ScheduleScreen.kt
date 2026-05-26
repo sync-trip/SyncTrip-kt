@@ -311,7 +311,8 @@ private fun SlotTimeline(
             if (index > 0) {
                 TravelTimeConnector(
                     minutes = slot.travelTimeFromPrev ?: 0,
-                    modifier = Modifier.padding(start = 48.dp),
+                    // 타임라인 선을 노드 원 중앙에 맞춤: horizontal(16) + nodeWidth(38)/2 - lineWidth(2)/2 = 34dp
+                    modifier = Modifier.padding(start = 34.dp),
                 )
             }
             ScheduleSlotItem(
@@ -805,7 +806,7 @@ private fun AltOptionCard(
 
 @Composable
 private fun ScheduleLoadingContent(modifier: Modifier = Modifier) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             PlaneLoadingIndicator()
             Spacer(Modifier.height(16.dp))
@@ -817,7 +818,7 @@ private fun ScheduleLoadingContent(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ScheduleEmptyContent(modifier: Modifier = Modifier) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(horizontal = 32.dp),

@@ -1,6 +1,7 @@
 package com.synctrip.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -13,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -83,12 +86,53 @@ fun TripBandHubScreen(
     onFinishEditing: () -> Unit,
     // 정산 탭 콜백
     onSettleClick: (transferId: String) -> Unit,
-    // 방 삭제 (임시 — 방장 전용)
+    // 사진 탭 — 앨범 상태 + 콜백
+    albumPhotos: List<com.synctrip.app.data.models.AlbumPhotoResponse>,
+    albumMapPins: List<com.synctrip.app.data.models.AlbumPhotoMapResponse>,
+    isAlbumLoading: Boolean,
+    isAlbumUploading: Boolean,
+    onUploadAlbumPhoto: (
+        photoData: String,
+        caption: String?,
+        latitude: Double?,
+        longitude: Double?,
+        takenAt: String?,
+    ) -> Unit,
+    onDeleteAlbumPhoto: (photoId: Long) -> Unit,
+    // 방 삭제 (방장 전용)
     onDeleteBand: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // 투표 강제 시작 전 확인 다이얼로그
     var showAdvanceDialog by remember { mutableStateOf(false) }
+    // 방 삭제 확인 다이얼로그
+    var showDeleteDialog  by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("방을 삭제하시겠습니까?") },
+            text  = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("삭제된 여행 방은 7일 후 영구 삭제돼요.")
+                    Text(
+                        text  = "※ 7일 이내에는 복구를 요청할 수 있습니다",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDeleteDialog = false; onDeleteBand() }) {
+                    Text("삭제", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("취소") }
+            },
+        )
+    }
 
     if (showAdvanceDialog) {
         val notReadyCount = members.count { !it.isReady }
@@ -125,7 +169,7 @@ fun TripBandHubScreen(
                 onBackClick   = onBackClick,
                 onStartEditing  = onStartEditing,
                 onFinishEditing = onFinishEditing,
-                onDeleteBand    = onDeleteBand,
+                onDeleteBand    = { showDeleteDialog = true },
             )
         },
         bottomBar = {
@@ -192,26 +236,18 @@ fun TripBandHubScreen(
                     modifier      = Modifier.fillMaxSize(),
                 )
 
-                BandHubTab.PHOTO -> {
-                    // 사진 탭 — 향후 구현 (준비 중 플레이스홀더)
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Outlined.PhotoLibrary,
-                                contentDescription = null,
-                                tint     = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(64.dp),
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                "사진 기능 준비 중",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                ),
-                            )
-                        }
-                    }
-                }
+                BandHubTab.PHOTO -> AlbumContent(
+                    photos          = albumPhotos,
+                    mapPins         = albumMapPins,
+                    isLoading       = isAlbumLoading,
+                    isUploading     = isAlbumUploading,
+                    currentUserId   = currentUserId,
+                    destinationLat  = band.destinationLat,
+                    destinationLng  = band.destinationLng,
+                    onUploadPhoto   = onUploadAlbumPhoto,
+                    onDeletePhoto   = onDeleteAlbumPhoto,
+                    modifier        = Modifier.fillMaxSize(),
+                )
             }
         }
     }
@@ -291,13 +327,28 @@ private fun HubNavigationBar(
     selectedTab: BandHubTab,
     onTabSelected: (BandHubTab) -> Unit,
 ) {
-    NavigationBar {
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = 3.dp,
+    ) {
         BandHubTab.entries.forEach { tab ->
             NavigationBarItem(
                 selected = selectedTab == tab,
                 onClick  = { onTabSelected(tab) },
                 icon     = { Icon(tab.icon, contentDescription = tab.label) },
-                label    = { Text(tab.label) },
+                label    = {
+                    Text(
+                        text  = tab.label,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor   = MaterialTheme.colorScheme.primary,
+                    selectedTextColor   = MaterialTheme.colorScheme.primary,
+                    indicatorColor      = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
             )
         }
     }
@@ -309,8 +360,8 @@ private fun HubNavigationBar(
 
 /**
  * 밴드 탭 본문.
- * 밴드 정보 카드·멤버·준비 현황은 스크롤 영역에,
- * 액션 버튼(장소 탐색·투표 시작 등)은 하단에 고정 배치한다.
+ * 상단 풀와이드 히어로 이미지(BandHeroSection) 아래로 멤버·준비 현황을 배치하고,
+ * 액션 버튼은 하단에 고정한다.
  */
 @Composable
 private fun BandHubTabContent(
@@ -330,31 +381,36 @@ private fun BandHubTabContent(
     val readyCount    = members.count { it.isReady }
 
     Column(modifier = modifier) {
-        // 스크롤 가능한 정보 영역
+        // 스크롤 가능 영역 — 가로 패딩 없음 (히어로가 전체 너비 사용)
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .verticalScroll(rememberScrollState()),
         ) {
-            Spacer(Modifier.height(4.dp))
+            // ── 풀와이드 히어로 이미지 ────────────────────────────────────────
+            BandHeroSection(band = band, readyCount = readyCount, totalCount = members.size)
 
-            LobbyInfoCard(band = band, readyCount = readyCount, totalCount = members.size)
+            // ── 이하 콘텐츠: 20dp 가로 패딩 ──────────────────────────────────
+            Column(
+                modifier            = Modifier.padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Spacer(Modifier.height(4.dp))
 
-            MembersSection(members = members, onInviteClick = onInviteClick)
+                MembersSection(members = members, onInviteClick = onInviteClick)
 
-            // PLANNING 단계일 때만 내 준비 현황 표시
-            if (band.status == BandStatus.PLANNING) {
-                MyStatusSection(
-                    picks         = picks,
-                    isReady       = currentMember?.isReady ?: false,
-                    onReadyClick  = onReadyClick,
-                    onSearchClick = onGoToPlaceSearch,
-                )
+                // PLANNING 단계일 때만 내 준비 현황 표시
+                if (band.status == BandStatus.PLANNING) {
+                    MyStatusSection(
+                        picks         = picks,
+                        isReady       = currentMember?.isReady ?: false,
+                        onReadyClick  = onReadyClick,
+                        onSearchClick = onGoToPlaceSearch,
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
             }
-
-            Spacer(Modifier.height(8.dp))
         }
 
         // 하단 고정 액션 버튼 영역 — NavigationBar 바로 위에 위치
@@ -366,6 +422,143 @@ private fun BandHubTabContent(
             onGoToVoting         = onGoToVoting,
             onAdvanceStatusClick = onAdvanceStatusClick,
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BandHeroSection — 밴드 탭 상단 풀와이드 히어로 이미지
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 밴드 탭 최상단 히어로 섹션.
+ * thumbnailUrl이 있으면 실제 사진, 없으면 그라디언트 폴백으로 표시하고
+ * 상태 칩·목적지명·날짜·멤버 준비 현황을 오버레이로 합성한다.
+ */
+@Composable
+private fun BandHeroSection(
+    band: BandResponse,
+    readyCount: Int,
+    totalCount: Int,
+) {
+    val statusLabel = when (band.status) {
+        BandStatus.PLANNING   -> "여행 준비 중"
+        BandStatus.VOTING     -> "투표 진행 중"
+        BandStatus.GENERATING -> "일정 생성 중"
+        BandStatus.TRAVELLING -> "여행 중"
+        BandStatus.DONE       -> "여행 완료"
+    }
+    val statusIcon = when (band.status) {
+        BandStatus.PLANNING   -> Icons.Outlined.Group
+        BandStatus.VOTING     -> Icons.Outlined.HowToVote
+        BandStatus.GENERATING -> Icons.Outlined.Schedule
+        BandStatus.TRAVELLING -> Icons.Outlined.FlightTakeoff
+        BandStatus.DONE       -> Icons.Outlined.EmojiEvents
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(260.dp),
+    ) {
+        // 배경: 썸네일 이미지 또는 그라디언트 폴백
+        if (band.thumbnailUrl != null) {
+            AsyncImage(
+                model              = band.thumbnailUrl,
+                contentDescription = band.destination,
+                contentScale       = ContentScale.Crop,
+                modifier           = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF1565C0), Color(0xFF0288D1), Color(0xFF00838F)),
+                        ),
+                    ),
+            )
+        }
+
+        // 하단 그라디언트 오버레이 — 텍스트 가독성 확보
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.0f to Color.Transparent,
+                            0.45f to Color.Black.copy(alpha = 0.05f),
+                            1.0f  to Color.Black.copy(alpha = 0.7f),
+                        ),
+                    ),
+                ),
+        )
+
+        // 상태 칩 (좌상단, 반투명 검은 배경 필)
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp),
+            shape = RoundedCornerShape(999.dp),
+            color = Color.Black.copy(alpha = 0.48f),
+        ) {
+            Row(
+                modifier              = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(statusIcon, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                Text(
+                    text  = statusLabel,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color      = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                )
+            }
+        }
+
+        // 목적지명 + 날짜 (좌하단)
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, end = 100.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text  = band.destination,
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    color      = Color.White,
+                    fontWeight = FontWeight.Bold,
+                ),
+                maxLines = 1,
+            )
+            Text(
+                text  = "${band.startDate} ~ ${band.endDate}",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = Color.White.copy(alpha = 0.85f),
+                ),
+            )
+        }
+
+        // 준비 현황 뱃지 (우하단)
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 16.dp),
+            shape = RoundedCornerShape(999.dp),
+            color = Color.Black.copy(alpha = 0.48f),
+        ) {
+            Text(
+                text     = "👥 $readyCount / $totalCount 준비",
+                style    = MaterialTheme.typography.labelMedium.copy(
+                    color      = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
     }
 }
 
@@ -691,7 +884,26 @@ private fun MembersSection(
     onInviteClick: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("함께하는 멤버", style = MaterialTheme.typography.titleLarge)
+        Row(
+            modifier              = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically,
+        ) {
+            Text("함께하는 멤버", style = MaterialTheme.typography.titleLarge)
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+            ) {
+                Text(
+                    text     = "👥 ${members.size}명",
+                    style    = MaterialTheme.typography.labelMedium.copy(
+                        color      = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+        }
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment     = Alignment.CenterVertically,
