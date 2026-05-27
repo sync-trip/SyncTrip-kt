@@ -330,6 +330,13 @@ data class BandCreateRequest(
     val thumbnailUrl: String? = null,
 )
 
+/** 숙소 정보 수정 요청 (PATCH /api/bands/{bandId}/accommodation) */
+data class AccommodationUpdateRequest(
+    val accommodationName: String?,
+    val accommodationLat: Double? = null,
+    val accommodationLng: Double? = null,
+)
+
 data class BandJoinRequest(val inviteCode: String)
 
 data class BandInviteCodeResponse(

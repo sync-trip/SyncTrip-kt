@@ -29,6 +29,9 @@ object BandRepository {
     suspend fun advanceBandStatus(bandId: Long): BandStatusTransitionResponse =
         ApiClient.api.advanceBandStatus(bandId)
 
+    suspend fun updateAccommodation(bandId: Long, name: String?, lat: Double? = null, lng: Double? = null) =
+        ApiClient.api.updateAccommodation(bandId, AccommodationUpdateRequest(name, lat, lng))
+
     suspend fun getPicks(bandId: Long): PlacePickListResponse =
         ApiClient.api.getPicks(bandId)
 

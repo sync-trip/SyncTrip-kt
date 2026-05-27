@@ -1,5 +1,6 @@
 package com.synctrip.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -108,6 +109,8 @@ fun TripBandHubScreen(
         takenAt: String?,
     ) -> Unit,
     onDeleteAlbumPhoto: (photoId: Long) -> Unit,
+    // 숙소 수정 화면으로 이동 (방장 전용, PLANNING/TRAVELLING/DONE)
+    onEditAccommodationClick: () -> Unit,
     // 방 삭제 (방장 전용)
     onDeleteBand: () -> Unit,
     isRefreshing: Boolean = false,
@@ -224,16 +227,17 @@ fun TripBandHubScreen(
                 modifier     = Modifier.fillMaxSize().padding(innerPadding),
             ) {
                 BandHubTabContent(
-                    band          = band,
-                    members       = members,
-                    picks         = picks,
-                    currentUserId = currentUserId,
-                    isBandLoading = isBandLoading,
-                    onReadyClick  = onReadyClick,
-                    onInviteClick = onInviteClick,
-                    onGoToPlaceSearch  = onGoToPlaceSearch,
-                    onGoToVoting       = onGoToVoting,
-                    onAdvanceStatusClick = {
+                    band                  = band,
+                    members               = members,
+                    picks                 = picks,
+                    currentUserId         = currentUserId,
+                    isBandLoading         = isBandLoading,
+                    onReadyClick          = onReadyClick,
+                    onInviteClick         = onInviteClick,
+                    onGoToPlaceSearch     = onGoToPlaceSearch,
+                    onGoToVoting          = onGoToVoting,
+                    onEditAccommodationClick = onEditAccommodationClick,
+                    onAdvanceStatusClick  = {
                         // 멤버 수 * 2 미만이면 투표 차단
                         if (totalPicks < minPicksRequired) {
                             showInsufficientPicksDialog = true
@@ -241,7 +245,7 @@ fun TripBandHubScreen(
                             showAdvanceDialog = true
                         }
                     },
-                    modifier      = Modifier.fillMaxSize(),
+                    modifier              = Modifier.fillMaxSize(),
                 )
             }
 
@@ -444,6 +448,7 @@ private fun BandHubTabContent(
     onInviteClick: () -> Unit,
     onGoToPlaceSearch: () -> Unit,
     onGoToVoting: () -> Unit,
+    onEditAccommodationClick: () -> Unit,
     onAdvanceStatusClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -476,6 +481,18 @@ private fun BandHubTabContent(
                         isReady       = currentMember?.isReady ?: false,
                         onReadyClick  = onReadyClick,
                         onSearchClick = onGoToPlaceSearch,
+                    )
+                }
+
+                // 숙소 섹션 — 편집 가능 상태(PLANNING/TRAVELLING/DONE)에서 표시
+                // VOTING/GENERATING 중에는 서버도 거부하므로 UI에서도 비노출
+                val canEditAccommodation = band.isOwner &&
+                    band.status !in listOf(BandStatus.VOTING, BandStatus.GENERATING)
+                if (band.status !in listOf(BandStatus.VOTING, BandStatus.GENERATING)) {
+                    AccommodationSection(
+                        accommodationName = band.accommodationName,
+                        canEdit           = canEditAccommodation,
+                        onEditClick       = onEditAccommodationClick,
                     )
                 }
 
@@ -947,6 +964,59 @@ private fun InfoChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 // ─────────────────────────────────────────────────────────────────────────────
 // 멤버 섹션
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 숙소 정보 섹션.
+ * 숙소명이 없으면 "미설정" 플레이스홀더 표시, 방장이면 수정 버튼 노출.
+ */
+@Composable
+private fun AccommodationSection(
+    accommodationName: String?,
+    canEdit: Boolean,
+    onEditClick: () -> Unit,
+) {
+    Card(
+        shape  = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector        = Icons.Outlined.Hotel,
+                contentDescription = null,
+                tint               = MaterialTheme.colorScheme.primary,
+                modifier           = Modifier.size(22.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text  = "숙소",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+                Text(
+                    text  = accommodationName ?: "미설정",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = if (accommodationName != null)
+                            MaterialTheme.colorScheme.onSurface
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            }
+            if (canEdit) {
+                TextButton(onClick = onEditClick) {
+                    Text("수정", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun MembersSection(

@@ -30,12 +30,17 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.*
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 1. Create Trip Screen (2단계 플로우)
@@ -63,16 +68,35 @@ fun CreateTripScreen(
     onEndDateChange: (String) -> Unit,
     travelStyle: BandTravelStyle,
     onTravelStyleChange: (BandTravelStyle) -> Unit,
+    // 3단계 — 숙소 검색
+    destinationLat: Double,
+    destinationLng: Double,
+    accommodationQuery: String,
+    onAccommodationQueryChange: (String) -> Unit,
+    onAccommodationSearch: (String) -> Unit,
+    accommodationResults: List<ApiPlaceSearchResult>,
+    isAccommodationLoading: Boolean,
+    selectedAccommodation: ApiPlaceSearchResult?,
+    onAccommodationSelect: (ApiPlaceSearchResult) -> Unit,
     isLoading: Boolean,
     onCreateTrip: () -> Unit,
+    onSkipAccommodationAndCreate: () -> Unit,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 현재 단계: 1 = 여행지 선택, 2 = 여행 정보 입력
+    // 현재 단계: 1 = 여행지 선택, 2 = 여행 정보, 3 = 숙소 선택
     var page by remember { mutableStateOf(1) }
 
-    val pageTitle  = if (page == 1) "여행지 선택" else "여행 정보"
-    val progress   = if (page == 1) 0.5f else 1.0f
+    val pageTitle = when (page) {
+        1 -> "여행지 선택"
+        2 -> "여행 정보"
+        else -> "숙소 선택"
+    }
+    val progress = when (page) {
+        1 -> 0.33f
+        2 -> 0.67f
+        else -> 1.0f
+    }
 
     Scaffold(
         modifier = modifier,
@@ -96,14 +120,26 @@ fun CreateTripScreen(
                         }
                     },
                     actions = {
-                        Text(
-                            text = "$page/2",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color      = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Medium,
-                            ),
-                            modifier = Modifier.padding(end = 16.dp),
-                        )
+                        if (page < 3) {
+                            Text(
+                                text  = "$page/3",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color      = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                                modifier = Modifier.padding(end = 16.dp),
+                            )
+                        } else {
+                            // 숙소 선택 단계에서는 건너뛰기 버튼 표시
+                            TextButton(onClick = onSkipAccommodationAndCreate) {
+                                Text(
+                                    "건너뛰기",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    ),
+                                )
+                            }
+                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
@@ -125,60 +161,90 @@ fun CreateTripScreen(
                 shadowElevation = 8.dp,
                 color          = MaterialTheme.colorScheme.surface,
             ) {
-                if (page == 1) {
-                    // 1단계 하단: "계속하기" (여행지 선택 후 활성화)
-                    Button(
-                        onClick  = { page = 2 },
-                        enabled  = selectedDestination != null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
-                            .height(52.dp),
-                        shape  = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor   = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                    ) {
-                        Text("계속하기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
-                    }
-                } else {
-                    // 2단계 하단: "이전" + "방 만들기"
-                    val canCreate = startDate.isNotBlank() && endDate.isNotBlank() && bandName.isNotBlank()
-                    Row(
-                        modifier            = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        OutlinedButton(
-                            onClick  = { page = 1 },
-                            modifier = Modifier.weight(1f).height(52.dp),
-                            shape    = RoundedCornerShape(999.dp),
-                            border   = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
-                        ) {
-                            Text("이전", style = MaterialTheme.typography.titleMedium)
-                        }
+                when (page) {
+                    1 -> {
+                        // 1단계 하단: "계속하기" (여행지 선택 후 활성화)
                         Button(
-                            onClick  = onCreateTrip,
-                            enabled  = canCreate && !isLoading,
-                            modifier = Modifier.weight(2f).height(52.dp),
-                            shape    = RoundedCornerShape(999.dp),
-                            colors   = ButtonDefaults.buttonColors(
+                            onClick  = { page = 2 },
+                            enabled  = selectedDestination != null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(horizontal = 20.dp, vertical = 12.dp)
+                                .height(52.dp),
+                            shape  = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
                                 contentColor   = MaterialTheme.colorScheme.onPrimary,
                             ),
                         ) {
-                            if (isLoading) {
-                                PlaneLoadingIndicator(
-                                    modifier    = Modifier,
-                                    size        = 28.dp,
-                                    showCircle  = false,
-                                )
-                            } else {
-                                Text("방 만들기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                            Text("계속하기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                        }
+                    }
+                    2 -> {
+                        // 2단계 하단: "이전" + "계속하기" (날짜·이름 입력 완료 후 활성화)
+                        val canAdvance = startDate.isNotBlank() && endDate.isNotBlank() && bandName.isNotBlank()
+                        Row(
+                            modifier              = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(horizontal = 20.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick  = { page = 1 },
+                                modifier = Modifier.weight(1f).height(52.dp),
+                                shape    = RoundedCornerShape(999.dp),
+                                border   = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                            ) {
+                                Text("이전", style = MaterialTheme.typography.titleMedium)
+                            }
+                            Button(
+                                onClick  = { page = 3 },
+                                enabled  = canAdvance,
+                                modifier = Modifier.weight(2f).height(52.dp),
+                                shape    = RoundedCornerShape(999.dp),
+                                colors   = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor   = MaterialTheme.colorScheme.onPrimary,
+                                ),
+                            ) {
+                                Text("계속하기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                            }
+                        }
+                    }
+                    else -> {
+                        // 3단계 하단: "이전" + "방 만들기" (숙소는 선택 사항이므로 항상 활성)
+                        Row(
+                            modifier              = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(horizontal = 20.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick  = { page = 2 },
+                                modifier = Modifier.weight(1f).height(52.dp),
+                                shape    = RoundedCornerShape(999.dp),
+                                border   = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                            ) {
+                                Text("이전", style = MaterialTheme.typography.titleMedium)
+                            }
+                            Button(
+                                onClick  = onCreateTrip,
+                                enabled  = !isLoading,
+                                modifier = Modifier.weight(2f).height(52.dp),
+                                shape    = RoundedCornerShape(999.dp),
+                                colors   = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor   = MaterialTheme.colorScheme.onPrimary,
+                                ),
+                            ) {
+                                if (isLoading) {
+                                    PlaneLoadingIndicator(modifier = Modifier, size = 28.dp, showCircle = false)
+                                } else {
+                                    Text("방 만들기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                                }
                             }
                         }
                     }
@@ -186,8 +252,8 @@ fun CreateTripScreen(
             }
         },
     ) { innerPadding ->
-        if (page == 1) {
-            DestinationSelectPage(
+        when (page) {
+            1 -> DestinationSelectPage(
                 destinations             = destinations,
                 selectedDestination      = selectedDestination,
                 destinationQuery         = destinationQuery,
@@ -196,8 +262,7 @@ fun CreateTripScreen(
                 onDestinationSelect      = onDestinationSelect,
                 modifier                 = Modifier.padding(innerPadding),
             )
-        } else {
-            TripInfoPage(
+            2 -> TripInfoPage(
                 selectedDestination = selectedDestination!!,
                 bandName            = bandName,
                 onBandNameChange    = onBandNameChange,
@@ -208,6 +273,18 @@ fun CreateTripScreen(
                 travelStyle         = travelStyle,
                 onTravelStyleChange = onTravelStyleChange,
                 modifier            = Modifier.padding(innerPadding),
+            )
+            else -> AccommodationSearchPage(
+                destinationLat        = destinationLat,
+                destinationLng        = destinationLng,
+                searchQuery           = accommodationQuery,
+                onQueryChange         = onAccommodationQueryChange,
+                onSearch              = onAccommodationSearch,
+                searchResults         = accommodationResults,
+                selectedAccommodation = selectedAccommodation,
+                onAccommodationSelect = onAccommodationSelect,
+                isLoading             = isAccommodationLoading,
+                modifier              = Modifier.padding(innerPadding),
             )
         }
     }
@@ -1042,6 +1119,343 @@ private fun CalendarDay(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 3단계: 숙소 검색 페이지
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 숙소 검색 페이지 (3/3).
+ * 상단 Google Map에 선택 숙소 핀 표시, 하단 검색창 + 결과 목록.
+ * 숙소는 선택 사항 — 건너뛰면 목적지 위치를 기본으로 사용.
+ */
+@Composable
+private fun AccommodationSearchPage(
+    destinationLat: Double,
+    destinationLng: Double,
+    searchQuery: String,
+    onQueryChange: (String) -> Unit,
+    onSearch: (String) -> Unit,
+    searchResults: List<ApiPlaceSearchResult>,
+    selectedAccommodation: ApiPlaceSearchResult?,
+    onAccommodationSelect: (ApiPlaceSearchResult) -> Unit,
+    isLoading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val focusManager = LocalFocusManager.current
+
+    // 선택된 숙소가 있으면 해당 위치로, 없으면 목적지 중심으로 카메라 초기화
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(
+            LatLng(destinationLat, destinationLng), 13f,
+        )
+    }
+
+    // 숙소 선택 시 지도 카메라를 해당 위치로 이동
+    LaunchedEffect(selectedAccommodation) {
+        selectedAccommodation?.let {
+            cameraPositionState.animate(
+                CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.fromLatLngZoom(LatLng(it.latitude, it.longitude), 15f),
+                )
+            )
+        }
+    }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        // ── 지도 (고정 높이) ─────────────────────────────────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(250.dp),
+        ) {
+            GoogleMap(
+                modifier            = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState,
+                uiSettings          = MapUiSettings(
+                    zoomControlsEnabled     = false,
+                    myLocationButtonEnabled = false,
+                ),
+            ) {
+                selectedAccommodation?.let { acc ->
+                    MarkerComposable(
+                        keys  = arrayOf(acc.externalId),
+                        state = rememberMarkerState(position = LatLng(acc.latitude, acc.longitude)),
+                    ) {
+                        Surface(
+                            shape    = CircleShape,
+                            color    = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                Icon(
+                                    imageVector        = Icons.Outlined.Hotel,
+                                    contentDescription = null,
+                                    tint               = Color.White,
+                                    modifier           = Modifier.size(22.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            // 숙소 미선택 시 지도 위 안내 배너
+            if (selectedAccommodation == null) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 10.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color.Black.copy(alpha = 0.55f),
+                ) {
+                    Text(
+                        "숙소를 선택하면 지도에 위치가 표시됩니다",
+                        style    = MaterialTheme.typography.labelMedium.copy(color = Color.White),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        }
+
+        // ── 검색창 ──────────────────────────────────────────────────────────
+        OutlinedTextField(
+            value         = searchQuery,
+            onValueChange = onQueryChange,
+            modifier      = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(top = 16.dp, bottom = 4.dp),
+            placeholder   = { Text("숙소 이름으로 검색") },
+            leadingIcon   = { Icon(Icons.Outlined.Search, contentDescription = null) },
+            trailingIcon  = if (searchQuery.isNotEmpty()) {
+                {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Outlined.Clear, contentDescription = "지우기", modifier = Modifier.size(18.dp))
+                    }
+                }
+            } else null,
+            shape           = RoundedCornerShape(12.dp),
+            singleLine      = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = {
+                if (searchQuery.isNotBlank()) onSearch(searchQuery)
+                focusManager.clearFocus()
+            }),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor   = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+            ),
+        )
+
+        // ── 검색 결과 목록 ───────────────────────────────────────────────────
+        when {
+            isLoading -> Box(
+                modifier         = Modifier.fillMaxWidth().padding(32.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+            }
+            searchResults.isEmpty() && searchQuery.isNotBlank() -> Box(
+                modifier         = Modifier.fillMaxWidth().padding(32.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "검색 결과가 없어요.",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            }
+            searchResults.isEmpty() -> Box(
+                modifier         = Modifier.fillMaxWidth().padding(32.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "숙소 이름으로 검색해보세요",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            }
+            else -> LazyColumn(
+                contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(searchResults, key = { it.externalId }) { place ->
+                    AccommodationResultCard(
+                        place      = place,
+                        isSelected = place.externalId == selectedAccommodation?.externalId,
+                        onSelect   = { onAccommodationSelect(place) },
+                    )
+                }
+                item { Spacer(Modifier.height(8.dp)) }
+            }
+        }
+    }
+}
+
+/**
+ * 숙소 검색 결과 카드.
+ * 썸네일 + 이름 + 주소 + 선택 체크 표시.
+ */
+@Composable
+private fun AccommodationResultCard(
+    place: ApiPlaceSearchResult,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+) {
+    Card(
+        onClick   = onSelect,
+        modifier  = Modifier.fillMaxWidth(),
+        shape     = RoundedCornerShape(16.dp),
+        colors    = CardDefaults.cardColors(
+            containerColor = if (isSelected)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            else
+                MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        border    = if (isSelected)
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        else
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 3.dp else 1.dp),
+    ) {
+        Row(
+            modifier              = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // 썸네일 또는 호텔 아이콘
+            Box(
+                modifier         = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (!place.thumbnailUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model              = place.thumbnailUrl,
+                        contentDescription = place.name,
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Icon(
+                        imageVector        = Icons.Outlined.Hotel,
+                        contentDescription = null,
+                        tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier           = Modifier.size(28.dp),
+                    )
+                }
+            }
+            // 이름 + 주소
+            Column(
+                modifier            = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text  = place.name,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                )
+                if (!place.address.isNullOrBlank()) {
+                    Text(
+                        text     = place.address,
+                        style    = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines = 2,
+                    )
+                }
+            }
+            // 선택 체크 아이콘
+            if (isSelected) {
+                Icon(
+                    imageVector        = Icons.Outlined.CheckCircle,
+                    contentDescription = null,
+                    tint               = MaterialTheme.colorScheme.primary,
+                    modifier           = Modifier.size(24.dp),
+                )
+            }
+        }
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Accommodation Search Screen — 로비에서 숙소 수정 시 독립 화면으로 진입
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 숙소 검색 독립 화면 — 밴드 로비에서 "수정" 버튼 클릭 시 이동.
+ * 검색 결과 선택 후 "저장" 버튼을 누르면 onSave 콜백 호출.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AccommodationSearchScreen(
+    destinationLat: Double,
+    destinationLng: Double,
+    onBack: () -> Unit,
+    onSave: (ApiPlaceSearchResult?) -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<ApiPlaceSearchResult>>(emptyList()) }
+    var selected by remember { mutableStateOf<ApiPlaceSearchResult?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+
+    suspend fun doSearch(keyword: String) {
+        if (keyword.isBlank()) return
+        isLoading = true
+        results = emptyList()
+        runCatching {
+            com.synctrip.app.network.ApiClient.api.searchAccommodations(keyword, destinationLat, destinationLng)
+        }.onSuccess {
+            results = it
+        }.onFailure {
+            results = emptyList()
+        }
+        isLoading = false
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("숙소 선택") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Outlined.ArrowBack, contentDescription = "뒤로")
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { onSave(selected) }) {
+                        Text(if (selected != null) "저장" else "건너뛰기")
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        AccommodationSearchPage(
+            destinationLat       = destinationLat,
+            destinationLng       = destinationLng,
+            searchQuery          = query,
+            onQueryChange        = { query = it },
+            onSearch             = { keyword ->
+                focusManager.clearFocus()
+                scope.launch { doSearch(keyword) }
+            },
+            searchResults        = results,
+            selectedAccommodation = selected,
+            onAccommodationSelect = { place ->
+                selected = if (selected?.externalId == place.externalId) null else place
+            },
+            isLoading            = isLoading,
+            modifier             = Modifier.padding(innerPadding),
+        )
+    }
+}
+
 /**
  * RELAXED / PACKED 여행 스타일 카드 토글.
  * 이모지 텍스트로 시각적 표현 (🌴 = 여유롭게, ⚡ = 알차게).
@@ -1392,17 +1806,27 @@ private fun CreateTripPage1Preview() {
             onDestinationQueryChange = {},
             onSearchDestination      = {},
             onDestinationSelect      = {},
-            bandName                 = "",
-            onBandNameChange         = {},
-            startDate                = "",
-            onStartDateChange        = {},
-            endDate                  = "",
-            onEndDateChange          = {},
-            travelStyle              = BandTravelStyle.RELAXED,
-            onTravelStyleChange      = {},
-            isLoading                = false,
-            onCreateTrip             = {},
-            onBackClick              = {},
+            bandName                      = "",
+            onBandNameChange              = {},
+            startDate                     = "",
+            onStartDateChange             = {},
+            endDate                       = "",
+            onEndDateChange               = {},
+            travelStyle                   = BandTravelStyle.RELAXED,
+            onTravelStyleChange           = {},
+            destinationLat                = 35.68,
+            destinationLng                = 139.69,
+            accommodationQuery            = "",
+            onAccommodationQueryChange    = {},
+            onAccommodationSearch         = {},
+            accommodationResults          = emptyList(),
+            isAccommodationLoading        = false,
+            selectedAccommodation         = null,
+            onAccommodationSelect         = {},
+            isLoading                     = false,
+            onCreateTrip                  = {},
+            onSkipAccommodationAndCreate  = {},
+            onBackClick                   = {},
         )
     }
 }

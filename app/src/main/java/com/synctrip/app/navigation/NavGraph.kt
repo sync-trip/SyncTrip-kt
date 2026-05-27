@@ -286,10 +286,14 @@ fun SyncTripNavGraph(
             var destinations        by remember { mutableStateOf<List<DestinationResponse>>(emptyList()) }
             var selectedDestination by remember { mutableStateOf<DestinationResponse?>(null) }
             var destinationQuery    by remember { mutableStateOf("") }
-            var bandName            by remember { mutableStateOf("") }
-            var startDate           by remember { mutableStateOf("") }
-            var endDate             by remember { mutableStateOf("") }
-            var travelStyle         by remember { mutableStateOf(BandTravelStyle.RELAXED) }
+            var bandName               by remember { mutableStateOf("") }
+            var startDate              by remember { mutableStateOf("") }
+            var endDate                by remember { mutableStateOf("") }
+            var travelStyle            by remember { mutableStateOf(BandTravelStyle.RELAXED) }
+            var selectedAccommodation  by remember { mutableStateOf<ApiPlaceSearchResult?>(null) }
+            var accommodationQuery     by remember { mutableStateOf("") }
+            var accommodationResults   by remember { mutableStateOf<List<ApiPlaceSearchResult>>(emptyList()) }
+            var isAccommodationLoading by remember { mutableStateOf(false) }
 
             // 화면 진입 시 인기 여행지 로드
             LaunchedEffect(Unit) {
@@ -344,10 +348,55 @@ fun SyncTripNavGraph(
                     onStartDateChange   = { startDate = it },
                     endDate             = endDate,
                     onEndDateChange     = { endDate = it },
-                    travelStyle         = travelStyle,
-                    onTravelStyleChange = { travelStyle = it },
-                    isLoading           = bandUiState.isLoading,
-                    onCreateTrip        = {
+                    travelStyle                  = travelStyle,
+                    onTravelStyleChange          = { travelStyle = it },
+                    destinationLat               = selectedDestination?.lat ?: 37.5665,
+                    destinationLng               = selectedDestination?.lng ?: 126.9780,
+                    accommodationQuery           = accommodationQuery,
+                    onAccommodationQueryChange   = { accommodationQuery = it },
+                    onAccommodationSearch        = { keyword ->
+                        val dest = selectedDestination ?: return@CreateTripScreen
+                        scope.launch {
+                            isAccommodationLoading = true
+                            runCatching {
+                                ApiClient.api.searchAccommodations(keyword, dest.lat, dest.lng)
+                            }.onSuccess { accommodationResults = it }
+                                .onFailure { snackbarState.showSnackbar("숙소 검색 실패. 다시 시도해주세요.") }
+                            isAccommodationLoading = false
+                        }
+                    },
+                    accommodationResults         = accommodationResults,
+                    isAccommodationLoading       = isAccommodationLoading,
+                    selectedAccommodation        = selectedAccommodation,
+                    onAccommodationSelect        = { acc ->
+                        selectedAccommodation = if (selectedAccommodation?.externalId == acc.externalId) null else acc
+                    },
+                    isLoading                    = bandUiState.isLoading,
+                    onCreateTrip                 = {
+                        val dest = selectedDestination ?: return@CreateTripScreen
+                        bandViewModel.createBand(
+                            BandCreateRequest(
+                                name              = bandName.ifBlank { "${dest.name} 여행" },
+                                startDate         = startDate,
+                                endDate           = endDate,
+                                destination       = dest.name,
+                                destinationLat    = dest.lat,
+                                destinationLng    = dest.lng,
+                                countryCode       = dest.countryCode,
+                                overseas          = dest.overseas,
+                                travelStyle       = travelStyle,
+                                thumbnailUrl      = dest.thumbnailUrl,
+                                accommodationName = selectedAccommodation?.name,
+                                accommodationLat  = selectedAccommodation?.latitude,
+                                accommodationLng  = selectedAccommodation?.longitude,
+                            )
+                        ) { newBand ->
+                            navController.navigate("tripLobby/${newBand.id}") {
+                                popUpTo("createTrip") { inclusive = true }
+                            }
+                        }
+                    },
+                    onSkipAccommodationAndCreate = {
                         val dest = selectedDestination ?: return@CreateTripScreen
                         bandViewModel.createBand(
                             BandCreateRequest(
@@ -363,7 +412,6 @@ fun SyncTripNavGraph(
                                 thumbnailUrl   = dest.thumbnailUrl,
                             )
                         ) { newBand ->
-                            // 생성 성공 → 로비로 이동 (createTrip은 백스택에서 제거)
                             navController.navigate("tripLobby/${newBand.id}") {
                                 popUpTo("createTrip") { inclusive = true }
                             }
@@ -613,6 +661,12 @@ fun SyncTripNavGraph(
                     onDeleteAlbumPhoto = { photoId ->
                         albumViewModel.deletePhoto(bandIdLong, photoId)
                     },
+                    onEditAccommodationClick = {
+                        val dest = bandUiState.bands.find { it.id == bandIdLong }
+                        val lat  = dest?.destinationLat ?: 37.5665
+                        val lng  = dest?.destinationLng ?: 126.9780
+                        navController.navigate("accommodationSearch/$bandIdLong/$lat/$lng")
+                    },
                     onDeleteBand      = {
                         bandViewModel.deleteBand(bandIdLong) {
                             navController.navigate("home") {
@@ -622,6 +676,29 @@ fun SyncTripNavGraph(
                     },
                 )
             }
+        }
+
+        // 숙소 검색 화면 — 로비에서 방장이 숙소 수정 시 진입
+        composable("accommodationSearch/{bandId}/{lat}/{lng}") { backStackEntry ->
+            val bandIdLong = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
+            val lat        = backStackEntry.arguments?.getString("lat")?.toDoubleOrNull() ?: 37.5665
+            val lng        = backStackEntry.arguments?.getString("lng")?.toDoubleOrNull() ?: 126.9780
+            val bandViewModel: BandViewModel = viewModel()
+
+            AccommodationSearchScreen(
+                destinationLat = lat,
+                destinationLng = lng,
+                onBack         = { navController.popBackStack() },
+                onSave         = { selectedPlace ->
+                    bandViewModel.updateAccommodation(
+                        bandId = bandIdLong,
+                        name   = selectedPlace?.name,
+                        lat    = selectedPlace?.latitude,
+                        lng    = selectedPlace?.longitude,
+                    )
+                    navController.popBackStack()
+                },
+            )
         }
 
         // 초대 화면 — +초대 버튼에서 진입, 코드 복사/공유 제공
