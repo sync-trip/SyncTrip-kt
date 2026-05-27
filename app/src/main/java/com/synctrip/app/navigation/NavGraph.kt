@@ -20,10 +20,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.synctrip.app.SyncTripApplication
 import com.synctrip.app.core.TokenDataStore
 import com.synctrip.app.data.models.*
+import com.synctrip.app.data.repository.AuthRepository
 import com.synctrip.app.data.repository.BandRepository
 import com.synctrip.app.network.ApiClient
 import com.synctrip.app.ui.screens.*
@@ -44,9 +46,24 @@ import kotlinx.coroutines.launch
 fun SyncTripNavGraph(
     pendingDeepLinkCode: String? = null,
     onDeepLinkConsumed: () -> Unit = {},
+    pendingNotificationRoute: String? = null,
+    onNotificationRouteConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val scope         = rememberCoroutineScope()
+
+    // 앱 실행 중 알림 탭 → 현재 화면이 splash가 아닐 때 즉시 이동
+    // 앱 종료 상태에서 탭한 경우는 splash 완료 시점에 처리
+    val navBackStack by navController.currentBackStackEntryAsState()
+    LaunchedEffect(pendingNotificationRoute) {
+        val route = pendingNotificationRoute ?: return@LaunchedEffect
+        val currentRoute = navBackStack?.destination?.route
+        // null: NavHost 초기화 전 / "splash": 종료 상태 탭 케이스 → 둘 다 skip, splash에서 처리
+        if (currentRoute != null && currentRoute != "splash") {
+            navController.navigate(route)
+            onNotificationRouteConsumed()
+        }
+    }
 
     // 딥링크 초대 코드 상태 — NavHost 밖에 선언해야 어느 화면에서도 다이얼로그 표시 가능
     var pendingJoinCode by remember { mutableStateOf<String?>(null) }
@@ -107,6 +124,8 @@ fun SyncTripNavGraph(
                 if (!access.isNullOrBlank() && !refresh.isNullOrBlank()) {
                     ApiClient.accessToken  = access
                     ApiClient.refreshToken = refresh
+                    // 자동로그인 시에도 FCM 토큰을 서버에 등록 — onNewToken은 토큰 갱신 시에만 호출되므로
+                    AuthRepository.ensureFcmTokenRegistered()
                     tokenDest = "home"
                 } else {
                     tokenDest = "login"
@@ -118,6 +137,11 @@ fun SyncTripNavGraph(
                 if (splashDone && tokenDest != null) {
                     navController.navigate(tokenDest!!) {
                         popUpTo("splash") { inclusive = true }
+                    }
+                    // 앱 종료 상태에서 알림 탭 → 로그인 상태(home)일 때만 추가 이동
+                    if (tokenDest == "home" && !pendingNotificationRoute.isNullOrEmpty()) {
+                        navController.navigate(pendingNotificationRoute)
+                        onNotificationRouteConsumed()
                     }
                 }
             }

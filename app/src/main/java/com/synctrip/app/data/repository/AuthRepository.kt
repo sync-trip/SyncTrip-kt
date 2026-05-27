@@ -60,9 +60,11 @@ object AuthRepository {
     }
 
     /**
-     * 현재 기기의 FCM 토큰을 가져와 서버에 등록.
-     * 실패해도 로그인 자체를 막지 않도록 runCatching으로 감쌈.
+     * FCM 토큰 서버 등록 — 자동로그인 복구 후 NavGraph에서도 직접 호출 가능.
+     * 실패해도 상위 흐름을 막지 않도록 runCatching으로 감쌈.
      */
+    suspend fun ensureFcmTokenRegistered() = registerCurrentFcmToken()
+
     private suspend fun registerCurrentFcmToken() {
         runCatching {
             val token = suspendCancellableCoroutine<String> { cont ->
