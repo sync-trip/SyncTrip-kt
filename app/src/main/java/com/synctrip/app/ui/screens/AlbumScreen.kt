@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -91,6 +93,7 @@ private enum class AlbumViewTab { FEED, MAP }
  * @param onUploadPhoto    업로드 실행 콜백
  * @param onDeletePhoto    삭제 실행 콜백
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumContent(
     photos: List<AlbumPhotoResponse>,
@@ -108,6 +111,8 @@ fun AlbumContent(
         takenAt: String?,
     ) -> Unit,
     onDeletePhoto: (photoId: Long) -> Unit,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -186,14 +191,20 @@ fun AlbumContent(
             )
 
             when (currentTab) {
-                AlbumViewTab.FEED -> AlbumFeedList(
-                    photos        = photos,
-                    isLoading     = isLoading,
-                    currentUserId = currentUserId,
-                    listState     = feedListState,
-                    onDeletePhoto = onDeletePhoto,
-                    modifier      = Modifier.fillMaxSize(),
-                )
+                AlbumViewTab.FEED -> PullToRefreshBox(
+                    isRefreshing = isRefreshing,
+                    onRefresh    = onRefresh,
+                    modifier     = Modifier.fillMaxSize(),
+                ) {
+                    AlbumFeedList(
+                        photos        = photos,
+                        isLoading     = isLoading,
+                        currentUserId = currentUserId,
+                        listState     = feedListState,
+                        onDeletePhoto = onDeletePhoto,
+                        modifier      = Modifier.fillMaxSize(),
+                    )
+                }
                 AlbumViewTab.MAP  -> AlbumMapView(
                     pins           = mapPins,
                     destinationLat = destinationLat,

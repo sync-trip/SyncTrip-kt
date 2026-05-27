@@ -203,12 +203,18 @@ fun SyncTripNavGraph(
             val authViewModel   = viewModel<AuthViewModel>()
             val bandUiState     by bandViewModel.uiState.collectAsState()
             val snackbarState   = remember { SnackbarHostState() }
+            var isRefreshing    by remember { mutableStateOf(false) }
 
             // 화면 진입 시 밴드 목록 + 유저 프로필 + 추천 여행지 로드
             LaunchedEffect(Unit) {
                 bandViewModel.loadBands()
                 bandViewModel.loadMyProfile()
                 bandViewModel.loadRecommendedDestinations()
+            }
+
+            // 로딩 완료 시 새로고침 인디케이터 해제
+            LaunchedEffect(bandUiState.isLoading) {
+                if (!bandUiState.isLoading) isRefreshing = false
             }
 
             // BottomSheet 수동 코드 입력 에러 → 스낵바 표시
@@ -225,6 +231,13 @@ fun SyncTripNavGraph(
                 userName             = bandUiState.userProfile?.name ?: "",
                 userProfileImageUrl  = bandUiState.userProfile?.profileImageUrl,
                 snackbarHostState    = snackbarState,
+                isRefreshing         = isRefreshing,
+                onRefresh            = {
+                    isRefreshing = true
+                    bandViewModel.loadBands()
+                    bandViewModel.loadMyProfile()
+                    bandViewModel.loadRecommendedDestinations()
+                },
                 onSearchClick        = {},
                 onNotificationsClick = { navController.navigate("notifications") },
                 onContentCardClick   = {},
@@ -401,6 +414,7 @@ fun SyncTripNavGraph(
 
             // 허브 탭 선택 상태 — NavGraph에서 관리해야 scheduleReadyEvent와 연동 가능
             var selectedTab by remember { mutableStateOf(BandHubTab.BAND) }
+            var isRefreshing by remember { mutableStateOf(false) }
             // 이전 상태 추적 — GENERATING→TRAVELLING 전환 시에만 탭 자동 전환
             var prevBandStatus by remember { mutableStateOf<BandStatus?>(null) }
 
@@ -483,6 +497,17 @@ fun SyncTripNavGraph(
                 }
             }
 
+            // 현재 탭 로딩 완료 시 새로고침 인디케이터 해제
+            val currentTabLoading = when (selectedTab) {
+                BandHubTab.BAND       -> bandUiState.isLoading
+                BandHubTab.SCHEDULE   -> scheduleUiState.isLoading
+                BandHubTab.SETTLEMENT -> bandUiState.isExpensesLoading
+                BandHubTab.PHOTO      -> albumUiState.isLoading
+            }
+            LaunchedEffect(currentTabLoading) {
+                if (!currentTabLoading) isRefreshing = false
+            }
+
             // FCM 수신 시 즉시 갱신 — 멤버 합류·장바구니 변경 등 이벤트를 폴링 없이 반영
             val application = context.applicationContext as SyncTripApplication
             LaunchedEffect(Unit) {
@@ -511,6 +536,23 @@ fun SyncTripNavGraph(
                     picks             = bandUiState.picks,
                     currentUserId     = currentUserId,
                     isBandLoading     = bandUiState.isLoading,
+                    isRefreshing      = isRefreshing,
+                    onRefresh         = {
+                        isRefreshing = true
+                        when (selectedTab) {
+                            BandHubTab.BAND -> {
+                                bandViewModel.loadBands()
+                                bandViewModel.loadMembers(bandIdLong)
+                                bandViewModel.loadPicks(bandIdLong)
+                            }
+                            BandHubTab.SCHEDULE   -> scheduleViewModel.loadSchedule(bandIdLong)
+                            BandHubTab.SETTLEMENT -> {
+                                bandViewModel.loadSettlement(bandIdLong)
+                                bandViewModel.loadExpenses(bandIdLong)
+                            }
+                            BandHubTab.PHOTO      -> albumViewModel.loadAlbum(bandIdLong)
+                        }
+                    },
                     schedule          = scheduleUiState.schedule,
                     altOptions        = scheduleUiState.altOptions,
                     isScheduleLoading = scheduleUiState.isLoading,
@@ -783,12 +825,18 @@ fun SyncTripNavGraph(
             val bandId        = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
             val voteViewModel: VoteViewModel = viewModel()
             val uiState       by voteViewModel.uiState.collectAsState()
+            var isRefreshing  by remember { mutableStateOf(false) }
 
             LaunchedEffect(bandId) { voteViewModel.loadVoteResults(bandId) }
+            LaunchedEffect(uiState.isLoading) {
+                if (!uiState.isLoading) isRefreshing = false
+            }
 
             VoteResultScreen(
                 results          = uiState.voteResults,
                 isLoading        = uiState.isLoading,
+                isRefreshing     = isRefreshing,
+                onRefresh        = { isRefreshing = true; voteViewModel.loadVoteResults(bandId) },
                 onCreateSchedule = {
                     navController.navigate("aiLoading/$bandId") {
                         popUpTo("voteResults/$bandId") { inclusive = true }
@@ -827,6 +875,11 @@ fun SyncTripNavGraph(
                     .toSet()
             }
 
+            var isRefreshing by remember { mutableStateOf(false) }
+            LaunchedEffect(uiState.isPassportLoading) {
+                if (!uiState.isPassportLoading) isRefreshing = false
+            }
+
             MyPassportScreen(
                 user = UserProfile(
                     id              = uiState.userProfile?.id?.toString() ?: "",
@@ -836,21 +889,33 @@ fun SyncTripNavGraph(
                     totalTrips      = uiState.passportStamps.size,
                     passportStamps  = uiState.passportStamps,
                 ),
-                newStampIds = newStampIds,
-                isLoading   = uiState.isPassportLoading,
-                onBackClick = { navController.popBackStack() },
+                newStampIds  = newStampIds,
+                isLoading    = uiState.isPassportLoading,
+                isRefreshing = isRefreshing,
+                onRefresh    = {
+                    isRefreshing = true
+                    bandViewModel.loadMyProfile()
+                    bandViewModel.loadPassportStamps()
+                },
+                onBackClick  = { navController.popBackStack() },
             )
         }
 
         composable("notifications") {
             val vm: NotificationViewModel = viewModel()
-            val uiState by vm.uiState.collectAsState()
+            val uiState      by vm.uiState.collectAsState()
+            var isRefreshing by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) { vm.loadNotifications() }
+            LaunchedEffect(uiState.isLoading) {
+                if (!uiState.isLoading) isRefreshing = false
+            }
             NotificationScreen(
                 groups        = uiState.groups,
                 onMarkAllRead = { vm.markAllRead() },
                 onItemClick   = { id -> vm.markRead(id) },
                 onBackClick   = { navController.popBackStack() },
+                isRefreshing  = isRefreshing,
+                onRefresh     = { isRefreshing = true; vm.loadNotifications() },
             )
         }
 
