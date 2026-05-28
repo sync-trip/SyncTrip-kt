@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1125,9 +1126,12 @@ private fun CalendarDay(
 
 /**
  * 숙소 검색 페이지 (3/3).
- * 상단 Google Map에 선택 숙소 핀 표시, 하단 검색창 + 결과 목록.
- * 숙소는 선택 사항 — 건너뛰면 목적지 위치를 기본으로 사용.
+ * 전체 화면 Google Map 위에 드래그 가능한 바텀시트로 검색창 + 결과 목록을 표시한다.
+ * - sheetPeekHeight: 드래그 핸들 + 검색창만 보이는 접힌 높이
+ * - 검색 결과 도착 시 자동으로 시트를 펼침
+ * - 숙소는 선택 사항 — 건너뛰면 목적지 위치를 기본으로 사용
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AccommodationSearchPage(
     destinationLat: Double,
@@ -1142,32 +1146,160 @@ private fun AccommodationSearchPage(
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
 
-    // 선택된 숙소가 있으면 해당 위치로, 없으면 목적지 중심으로 카메라 초기화
+    // 탭 진입 시 keyword 없이 자동 검색 — 도착 즉시 근처 숙소 목록 표시
+    LaunchedEffect(Unit) {
+        onSearch("")
+    }
+
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(
             LatLng(destinationLat, destinationLng), 13f,
         )
     }
+    // externalId가 바뀔 때마다 새 MarkerState를 생성해야 핀 위치가 갱신됨
+    // rememberMarkerState는 최초 1회만 초기화되므로 .position 직접 대입으로는 Composable에 반영되지 않음
+    val markerPosition = selectedAccommodation?.let { LatLng(it.latitude, it.longitude) }
+        ?: LatLng(destinationLat, destinationLng)
+    val markerState = remember(selectedAccommodation?.externalId) {
+        MarkerState(position = markerPosition)
+    }
 
-    // 숙소 선택 시 지도 카메라를 해당 위치로 이동
+    // 숙소 선택 시 카메라를 함께 이동
     LaunchedEffect(selectedAccommodation) {
         selectedAccommodation?.let {
+            val latLng = LatLng(it.latitude, it.longitude)
             cameraPositionState.animate(
                 CameraUpdateFactory.newCameraPosition(
-                    CameraPosition.fromLatLngZoom(LatLng(it.latitude, it.longitude), 15f),
+                    CameraPosition.fromLatLngZoom(latLng, 15f),
                 )
             )
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        // ── 지도 (고정 높이) ─────────────────────────────────────────────────
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(250.dp),
-        ) {
+    val scaffoldState = rememberBottomSheetScaffoldState(
+        bottomSheetState = rememberStandardBottomSheetState(
+            initialValue    = SheetValue.PartiallyExpanded,
+            skipHiddenState = true,
+        )
+    )
+
+    // 검색 결과 도착 시 바텀시트 자동 펼침
+    LaunchedEffect(searchResults) {
+        if (searchResults.isNotEmpty()) {
+            scope.launch { scaffoldState.bottomSheetState.expand() }
+        }
+    }
+
+    BottomSheetScaffold(
+        scaffoldState  = scaffoldState,
+        sheetPeekHeight = 130.dp,
+        sheetShape     = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        sheetDragHandle = {
+            // 커스텀 드래그 핸들
+            Box(
+                modifier         = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, bottom = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    modifier = Modifier.size(width = 36.dp, height = 4.dp),
+                    shape    = CircleShape,
+                    color    = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                ) {}
+            }
+        },
+        sheetContent = {
+            // ── 검색창 ──────────────────────────────────────────────────────
+            OutlinedTextField(
+                value         = searchQuery,
+                onValueChange = onQueryChange,
+                modifier      = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 8.dp),
+                placeholder   = { Text("숙소 이름으로 검색") },
+                leadingIcon   = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                trailingIcon  = if (searchQuery.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { onQueryChange("") }) {
+                            Icon(Icons.Outlined.Clear, contentDescription = "지우기", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                } else null,
+                shape           = RoundedCornerShape(12.dp),
+                singleLine      = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    if (searchQuery.isNotBlank()) onSearch(searchQuery)
+                    focusManager.clearFocus()
+                }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor   = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                ),
+            )
+
+            // ── 검색 결과 목록 ───────────────────────────────────────────────
+            when {
+                isLoading -> Box(
+                    modifier         = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                }
+                searchResults.isEmpty() && searchQuery.isNotBlank() -> Box(
+                    modifier         = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "검색 결과가 없어요.",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
+                searchResults.isEmpty() -> Box(
+                    modifier         = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "위에서 숙소를 검색해보세요",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
+                else -> LazyColumn(
+                    contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier            = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                ) {
+                    items(searchResults, key = { it.externalId }) { place ->
+                        AccommodationResultCard(
+                            place      = place,
+                            isSelected = place.externalId == selectedAccommodation?.externalId,
+                            onSelect   = { onAccommodationSelect(place) },
+                        )
+                    }
+                    item { Spacer(Modifier.height(16.dp)) }
+                }
+            }
+        },
+        modifier = modifier,
+    ) {
+        // ── 배경: 전체 화면 지도 ─────────────────────────────────────────────
+        Box(modifier = Modifier.fillMaxSize()) {
             GoogleMap(
                 modifier            = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
@@ -1176,11 +1308,8 @@ private fun AccommodationSearchPage(
                     myLocationButtonEnabled = false,
                 ),
             ) {
-                selectedAccommodation?.let { acc ->
-                    MarkerComposable(
-                        keys  = arrayOf(acc.externalId),
-                        state = rememberMarkerState(position = LatLng(acc.latitude, acc.longitude)),
-                    ) {
+                if (selectedAccommodation != null) {
+                    MarkerComposable(state = markerState) {
                         Surface(
                             shape    = CircleShape,
                             color    = MaterialTheme.colorScheme.primary,
@@ -1202,8 +1331,8 @@ private fun AccommodationSearchPage(
             if (selectedAccommodation == null) {
                 Surface(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 10.dp),
+                        .align(Alignment.TopCenter)
+                        .padding(top = 16.dp),
                     shape = RoundedCornerShape(8.dp),
                     color = Color.Black.copy(alpha = 0.55f),
                 ) {
@@ -1213,81 +1342,6 @@ private fun AccommodationSearchPage(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                 }
-            }
-        }
-
-        // ── 검색창 ──────────────────────────────────────────────────────────
-        OutlinedTextField(
-            value         = searchQuery,
-            onValueChange = onQueryChange,
-            modifier      = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(top = 16.dp, bottom = 4.dp),
-            placeholder   = { Text("숙소 이름으로 검색") },
-            leadingIcon   = { Icon(Icons.Outlined.Search, contentDescription = null) },
-            trailingIcon  = if (searchQuery.isNotEmpty()) {
-                {
-                    IconButton(onClick = { onQueryChange("") }) {
-                        Icon(Icons.Outlined.Clear, contentDescription = "지우기", modifier = Modifier.size(18.dp))
-                    }
-                }
-            } else null,
-            shape           = RoundedCornerShape(12.dp),
-            singleLine      = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = {
-                if (searchQuery.isNotBlank()) onSearch(searchQuery)
-                focusManager.clearFocus()
-            }),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor   = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-            ),
-        )
-
-        // ── 검색 결과 목록 ───────────────────────────────────────────────────
-        when {
-            isLoading -> Box(
-                modifier         = Modifier.fillMaxWidth().padding(32.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(28.dp))
-            }
-            searchResults.isEmpty() && searchQuery.isNotBlank() -> Box(
-                modifier         = Modifier.fillMaxWidth().padding(32.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "검색 결과가 없어요.",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                )
-            }
-            searchResults.isEmpty() -> Box(
-                modifier         = Modifier.fillMaxWidth().padding(32.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "숙소 이름으로 검색해보세요",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                )
-            }
-            else -> LazyColumn(
-                contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(searchResults, key = { it.externalId }) { place ->
-                    AccommodationResultCard(
-                        place      = place,
-                        isSelected = place.externalId == selectedAccommodation?.externalId,
-                        onSelect   = { onAccommodationSelect(place) },
-                    )
-                }
-                item { Spacer(Modifier.height(8.dp)) }
             }
         }
     }
@@ -1395,6 +1449,7 @@ private fun AccommodationResultCard(
 fun AccommodationSearchScreen(
     destinationLat: Double,
     destinationLng: Double,
+    destinationName: String? = null,
     onBack: () -> Unit,
     onSave: (ApiPlaceSearchResult?) -> Unit,
 ) {
@@ -1405,12 +1460,11 @@ fun AccommodationSearchScreen(
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
 
-    suspend fun doSearch(keyword: String) {
-        if (keyword.isBlank()) return
+    suspend fun doSearch(keyword: String? = null) {
         isLoading = true
         results = emptyList()
         runCatching {
-            com.synctrip.app.network.ApiClient.api.searchAccommodations(keyword, destinationLat, destinationLng)
+            com.synctrip.app.network.ApiClient.api.searchAccommodations(destinationLat, destinationLng, keyword)
         }.onSuccess {
             results = it
         }.onFailure {
@@ -1418,6 +1472,9 @@ fun AccommodationSearchScreen(
         }
         isLoading = false
     }
+
+    // 화면 진입 시 keyword 없이 자동 검색 — 근처 숙소 목록 즉시 표시
+    LaunchedEffect(Unit) { doSearch() }
 
     Scaffold(
         topBar = {
@@ -1443,7 +1500,7 @@ fun AccommodationSearchScreen(
             onQueryChange        = { query = it },
             onSearch             = { keyword ->
                 focusManager.clearFocus()
-                scope.launch { doSearch(keyword) }
+                scope.launch { doSearch(keyword.ifBlank { null }) }
             },
             searchResults        = results,
             selectedAccommodation = selected,
