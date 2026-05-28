@@ -1,6 +1,7 @@
 package com.synctrip.app.network
 
 import com.synctrip.app.data.models.*
+import okhttp3.MultipartBody
 import retrofit2.http.*
 
 interface SyncTripApiService {
@@ -29,6 +30,20 @@ interface SyncTripApiService {
 
     @POST("api/bands/join")
     suspend fun joinBand(@Body body: BandJoinRequest): BandResponse
+
+    @PATCH("api/bands/{bandId}/accommodation")
+    suspend fun updateAccommodation(
+        @Path("bandId") bandId: Long,
+        @Body body: AccommodationUpdateRequest,
+    ): Unit
+
+    /** 밴드 생성 전 숙소 검색 — rectangle restriction(50km)으로 지역 제한, keyword 없으면 근처 숙소 목록 반환 */
+    @GET("api/places/search")
+    suspend fun searchAccommodations(
+        @Query("lat") lat: Double,
+        @Query("lng") lng: Double,
+        @Query("keyword") keyword: String? = null,
+    ): List<ApiPlaceSearchResult>
 
     @GET("api/bands/{bandId}/members")
     suspend fun getBandMembers(@Path("bandId") bandId: Long): List<BandMemberResponse>
@@ -91,6 +106,9 @@ interface SyncTripApiService {
     @GET("api/bands/{bandId}/votes/status/group")
     suspend fun getGroupVoteStatus(@Path("bandId") bandId: Long): GroupVoteStatusResponse
 
+    @GET("api/bands/{bandId}/votes/results")
+    suspend fun getVoteResults(@Path("bandId") bandId: Long): List<VotePlaceResult>
+
     // ── Place Search ──────────────────────────────────────────────────────────
 
     @GET("api/bands/{bandId}/places/search")
@@ -98,10 +116,16 @@ interface SyncTripApiService {
         @Path("bandId") bandId: Long,
         @Query("keyword") keyword: String? = null,
         @Query("category") category: String? = null,
-        @Query("radiusMeters") radiusMeters: Int = 5000,
     ): List<ApiPlaceSearchResult>
 
     // ── Expense ───────────────────────────────────────────────────────────────
+
+    @Multipart
+    @POST("api/bands/{bandId}/expenses/ocr")
+    suspend fun scanReceipt(
+        @Path("bandId") bandId: Long,
+        @Part image: MultipartBody.Part,
+    ): OcrReceiptResponse
 
     @GET("api/bands/{bandId}/expenses")
     suspend fun getExpenses(@Path("bandId") bandId: Long): List<ExpenseResponse>
@@ -111,6 +135,19 @@ interface SyncTripApiService {
         @Path("bandId") bandId: Long,
         @Body body: ExpenseCreateRequest,
     ): ExpenseResponse
+
+    @PUT("api/bands/{bandId}/expenses/{expenseId}")
+    suspend fun updateExpense(
+        @Path("bandId") bandId: Long,
+        @Path("expenseId") expenseId: Long,
+        @Body body: ExpenseUpdateRequest,
+    ): ExpenseResponse
+
+    @DELETE("api/bands/{bandId}/expenses/{expenseId}")
+    suspend fun deleteExpense(
+        @Path("bandId") bandId: Long,
+        @Path("expenseId") expenseId: Long,
+    )
 
     // ── Settlement ────────────────────────────────────────────────────────────
 
@@ -199,6 +236,12 @@ interface SyncTripApiService {
 
     @DELETE("api/notifications/{id}")
     suspend fun deleteNotification(@Path("id") notificationId: Long)
+
+    // ── Passport Stamps ───────────────────────────────────────────────────────
+
+    /** 내 여권 스탬프 목록 — stampedAt DESC 정렬 */
+    @GET("api/users/me/stamps")
+    suspend fun getMyStamps(): List<ApiPassportStampResponse>
 
     // ── Notification Settings ─────────────────────────────────────────────────
 

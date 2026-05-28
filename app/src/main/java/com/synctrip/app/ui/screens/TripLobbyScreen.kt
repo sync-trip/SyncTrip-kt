@@ -1,5 +1,6 @@
 package com.synctrip.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -19,9 +20,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
@@ -69,6 +72,8 @@ fun TripBandHubScreen(
     isScheduleLoading: Boolean,
     isEditing: Boolean,
     settlement: Settlement?,
+    expenses: List<com.synctrip.app.data.models.ExpenseResponse>,
+    isExpensesLoading: Boolean,
     selectedTab: BandHubTab,
     onTabSelected: (BandHubTab) -> Unit,
     snackbarHostState: SnackbarHostState,
@@ -84,8 +89,14 @@ fun TripBandHubScreen(
     onSwapSlot: (scheduleId: Long, newPlaceId: Long) -> Unit,
     onStartEditing: () -> Unit,
     onFinishEditing: () -> Unit,
+    planBResults: List<PlanBResponse>,
+    isPlanBLoading: Boolean,
+    onRequestPlanB: (targetPlaceId: Long) -> Unit,
+    onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
     // 정산 탭 콜백
     onSettleClick: (transferId: String) -> Unit,
+    onAddExpense: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+    onDeleteExpense: (expenseId: Long) -> Unit,
     // 사진 탭 — 앨범 상태 + 콜백
     albumPhotos: List<com.synctrip.app.data.models.AlbumPhotoResponse>,
     albumMapPins: List<com.synctrip.app.data.models.AlbumPhotoMapResponse>,
@@ -99,12 +110,18 @@ fun TripBandHubScreen(
         takenAt: String?,
     ) -> Unit,
     onDeleteAlbumPhoto: (photoId: Long) -> Unit,
+    // 숙소 수정 화면으로 이동 (방장 전용, PLANNING/TRAVELLING/DONE)
+    onEditAccommodationClick: () -> Unit,
     // 방 삭제 (방장 전용)
     onDeleteBand: () -> Unit,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // 투표 강제 시작 전 확인 다이얼로그
     var showAdvanceDialog by remember { mutableStateOf(false) }
+    // 픽 수 부족 에러 다이얼로그 — 멤버 수 * 2 미만이면 표시
+    var showInsufficientPicksDialog by remember { mutableStateOf(false) }
     // 방 삭제 확인 다이얼로그
     var showDeleteDialog  by remember { mutableStateOf(false) }
 
@@ -130,6 +147,28 @@ fun TripBandHubScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("취소") }
+            },
+        )
+    }
+
+    // 픽 수 부족 시 투표 시작 차단 팝업
+    val minPicksRequired = members.size * 2
+    val totalPicks = members.sumOf { it.bookmarkCount }
+
+    if (showInsufficientPicksDialog) {
+        AlertDialog(
+            onDismissRequest = { showInsufficientPicksDialog = false },
+            title            = { Text("장소가 부족해요") },
+            text             = {
+                Text(
+                    "투표를 시작하려면 최소 ${minPicksRequired}개의 장소가 필요해요.\n" +
+                    "현재 ${totalPicks}개 담겨 있어요. (멤버 수 × 2 기준)",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showInsufficientPicksDialog = false }) {
+                    Text("확인", color = MaterialTheme.colorScheme.primary)
+                }
             },
         )
     }
@@ -179,76 +218,112 @@ fun TripBandHubScreen(
             )
         },
     ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) {
-            when (selectedTab) {
-                BandHubTab.BAND -> BandHubTabContent(
-                    band          = band,
-                    members       = members,
-                    picks         = picks,
-                    currentUserId = currentUserId,
-                    isBandLoading = isBandLoading,
-                    onReadyClick  = onReadyClick,
-                    onInviteClick = onInviteClick,
-                    onGoToPlaceSearch  = onGoToPlaceSearch,
-                    onGoToVoting       = onGoToVoting,
-                    onAdvanceStatusClick = { showAdvanceDialog = true },
-                    modifier      = Modifier.fillMaxSize(),
-                )
-
-                BandHubTab.SCHEDULE -> {
-                    // GENERATING 상태이면서 아직 일정이 없으면 생성 중 스피너 표시
-                    if (band.status == BandStatus.GENERATING && (schedule == null || schedule.days.isEmpty())) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                PlaneLoadingIndicator()
-                                Spacer(Modifier.height(16.dp))
-                                Text(
-                                    "일정 생성 중…",
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    ),
-                                )
-                            }
+        // 탭별로 새로고침 처리:
+        // BAND·SETTLEMENT — 스크롤 가능 콘텐츠가 직접 자식이므로 허브 레벨 PullToRefreshBox 사용
+        // SCHEDULE·PHOTO  — 구글맵/중첩 구조로 제스처 전파가 안 되므로 각 콘텐츠 내부에서 처리
+        when (selectedTab) {
+            BandHubTab.BAND -> PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh    = onRefresh,
+                modifier     = Modifier.fillMaxSize().padding(innerPadding),
+            ) {
+                BandHubTabContent(
+                    band                  = band,
+                    members               = members,
+                    picks                 = picks,
+                    currentUserId         = currentUserId,
+                    isBandLoading         = isBandLoading,
+                    onReadyClick          = onReadyClick,
+                    onInviteClick         = onInviteClick,
+                    onGoToPlaceSearch     = onGoToPlaceSearch,
+                    onGoToVoting          = onGoToVoting,
+                    onEditAccommodationClick = onEditAccommodationClick,
+                    onAdvanceStatusClick  = {
+                        // 멤버 수 * 2 미만이면 투표 차단
+                        if (totalPicks < minPicksRequired) {
+                            showInsufficientPicksDialog = true
+                        } else {
+                            showAdvanceDialog = true
                         }
-                    } else {
-                        ScheduleContent(
-                            schedule        = schedule,
-                            altOptions      = altOptions,
-                            isLoading       = isScheduleLoading,
-                            isEditing       = isEditing,
-                            canEdit         = false,
-                            onStartEditing  = onStartEditing,
-                            onFinishEditing = onFinishEditing,
-                            onSwapSlot      = onSwapSlot,
-                            onLoadAlts      = onLoadAlts,
-                            modifier        = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
-
-                BandHubTab.SETTLEMENT -> SettlementContent(
-                    settlement    = settlement,
-                    onSettleClick = onSettleClick,
-                    modifier      = Modifier.fillMaxSize(),
-                )
-
-                BandHubTab.PHOTO -> AlbumContent(
-                    photos          = albumPhotos,
-                    mapPins         = albumMapPins,
-                    isLoading       = isAlbumLoading,
-                    isUploading     = isAlbumUploading,
-                    currentUserId   = currentUserId,
-                    destinationLat  = band.destinationLat,
-                    destinationLng  = band.destinationLng,
-                    onUploadPhoto   = onUploadAlbumPhoto,
-                    onDeletePhoto   = onDeleteAlbumPhoto,
-                    modifier        = Modifier.fillMaxSize(),
+                    },
+                    modifier              = Modifier.fillMaxSize(),
                 )
             }
+
+            BandHubTab.SCHEDULE -> {
+                // GENERATING 상태이면서 아직 일정이 없으면 생성 중 스피너 표시
+                if (band.status == BandStatus.GENERATING && (schedule == null || schedule.days.isEmpty())) {
+                    Box(
+                        modifier         = Modifier.fillMaxSize().padding(innerPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            PlaneLoadingIndicator()
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "일정 생성 중…",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
+                    }
+                } else {
+                    ScheduleContent(
+                        schedule            = schedule,
+                        altOptions          = altOptions,
+                        planBResults        = planBResults,
+                        isPlanBLoading      = isPlanBLoading,
+                        isLoading           = isScheduleLoading,
+                        isEditing           = isEditing,
+                        canEdit             = false,
+                        isOverseas          = band.isOverseas,
+                        onStartEditing      = onStartEditing,
+                        onFinishEditing     = onFinishEditing,
+                        onSwapSlot          = onSwapSlot,
+                        onLoadAlts          = onLoadAlts,
+                        onRequestPlanB      = onRequestPlanB,
+                        onExecutePlanBSwap  = onExecutePlanBSwap,
+                        isRefreshing        = isRefreshing,
+                        onRefresh           = onRefresh,
+                        modifier            = Modifier.fillMaxSize().padding(innerPadding),
+                    )
+                }
+            }
+
+            BandHubTab.SETTLEMENT -> PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh    = onRefresh,
+                modifier     = Modifier.fillMaxSize().padding(innerPadding),
+            ) {
+                SettlementContent(
+                    bandId            = band.id,
+                    settlement        = settlement,
+                    expenses          = expenses,
+                    members           = members,
+                    currentUserId     = currentUserId,
+                    isExpensesLoading = isExpensesLoading,
+                    onAddExpense      = onAddExpense,
+                    onDeleteExpense   = onDeleteExpense,
+                    onSettleClick     = onSettleClick,
+                    modifier          = Modifier.fillMaxSize(),
+                )
+            }
+
+            BandHubTab.PHOTO -> AlbumContent(
+                photos          = albumPhotos,
+                mapPins         = albumMapPins,
+                isLoading       = isAlbumLoading,
+                isUploading     = isAlbumUploading,
+                currentUserId   = currentUserId,
+                destinationLat  = band.destinationLat,
+                destinationLng  = band.destinationLng,
+                onUploadPhoto   = onUploadAlbumPhoto,
+                onDeletePhoto   = onDeleteAlbumPhoto,
+                isRefreshing    = isRefreshing,
+                onRefresh       = onRefresh,
+                modifier        = Modifier.fillMaxSize().padding(innerPadding),
+            )
         }
     }
 }
@@ -374,6 +449,7 @@ private fun BandHubTabContent(
     onInviteClick: () -> Unit,
     onGoToPlaceSearch: () -> Unit,
     onGoToVoting: () -> Unit,
+    onEditAccommodationClick: () -> Unit,
     onAdvanceStatusClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -406,6 +482,18 @@ private fun BandHubTabContent(
                         isReady       = currentMember?.isReady ?: false,
                         onReadyClick  = onReadyClick,
                         onSearchClick = onGoToPlaceSearch,
+                    )
+                }
+
+                // 숙소 섹션 — 편집 가능 상태(PLANNING/TRAVELLING/DONE)에서 표시
+                // VOTING/GENERATING 중에는 서버도 거부하므로 UI에서도 비노출
+                val canEditAccommodation = band.isOwner &&
+                    band.status !in listOf(BandStatus.VOTING, BandStatus.GENERATING)
+                if (band.status !in listOf(BandStatus.VOTING, BandStatus.GENERATING)) {
+                    AccommodationSection(
+                        accommodationName = band.accommodationName,
+                        canEdit           = canEditAccommodation,
+                        onEditClick       = onEditAccommodationClick,
                     )
                 }
 
@@ -633,8 +721,27 @@ private fun BandActionArea(
                         Text("일정 생성 중…")
                     }
                 }
-                BandStatus.TRAVELLING, BandStatus.DONE -> {
-                    // 여행 중/완료 — 일정 탭으로 안내 (탭 전환은 NavigationBar로)
+                BandStatus.TRAVELLING -> {
+                    // 방장만 여행 완료 처리 가능
+                    if (isOwner) {
+                        OutlinedButton(
+                            onClick  = onAdvanceStatusClick,
+                            enabled  = !isBandLoading,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape    = RoundedCornerShape(12.dp),
+                        ) {
+                            if (isBandLoading) {
+                                PlaneLoadingIndicator(size = 20.dp, showCircle = false)
+                            } else {
+                                Icon(Icons.Outlined.CheckCircle, null, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (isBandLoading) "처리 중…" else "여행 완료하기")
+                        }
+                    }
+                }
+                BandStatus.DONE -> {
+                    // 완료 상태 — 별도 액션 없음
                 }
             }
         }
@@ -859,6 +966,125 @@ private fun InfoChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 // 멤버 섹션
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * 숙소 정보 섹션.
+ * 숙소 설정 여부에 따라 시각적으로 구분되는 두 가지 상태를 표시한다.
+ * - 설정됨: primaryContainer 배경 + 원형 아이콘 + 숙소명 + 수정 아이콘
+ * - 미설정: 라인 카드 + 회색 아이콘 + "선택" 버튼
+ */
+@Composable
+private fun AccommodationSection(
+    accommodationName: String?,
+    canEdit: Boolean,
+    onEditClick: () -> Unit,
+) {
+    if (accommodationName != null) {
+        // 숙소 설정됨 — primaryContainer 강조 카드
+        Card(
+            shape    = RoundedCornerShape(20.dp),
+            colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                // 원형 아이콘 배지
+                Surface(
+                    shape    = CircleShape,
+                    color    = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Hotel,
+                            contentDescription = null,
+                            tint               = MaterialTheme.colorScheme.onPrimary,
+                            modifier           = Modifier.size(22.dp),
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "숙소",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                        ),
+                    )
+                    Text(
+                        accommodationName,
+                        style    = MaterialTheme.typography.bodyLarge.copy(
+                            color      = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (canEdit) {
+                    IconButton(onClick = onEditClick) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Edit,
+                            contentDescription = "숙소 수정",
+                            tint               = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier           = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
+        }
+    } else {
+        // 숙소 미설정 — 아웃라인 카드
+        Card(
+            shape    = RoundedCornerShape(20.dp),
+            colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Surface(
+                    shape    = CircleShape,
+                    color    = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Hotel,
+                            contentDescription = null,
+                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier           = Modifier.size(22.dp),
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "숙소",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                    Text(
+                        "아직 선택된 숙소가 없어요",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        ),
+                    )
+                }
+                if (canEdit) {
+                    FilledTonalButton(onClick = onEditClick) {
+                        Text("선택")
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun MembersSection(
     members: List<BandMemberResponse>,
@@ -1023,27 +1249,16 @@ private fun MyStatusSection(
             }
 
             if (!isReady) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick  = onSearchClick,
-                        modifier = Modifier.weight(1f),
-                        shape    = RoundedCornerShape(12.dp),
-                    ) {
-                        Icon(Icons.Outlined.Search, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("장소 탐색")
-                    }
-                    // 장바구니 1개 이상이어야 Ready 가능 (인수인계 문서 §4 조건)
-                    Button(
-                        onClick  = onReadyClick,
-                        enabled  = count >= 1,
-                        modifier = Modifier.weight(1f),
-                        shape    = RoundedCornerShape(12.dp),
-                    ) {
-                        Icon(Icons.Outlined.Check, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("준비 완료")
-                    }
+                // 장바구니 1개 이상이어야 Ready 가능 (인수인계 문서 §4 조건)
+                Button(
+                    onClick  = onReadyClick,
+                    enabled  = count >= 1,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Outlined.Check, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("준비 완료", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                 }
             }
         }

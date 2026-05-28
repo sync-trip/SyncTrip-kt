@@ -49,6 +49,11 @@
             </intent-filter>
         </activity>
 
+        <!-- ── FCM 백그라운드 알림 기본 채널 — Firebase가 직접 표시할 때 사용 ──── -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="synctrip_notifications" />
+
         <!-- ── FCM 푸시 알림 서비스 ──────────────────────────────────────────── -->
         <service
             android:name=".SyncTripFirebaseService"

@@ -1,12 +1,15 @@
 package com.synctrip.app.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -42,13 +45,18 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
+import android.net.Uri
 import coil3.compose.AsyncImage
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -71,13 +79,20 @@ fun PlaceSearchScreen(
     onPlaceClick: (String) -> Unit,
     onCartToggle: (String) -> Unit,
     onBackClick: () -> Unit,
+    /** 준비 완료 버튼 클릭 콜백 — null이면 버튼 미표시 */
+    onReadyClick: (() -> Unit)? = null,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier,
 ) {
     var showCartSheet by remember { mutableStateOf(false) }
+    // 선택된 장소 externalId — 목록에서 실시간 조회해 북마크 상태 반영
+    var selectedExternalId by remember { mutableStateOf<String?>(null) }
+    val selectedPlace = selectedExternalId?.let { id -> places.find { it.externalId == id } }
     val cartCount = picks.size
 
     Scaffold(
         modifier  = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar    = {
             TopAppBar(
                 title = {
@@ -91,6 +106,23 @@ fun PlaceSearchScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) { Icon(Icons.Outlined.ArrowBack, "뒤로") }
+                },
+                actions = {
+                    // 준비 완료 버튼 — PLANNING 상태에서 onReadyClick이 있을 때만 표시
+                    if (onReadyClick != null) {
+                        TextButton(
+                            onClick  = onReadyClick,
+                            enabled  = cartCount >= 1,
+                        ) {
+                            Icon(
+                                Icons.Outlined.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("준비 완료")
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
@@ -173,7 +205,7 @@ fun PlaceSearchScreen(
                     items(places, key = { it.externalId }) { place ->
                         PlaceCard(
                             place        = place,
-                            onPlaceClick = { onPlaceClick(place.externalId) },
+                            onPlaceClick = { selectedExternalId = place.externalId },
                             onCartToggle = { onCartToggle(place.externalId) },
                         )
                     }
@@ -191,6 +223,15 @@ fun PlaceSearchScreen(
                 onDeletePick = { externalId -> onCartToggle(externalId) },
             )
         }
+    }
+
+    // 장소 상세 바텀시트 — 카드 클릭 시 표시
+    if (selectedPlace != null) {
+        PlaceSearchDetailBottomSheet(
+            place        = selectedPlace,
+            onDismiss    = { selectedExternalId = null },
+            onCartToggle = { onCartToggle(selectedPlace.externalId) },
+        )
     }
 }
 
@@ -310,7 +351,11 @@ private fun PlaceCard(place: ApiPlaceSearchResult, onPlaceClick: () -> Unit, onC
 
 /** 화면 하단 장바구니 바 — 구 앱 cartCard 디자인 참고, N/5 카운트 표시 */
 @Composable
-private fun CartBottomBar(cartCount: Int, maxPickCount: Int, onClick: () -> Unit) {
+private fun CartBottomBar(
+    cartCount: Int,
+    maxPickCount: Int,
+    onClick: () -> Unit,
+) {
     Surface(
         modifier        = Modifier.fillMaxWidth(),
         shadowElevation = 8.dp,
@@ -319,9 +364,8 @@ private fun CartBottomBar(cartCount: Int, maxPickCount: Int, onClick: () -> Unit
         Row(
             modifier          = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
-                // 시스템 네비게이션 바 높이만큼 하단 패딩 추가 — 겹침 방지
                 .navigationBarsPadding()
+                .clickable(onClick = onClick)
                 .padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -342,10 +386,8 @@ private fun CartBottomBar(cartCount: Int, maxPickCount: Int, onClick: () -> Unit
                 targetState  = cartCount,
                 transitionSpec = {
                     if (targetState > initialState) {
-                        // 담기 → 숫자 아래에서 올라옴
                         (slideInVertically { it } + fadeIn()).togetherWith(slideOutVertically { -it } + fadeOut())
                     } else {
-                        // 삭제 → 숫자 위에서 내려옴
                         (slideInVertically { -it } + fadeIn()).togetherWith(slideOutVertically { it } + fadeOut())
                     }
                 },
@@ -456,15 +498,188 @@ private fun CartPickListItem(pick: PlacePickResponse, onDelete: () -> Unit) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Place Search Detail Bottom Sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 장소 탐색 화면에서 카드 클릭 시 나타나는 장소 상세 바텀시트 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlaceSearchDetailBottomSheet(
+    place: ApiPlaceSearchResult,
+    onDismiss: () -> Unit,
+    onCartToggle: () -> Unit,
+) {
+    val context = LocalContext.current
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+        containerColor   = MaterialTheme.colorScheme.surface,
+        shape            = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp),
+        ) {
+            // 썸네일 이미지
+            if (place.thumbnailUrl != null) {
+                AsyncImage(
+                    model              = place.thumbnailUrl,
+                    contentDescription = place.name,
+                    contentScale       = ContentScale.Crop,
+                    modifier           = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // 카테고리 칩
+            PlaceDetailCategoryChip(category = place.category)
+            Spacer(Modifier.height(6.dp))
+
+            // 장소명
+            Text(
+                text  = place.name,
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color      = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(12.dp))
+
+            // 주소 / 평점 상세 행
+            place.address?.let { PlaceDetailRow(Icons.Outlined.LocationOn, "주소", it) }
+            place.rating?.let  { PlaceDetailRow(Icons.Outlined.Star, "평점", "%.1f / 5.0".format(it)) }
+
+            Spacer(Modifier.height(20.dp))
+
+            // 장바구니 담기 / 제거 버튼
+            if (place.isBookmarked) {
+                OutlinedButton(
+                    onClick  = onCartToggle,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Outlined.Bookmark, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("장바구니에서 제거", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                }
+            } else {
+                Button(
+                    onClick  = onCartToggle,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                    colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                ) {
+                    Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("장바구니에 담기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // 설치된 지도 앱(카카오/네이버/구글)으로 장소 상세 보기
+            OutlinedButton(
+                onClick  = {
+                    val uri = Uri.parse("geo:${place.latitude},${place.longitude}?q=${Uri.encode(place.name)}")
+                    context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape    = RoundedCornerShape(12.dp),
+            ) {
+                Icon(Icons.Outlined.Map, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("지도에서 보기", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaceDetailCategoryChip(category: ApiPlaceCategory) {
+    val tint = placeDetailCategoryColor(category)
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = tint.copy(alpha = 0.12f),
+    ) {
+        Row(
+            modifier          = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(placeDetailCategoryIcon(category), contentDescription = null, tint = tint, modifier = Modifier.size(10.dp))
+            Spacer(Modifier.width(3.dp))
+            Text(placeDetailCategoryLabel(category), style = MaterialTheme.typography.labelSmall.copy(color = tint))
+        }
+    }
+}
+
+@Composable
+private fun PlaceDetailRow(icon: ImageVector, label: String, value: String) {
+    Row(
+        modifier          = Modifier.fillMaxWidth().padding(vertical = 7.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp).padding(top = 1.dp))
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+            Text(value, style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface))
+        }
+    }
+}
+
+@Composable
+private fun placeDetailCategoryColor(category: ApiPlaceCategory): Color = when (category) {
+    ApiPlaceCategory.FOOD     -> MaterialTheme.colorScheme.error
+    ApiPlaceCategory.CULTURE  -> MaterialTheme.colorScheme.tertiary
+    ApiPlaceCategory.ACTIVITY -> MaterialTheme.colorScheme.secondary
+    ApiPlaceCategory.SHOPPING -> MaterialTheme.colorScheme.primary
+    ApiPlaceCategory.NATURE   -> Color(0xFF2E7D32)
+    ApiPlaceCategory.ETC      -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+private fun placeDetailCategoryIcon(category: ApiPlaceCategory): ImageVector = when (category) {
+    ApiPlaceCategory.FOOD     -> Icons.Outlined.Restaurant
+    ApiPlaceCategory.CULTURE  -> Icons.Outlined.Museum
+    ApiPlaceCategory.ACTIVITY -> Icons.Outlined.SportsBasketball
+    ApiPlaceCategory.SHOPPING -> Icons.Outlined.ShoppingBag
+    ApiPlaceCategory.NATURE   -> Icons.Outlined.Park
+    ApiPlaceCategory.ETC      -> Icons.Outlined.Place
+}
+
+private fun placeDetailCategoryLabel(category: ApiPlaceCategory): String = when (category) {
+    ApiPlaceCategory.FOOD     -> "음식"
+    ApiPlaceCategory.CULTURE  -> "문화"
+    ApiPlaceCategory.ACTIVITY -> "액티비티"
+    ApiPlaceCategory.SHOPPING -> "쇼핑"
+    ApiPlaceCategory.NATURE   -> "자연"
+    ApiPlaceCategory.ETC      -> "기타"
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // 2. My Passport Screen
 // ═════════════════════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyPassportScreen(
     user: UserProfile,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isLoading: Boolean = false,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
+    newStampIds: Set<String> = emptySet(),
 ) {
     Scaffold(
         modifier = modifier,
@@ -487,8 +702,13 @@ fun MyPassportScreen(
             )
         },
     ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh    = onRefresh,
+            modifier     = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
         LazyColumn(
-            modifier            = Modifier.fillMaxSize().padding(innerPadding),
+            modifier            = Modifier.fillMaxSize(),
             contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
@@ -498,18 +718,27 @@ fun MyPassportScreen(
                 Text("방문한 도시", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(12.dp))
 
-                if (user.passportStamps.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            "아직 방문한 도시가 없어요\n첫 여행을 떠나보세요!",
-                            style     = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center),
-                            textAlign = TextAlign.Center,
-                        )
+                when {
+                    isLoading -> {
+                        Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
-                } else {
-                    PassportStampGrid(stamps = user.passportStamps)
+                    user.passportStamps.isEmpty() -> {
+                        Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                "아직 방문한 도시가 없어요\n첫 여행을 떠나보세요!",
+                                style     = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                    else -> {
+                        PassportStampGrid(stamps = user.passportStamps, newStampIds = newStampIds)
+                    }
                 }
             }
+        }
         }
     }
 }
@@ -566,42 +795,158 @@ private fun StatColumn(label: String, value: String) {
     }
 }
 
+/**
+ * 여권 스탬프 그리드.
+ * 진입 시 스탬프마다 순차적으로 도장을 쾅 찍는 애니메이션이 실행된다.
+ * newestStampId 에 해당하는 스탬프는 마지막에 더 강한 바운스 + 잉크 번짐 효과.
+ */
+/**
+ * 여권 스탬프 그리드.
+ * - 기존 스탬프(newStampIds에 없는 것): 즉시 표시, 애니메이션 없음
+ * - 신규 스탬프(newStampIds에 있는 것): 순차 stagger + spring 바운스 + 잉크 번짐
+ * 신규 스탬프는 기존 스탬프가 모두 표시된 뒤 순서대로 쾅쾅 찍힌다.
+ */
 @Composable
-private fun PassportStampGrid(stamps: List<PassportStamp>) {
+private fun PassportStampGrid(
+    stamps: List<PassportStamp>,
+    newStampIds: Set<String> = emptySet(),
+) {
     val rotations = listOf(-4f, 3f, -2f, 5f, -3f, 2f)
 
-    LazyVerticalGrid(
-        columns               = GridCells.Fixed(3),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement   = Arrangement.spacedBy(12.dp),
-        modifier              = Modifier.height((((stamps.size + 2) / 3) * 140).dp),
-        userScrollEnabled     = false,
-    ) {
-        items(stamps, key = { it.id }) { stamp ->
-            val rotation    = rotations[stamps.indexOf(stamp) % rotations.size]
-            val accentColor = when (stamp.accentColor) {
-                StampColor.PRIMARY   -> MaterialTheme.colorScheme.primary
-                StampColor.SECONDARY -> MaterialTheme.colorScheme.secondary
-                StampColor.ERROR     -> MaterialTheme.colorScheme.error
-                StampColor.TERTIARY  -> MaterialTheme.colorScheme.tertiary
-                StampColor.FIXED     -> MaterialTheme.colorScheme.primaryFixedDim
-            }
+    // 신규 스탬프 인덱스만 순차 활성화 (기존 스탬프는 처음부터 true)
+    val stampIds      = stamps.map { it.id }
+    val newStampList  = stamps.filter { it.id in newStampIds }
+    val visibleStates = remember(stampIds) {
+        stamps.map { mutableStateOf(it.id !in newStampIds) }
+    }
 
+    LaunchedEffect(stampIds, newStampIds) {
+        // 신규 스탬프만 stagger 애니메이션 — 300ms 간격으로 쾅쾅
+        newStampList.forEach { newStamp ->
+            val idx = stamps.indexOf(newStamp)
+            if (idx >= 0) {
+                delay(300L * newStampList.indexOf(newStamp))
+                visibleStates[idx].value = true
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        stamps.chunked(3).forEachIndexed { rowIdx, row ->
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                row.forEachIndexed { colIdx, stamp ->
+                    val idx      = rowIdx * 3 + colIdx
+                    val rotation = rotations[idx % rotations.size]
+                    val isNew    = stamp.id in newStampIds
+                    val accentColor = when (stamp.accentColor) {
+                        StampColor.PRIMARY   -> MaterialTheme.colorScheme.primary
+                        StampColor.SECONDARY -> MaterialTheme.colorScheme.secondary
+                        StampColor.ERROR     -> MaterialTheme.colorScheme.error
+                        StampColor.TERTIARY  -> MaterialTheme.colorScheme.tertiary
+                        StampColor.FIXED     -> MaterialTheme.colorScheme.primaryFixedDim
+                    }
+
+                    AnimatedVisibility(
+                        visible = visibleStates[idx].value,
+                        // 기존 스탬프: 즉시 나타남 (fadeIn 0ms). 신규: 도장 쾅 spring 바운스
+                        enter   = if (isNew) {
+                            scaleIn(
+                                initialScale  = 1.7f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness    = Spring.StiffnessMedium,
+                                ),
+                            ) + fadeIn(animationSpec = tween(80))
+                        } else {
+                            fadeIn(animationSpec = tween(0))  // 즉시 표시
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        StampCell(
+                            stamp       = stamp,
+                            rotation    = rotation,
+                            accentColor = accentColor,
+                            isNew       = isNew,
+                        )
+                    }
+                }
+                // 행의 빈 칸 채우기 (3열 고정)
+                repeat(3 - row.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 도장 하나 셀.
+ * isNew=true이면 잉크 번짐 링이 fade-out되는 효과 추가.
+ */
+@Composable
+private fun StampCell(
+    stamp: PassportStamp,
+    rotation: Float,
+    accentColor: Color,
+    isNew: Boolean,
+) {
+    // 잉크 번짐 링 알파 — 신규 스탬프가 찍힌 직후 밝았다가 사라짐
+    val inkAlpha = remember { Animatable(if (isNew) 0.9f else 0f) }
+    if (isNew) {
+        LaunchedEffect(Unit) {
+            delay(250L)
+            inkAlpha.animateTo(0f, animationSpec = tween(durationMillis = 1400))
+        }
+    }
+
+    Box(modifier = Modifier.aspectRatio(1f)) {
+        // 잉크 번짐 링 (신규 스탬프 전용, 점차 사라짐)
+        if (isNew) {
             Box(
                 modifier = Modifier
-                    .aspectRatio(1f)
+                    .fillMaxSize()
                     .rotate(rotation)
-                    .clip(CircleShape)
-                    .border(3.dp, accentColor.copy(alpha = 0.5f), CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.FlightLand, null, tint = accentColor.copy(alpha = 0.7f), modifier = Modifier.size(28.dp))
-                    Text(stamp.cityCode, style = MaterialTheme.typography.titleLarge.copy(color = accentColor.copy(alpha = 0.85f), fontWeight = FontWeight.Bold, fontSize = 16.sp))
-                    Text(stamp.cityName, style = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant), textAlign = TextAlign.Center)
-                    Text(stamp.visitDate, style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)))
-                }
+                    .border(8.dp, accentColor.copy(alpha = inkAlpha.value), CircleShape),
+            )
+        }
+
+        // 스탬프 본체
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .rotate(rotation)
+                .clip(CircleShape)
+                .border(3.dp, accentColor.copy(alpha = 0.5f), CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Outlined.FlightLand,
+                    contentDescription = null,
+                    tint               = accentColor.copy(alpha = 0.7f),
+                    modifier           = Modifier.size(28.dp),
+                )
+                Text(
+                    text  = stamp.cityCode,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        color      = accentColor.copy(alpha = 0.85f),
+                        fontWeight = FontWeight.Bold,
+                        fontSize   = 16.sp,
+                    ),
+                )
+                Text(
+                    text      = stamp.cityName,
+                    style     = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text  = stamp.visitDate,
+                    style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+                )
             }
         }
     }
@@ -611,12 +956,15 @@ private fun PassportStampGrid(stamps: List<PassportStamp>) {
 // 3. Notification Screen
 // ═════════════════════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationScreen(
     groups: Map<String, List<NotificationItem>>,
     onMarkAllRead: () -> Unit,
     onItemClick: (String) -> Unit,
     onBackClick: () -> Unit,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -642,8 +990,13 @@ fun NotificationScreen(
             )
         },
     ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh    = onRefresh,
+            modifier     = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
         LazyColumn(
-            modifier            = Modifier.fillMaxSize().padding(innerPadding),
+            modifier            = Modifier.fillMaxSize(),
             contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -660,6 +1013,7 @@ fun NotificationScreen(
                     NotificationCard(item = item, onClick = { onItemClick(item.id) })
                 }
             }
+        }
         }
     }
 }
@@ -756,18 +1110,34 @@ private val previewUser = UserProfile(
     nickname        = "Skybound Explorer",
     profileImageUrl = null,
     homeTown        = "Seoul",
-    totalTrips      = 6,
+    totalTrips      = 5,
     passportStamps  = listOf(
-        PassportStamp("s1", "TYO", "Tokyo, JP",  "OCT 2023", "flight_land", StampColor.PRIMARY),
-        PassportStamp("s2", "PAR", "Paris, FR",  "MAY 2023", "train",       StampColor.SECONDARY),
-        PassportStamp("s3", "SYD", "Sydney, AU", "JAN 2024", "sailing",     StampColor.ERROR),
+        PassportStamp("s1", "TYO", "Tokyo, JP",   "OCT 2023", "flight_land", StampColor.PRIMARY),
+        PassportStamp("s2", "PAR", "Paris, FR",   "MAY 2023", "flight_land", StampColor.SECONDARY),
+        PassportStamp("s3", "SYD", "Sydney, AU",  "JAN 2024", "flight_land", StampColor.ERROR),
+        PassportStamp("s4", "BKK", "Bangkok, TH", "MAY 2026", "flight_land", StampColor.TERTIARY),
+        PassportStamp("s5", "NYC", "New York, US","MAY 2026", "flight_land", StampColor.FIXED),
     ),
 )
 
-@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+// 기존 스탬프만 있는 상태
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Passport - 신규 없음")
 @Composable
 private fun MyPassportPreview() {
     SynctripTheme { MyPassportScreen(user = previewUser, onBackClick = {}) }
+}
+
+// ▶ Interactive Mode 버튼 클릭 → s4·s5가 순서대로 쾅쾅 찍히는 애니메이션 확인
+@Preview(showBackground = true, widthDp = 390, heightDp = 844, name = "Passport - 신규 스탬프 애니메이션")
+@Composable
+private fun MyPassportStampAnimPreview() {
+    SynctripTheme {
+        MyPassportScreen(
+            user        = previewUser,
+            newStampIds = setOf("s4", "s5"),
+            onBackClick = {},
+        )
+    }
 }
 
 private val previewNotifications = mapOf(

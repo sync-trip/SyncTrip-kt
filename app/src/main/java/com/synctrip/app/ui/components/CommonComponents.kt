@@ -213,9 +213,22 @@ fun TripTicketCard(
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.4f)),
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)),
                             ),
                         ),
+                )
+                // 목적지 — 이미지 하단 왼쪽 오버레이
+                Text(
+                    text     = band.destination,
+                    style    = MaterialTheme.typography.titleMedium.copy(
+                        color      = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 12.dp, bottom = 10.dp, end = 12.dp),
                 )
             }
 
@@ -224,23 +237,16 @@ fun TripTicketCard(
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
+                // 밴드 이름 — 사용자가 직접 지은 여행 이름
                 Text(
-                    text  = "DESTINATION",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        color         = MaterialTheme.colorScheme.onSurfaceVariant,
-                        letterSpacing = 0.5.sp,
-                        fontWeight    = FontWeight.Medium,
-                    ),
-                )
-                Text(
-                    text     = band.destination,
-                    style    = MaterialTheme.typography.titleLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
+                    text     = band.name,
+                    style    = MaterialTheme.typography.titleMedium.copy(
+                        color      = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-
                 Spacer(Modifier.height(12.dp))
 
                 Row(

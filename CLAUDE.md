@@ -82,5 +82,67 @@ com/synctrip/app/
 - Card fields: `thumbnailUrl`, `isBookmarked`, `externalId`
 - Category tab order (do not change): ALL → FOOD → CULTURE → ACTIVITY → SHOPPING → NATURE
     - ALL sends `null`; others send their `.name` string
-- On enter: call `bandViewModel.loadPicks(bandId)` + `searchPlaces(bandId)` together
+- On enter: call `bandViewModel.loadPicks(bandId)` only — `searchPlaces` is NOT called on enter (user must type keyword and press search)
+- **keyword 필수**: `onCategoryChange` / `onSearch` 모두 `query.isBlank()`이면 `searchPlaces` 호출 생략. 빈 keyword로 호출 시 백엔드 400 반환
 - Cart toggle: `bandViewModel.togglePick(bandId, externalId)` — includes optimistic update
+- 바텀시트 지도 버튼: `geo:` URI (Intent.ACTION_VIEW) — 기기에 설치된 지도 앱(카카오/네이버/구글) 선택 팝업. 버튼 텍스트 "지도에서 보기"
+
+---
+
+## 9. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+---
+
+## 10. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+---
+
+## 11. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it — don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+---
+
+## 12. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Fix the bug" → identify the repro steps first, then confirm fixed on emulator/device
+- "Add UI feature" → define expected screen behavior before implementing, verify visually after
+- "Refactor X" → confirm behavior is identical before and after
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```

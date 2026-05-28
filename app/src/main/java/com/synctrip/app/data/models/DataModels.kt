@@ -36,10 +36,12 @@ data class RecommendedContent(
     val imageUrl: String,
     val category: String,
     val destination: String,
+    val subtitle: String = "",   // 대표 명소 키워드 (e.g. "신주쿠 · 시부야 · 아키하바라")
 )
 
 data class TripBand(
     val id: String,
+    val name: String,
     val destination: String,
     val heroImageUrl: String,
     val startDate: String,
@@ -227,6 +229,8 @@ data class PassportStamp(
     val visitDate: String,
     val iconName: String,
     val accentColor: StampColor,
+    // 신규 스탬프 판별용 — epoch millis (로컬 비교용)
+    val stampedAtMs: Long = 0L,
 )
 
 enum class StampColor { PRIMARY, SECONDARY, ERROR, TERTIARY, FIXED }
@@ -268,7 +272,7 @@ data class GoogleLoginRequest(@com.google.gson.annotations.SerializedName("id_to
 
 data class TokenRefreshRequest(val refreshToken: String)
 
-data class FcmTokenRequest(val fcmToken: String)
+data class FcmTokenRequest(val token: String)  // 백엔드 필드명: token
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Backend – Band  (GET /api/bands, POST /api/bands, etc.)
@@ -324,6 +328,13 @@ data class BandCreateRequest(
     val accommodationLat: Double? = null,
     val accommodationLng: Double? = null,
     val thumbnailUrl: String? = null,
+)
+
+/** 숙소 정보 수정 요청 (PATCH /api/bands/{bandId}/accommodation) */
+data class AccommodationUpdateRequest(
+    val accommodationName: String?,
+    val accommodationLat: Double? = null,
+    val accommodationLng: Double? = null,
 )
 
 data class BandJoinRequest(val inviteCode: String)
@@ -452,14 +463,40 @@ data class VoteResponse(
 
 data class VoteStatusResponse(
     val totalPlaces: Int,
-    val votedCount: Int,
-    val isComplete: Boolean,
+    val myVotedCount: Int,  // 백엔드 필드명: myVotedCount
+    val myComplete: Boolean, // 백엔드 필드명: myComplete
 )
 
+/** 그룹 투표 완료 현황 — 멤버별 상세 포함 */
 data class GroupVoteStatusResponse(
-    val totalMembers: Int,
-    val completedMembers: Int,
-    val isAllComplete: Boolean,
+    val totalPlaces: Int,
+    val totalVotingMembers: Int,
+    val memberStatuses: List<MemberVoteStatus>,
+) {
+    /** 자격 있는 멤버 전원이 모든 장소에 투표 완료했는지 */
+    val isAllComplete: Boolean
+        get() = memberStatuses.isNotEmpty() && memberStatuses.all { it.complete }
+}
+
+data class MemberVoteStatus(
+    val userId: Long,
+    val name: String,
+    val votedCount: Int,
+    val complete: Boolean,
+)
+
+data class VotePlaceResult(
+    val placeId: Long,
+    val name: String,
+    val category: ApiPlaceCategory,
+    val thumbnailUrl: String?,
+    val address: String?,
+    val latitude: Double,
+    val longitude: Double,
+    val likeCount: Int,
+    val dislikeCount: Int,
+    val passed: Boolean,
+    val myVoteResult: Int?,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -485,6 +522,21 @@ data class ApiPlaceSearchResult(
 // Backend – Expense
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** POST /api/bands/{bandId}/expenses/ocr 응답 */
+data class OcrReceiptResponse(
+    val storeName: String?,
+    val currency: String?,
+    val total: Double?,
+    val items: List<OcrItemResult>,
+    val ocrRaw: String?,
+)
+
+data class OcrItemResult(
+    val itemNameOriginal: String?,
+    val itemNameKo: String?,
+    val amount: Double?,
+)
+
 data class ExpenseResponse(
     val id: Long,
     val payerId: Long,
@@ -507,6 +559,14 @@ data class ExpenseCreateRequest(
     val memberIds: List<Long>,
 )
 
+data class ExpenseUpdateRequest(
+    val itemName: String,
+    val amount: Double,
+    val currency: String,
+    val paidAt: String,
+    val memberIds: List<Long>,
+)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Backend – Settlement  (GET /api/bands/{bandId}/settlement)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -520,18 +580,17 @@ data class SettlementResponse(
 
 data class MemberSettlementSummary(
     val userId: Long,
-    val name: String,
-    val profileImageUrl: String?,
+    val userName: String,
     val totalPaid: Double,
     val totalShare: Double,
-    val balance: Double,
+    val netAmount: Double,
 )
 
 data class SettlementTransaction(
     val fromUserId: Long,
-    val fromName: String,
+    val fromUserName: String,
     val toUserId: Long,
-    val toName: String,
+    val toUserName: String,
     val amount: Double,
 )
 
@@ -542,7 +601,8 @@ data class SettlementTransaction(
 
 enum class ApiNotificationType {
     MEMBER_READY, MEMBER_JOINED, VOTE_STARTED, SCHEDULE_UPDATED, SETTLEMENT_REQUEST,
-    TRIP_ENDED,  // 2026-05-23 백엔드 추가
+    TRIP_ENDED,        // 2026-05-23 백엔드 추가
+    HOLIDAY_WARNING,   // 가입/일정 생성 시 공휴일 안내
 }
 
 /**
@@ -660,6 +720,19 @@ data class UserProfileResponse(
     val name: String,
     val profileImageUrl: String?,
     val oauthProvider: String,
+)
+
+/**
+ * GET /api/users/me/stamps 응답 (PassportStampResponse record).
+ * stampedAt은 Jackson 설정에 따라 ISO 문자열 또는 배열로 올 수 있어 String으로 받는다.
+ */
+data class ApiPassportStampResponse(
+    val id: Long,
+    val bandId: Long,
+    val bandName: String,
+    val city: String,
+    val countryCode: String,
+    val stampedAt: String,
 )
 
 /** PUT /api/users/me 요청. name은 @NotBlank 필수값. */

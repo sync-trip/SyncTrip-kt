@@ -24,13 +24,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
 import java.text.NumberFormat
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 1. Swipe Voting Screen  ← 메인 투표 화면 (스와이프 카드 방식)
@@ -39,30 +44,56 @@ import kotlinx.coroutines.launch
 /**
  * 스와이프 투표 화면.
  * 장소 카드를 한 장씩 보여주며 좋아요(♥) / 싫어요(✗) 버튼으로 투표한다.
- * 모든 장소에 투표가 끝나면 자동으로 onVotingDone이 호출된다.
+ * 내 투표가 끝나면 다른 멤버를 기다리는 UI를 표시하고,
+ * 전원 투표 완료(isAllComplete) 시 완료 화면을 표시한다.
  *
  * @param pendingPlaces    아직 투표하지 않은 장소 목록
  * @param votedCount       이미 투표한 장소 수 (진행 표시용)
  * @param isMyVoteComplete 내 투표가 완전히 끝났는지 여부
+ * @param isAllComplete    방 전원의 투표가 완전히 끝났는지 여부
  * @param isLoading        장소 목록 로딩 중 여부
  * @param onVote           투표 콜백 (placeId, result: 1=좋아요/-1=싫어요)
  * @param onBackClick      뒤로가기
- * @param onVotingDone     모든 투표 완료 후 호출 → 일정 생성 화면으로 이동
+ * @param isOwner          방장 여부 — true이면 "마감하기" 버튼 표시
+ * @param onForceClose     방장 강제 마감 콜백 (advanceBandStatus 재활용)
+ * @param onVotingDone     전원 투표 완료 감지 시 호출 → 일정 생성 화면으로 이동 (현재 미사용)
  */
 @Composable
 fun SwipeVotingScreen(
     pendingPlaces: List<VotePlaceResponse>,
     votedCount: Int,
     isMyVoteComplete: Boolean,
+    isAllComplete: Boolean,
     isLoading: Boolean,
     onVote: (placeId: Long, result: Int) -> Unit,
     onBackClick: () -> Unit,
     onVotingDone: () -> Unit,
+    isOwner: Boolean = false,
+    onForceClose: () -> Unit = {},
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier,
 ) {
     val totalCount   = votedCount + pendingPlaces.size
     val currentPlace = pendingPlaces.firstOrNull()
     val scope        = rememberCoroutineScope()
+    // 방장 강제 마감 확인 다이얼로그
+    var showForceCloseDialog by remember { mutableStateOf(false) }
+
+    if (showForceCloseDialog) {
+        AlertDialog(
+            onDismissRequest = { showForceCloseDialog = false },
+            title            = { Text("투표 마감") },
+            text             = { Text("아직 투표 중인 멤버가 있어도 지금 투표를 마감할까요?") },
+            confirmButton    = {
+                TextButton(onClick = { showForceCloseDialog = false; onForceClose() }) {
+                    Text("마감", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton    = {
+                TextButton(onClick = { showForceCloseDialog = false }) { Text("취소") }
+            },
+        )
+    }
 
     // 카드 수평 이탈 애니메이션 값
     val cardOffsetX  = remember { Animatable(0f) }
@@ -72,20 +103,12 @@ fun SwipeVotingScreen(
         cardOffsetX.snapTo(0f)
     }
 
-    // 모든 투표 완료 → 잠깐 완료 UI 표시 후 자동 이동
-    LaunchedEffect(isMyVoteComplete) {
-        if (isMyVoteComplete) {
-            delay(1200)
-            onVotingDone()
-        }
-    }
-
     /** 버튼 클릭 → 카드 날리기 애니메이션 → 투표 제출 */
     fun vote(result: Int) {
         val place = currentPlace ?: return
         scope.launch {
-            val target = if (result == 1) 1400f else -1400f
-            cardOffsetX.animateTo(target, tween(270, easing = FastOutLinearInEasing))
+            val target = if (result == 1) 1300f else -1300f
+            cardOffsetX.animateTo(target, tween(220, easing = FastOutLinearInEasing))
             onVote(place.placeId, result)
         }
     }
@@ -93,6 +116,7 @@ fun SwipeVotingScreen(
     Scaffold(
         modifier       = modifier,
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost   = { SnackbarHost(snackbarHostState) },
         topBar         = {
             @OptIn(ExperimentalMaterial3Api::class)
             TopAppBar(
@@ -111,12 +135,23 @@ fun SwipeVotingScreen(
                     }
                 },
                 actions = {
-                    Icon(
-                        Icons.Outlined.HowToVote,
-                        null,
-                        tint     = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(end = 16.dp),
-                    )
+                    // 방장 전용 강제 마감 버튼
+                    if (isOwner) {
+                        TextButton(onClick = { showForceCloseDialog = true }) {
+                            Text(
+                                "마감하기",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            )
+                        }
+                    } else {
+                        Icon(
+                            Icons.Outlined.HowToVote,
+                            null,
+                            tint     = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(end = 16.dp),
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -157,22 +192,35 @@ fun SwipeVotingScreen(
                     contentAlignment = Alignment.Center,
                 ) { PlaneLoadingIndicator() }
 
-                // 모든 투표 완료
+                // 전원 투표 완료 → 완료 화면 표시 (백엔드가 일정 자동 생성)
+                isAllComplete -> Box(
+                    modifier         = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    VotingAllCompleteContent()
+                }
+
+                // 내 투표만 완료 → 다른 멤버 기다리는 중
                 isMyVoteComplete -> Box(
                     modifier         = Modifier.weight(1f),
                     contentAlignment = Alignment.Center,
-                ) { VotingCompleteContent() }
+                ) { VotingWaitingContent() }
 
                 // 투표 중: 카드 + 액션 버튼
                 currentPlace != null -> {
-                    // 카드 영역 — 이탈 방향에 따라 기울어짐
+                    // 카드 영역
+                    // translationY: 좋아요(오른쪽) → 상승, 싫어요(왼쪽) → 하강 — 포물선 궤적
+                    // alpha: 이동 거리에 비례해 페이드 아웃
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
                             .graphicsLayer {
-                                translationX = cardOffsetX.value
-                                rotationZ    = cardOffsetX.value / 30f
+                                val offset = cardOffsetX.value
+                                translationX = offset
+                                translationY = -offset * 0.13f
+                                rotationZ    = offset / 26f
+                                alpha        = (1f - kotlin.math.abs(offset) / 480f).coerceIn(0f, 1f)
                             },
                     ) {
                         VotingPlaceCard(
@@ -238,9 +286,9 @@ fun SwipeVotingScreen(
     }
 }
 
-/** 모든 투표 완료 후 보여주는 완료 콘텐츠 */
+/** 내 투표 완료 후 다른 멤버를 기다리는 콘텐츠 */
 @Composable
-private fun VotingCompleteContent() {
+private fun VotingWaitingContent() {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -261,10 +309,51 @@ private fun VotingCompleteContent() {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "일정 생성 화면으로 이동합니다...",
+            "다른 멤버의 투표를 기다리는 중...",
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             ),
+        )
+        Spacer(Modifier.height(24.dp))
+        CircularProgressIndicator(
+            modifier = Modifier.size(32.dp),
+            color    = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+/** 전원 투표 완료 콘텐츠 — 완료 메시지와 스피너 표시, 백엔드가 일정을 자동 생성 */
+@Composable
+private fun VotingAllCompleteContent() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            Icons.Outlined.CheckCircle,
+            null,
+            modifier = Modifier.size(80.dp),
+            tint     = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "전원 투표 완료!",
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontWeight = FontWeight.Bold,
+                color      = MaterialTheme.colorScheme.onSurface,
+            ),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "일정을 생성하고 있어요…",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        )
+        Spacer(Modifier.height(24.dp))
+        CircularProgressIndicator(
+            modifier = Modifier.size(32.dp),
+            color    = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -322,6 +411,37 @@ private fun VotingPlaceCard(place: VotePlaceResponse, modifier: Modifier = Modif
                     PlaceCategoryBadge(category = place.category)
                     if (place.rating != null) {
                         PlaceRatingBadge(rating = place.rating)
+                    }
+                }
+
+                // 내가 담은 장소 배지 (우상단)
+                if (place.myBookmark) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp),
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                    ) {
+                        Row(
+                            modifier              = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment     = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                Icons.Outlined.Bookmark,
+                                contentDescription = null,
+                                tint     = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(13.dp),
+                            )
+                            Text(
+                                "내가 담은 곳",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color      = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                            )
+                        }
                     }
                 }
             }
@@ -740,47 +860,332 @@ private fun ExpenseItemRow(item: SettlementItem) {
 
 /**
  * 정산 탭 콘텐츠.
- * SettlementScreen과 동일한 목록 UI지만 Scaffold 없이 콘텐츠만 포함한다.
+ * 정산 요약(송금 목록/잔액) + 실제 지출 목록 + 지출 추가 FAB를 포함한다.
  * TripBandHubScreen의 정산 탭에서 호출한다.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettlementContent(
+    bandId: Long,
     settlement: Settlement?,
+    expenses: List<ExpenseResponse>,
+    members: List<BandMemberResponse>,
+    currentUserId: Long,
+    isExpensesLoading: Boolean,
+    onAddExpense: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+    onDeleteExpense: (expenseId: Long) -> Unit,
     onSettleClick: (transferId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 데이터 미로드 시 중앙 로딩 스피너
-    if (settlement == null) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            PlaneLoadingIndicator()
+    var showAddSheet by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        if (settlement == null && isExpensesLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                PlaneLoadingIndicator()
+            }
+        } else {
+            LazyColumn(
+                modifier            = Modifier.fillMaxSize(),
+                contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (settlement != null) {
+                    item { TotalAmountCard(settlement = settlement) }
+                    item { MyBalanceCard(balance = settlement.myBalance, currency = settlement.currency) }
+                    if (settlement.pendingTransfers.isNotEmpty()) {
+                        item {
+                            Text(
+                                "정산 현황",
+                                style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                            )
+                        }
+                        items(settlement.pendingTransfers) { transfer ->
+                            TransferCard(transfer = transfer, onSettleClick = onSettleClick)
+                        }
+                    }
+                }
+
+                item {
+                    Row(
+                        modifier            = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment   = Alignment.CenterVertically,
+                    ) {
+                        Text("지출 내역", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            "${expenses.size}건",
+                            style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        )
+                    }
+                }
+
+                if (isExpensesLoading) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        }
+                    }
+                } else if (expenses.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "아직 등록된 지출이 없어요",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
+                    }
+                } else {
+                    items(expenses, key = { it.id }) { expense ->
+                        ExpenseCard(
+                            expense       = expense,
+                            isOwner       = expense.payerId == currentUserId,
+                            onDelete      = { onDeleteExpense(expense.id) },
+                        )
+                    }
+                }
+            }
         }
-        return
+
+        // 지출 추가 FAB
+        FloatingActionButton(
+            onClick           = { showAddSheet = true },
+            modifier          = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            containerColor    = MaterialTheme.colorScheme.primary,
+        ) {
+            Icon(Icons.Outlined.Add, contentDescription = "지출 추가", tint = MaterialTheme.colorScheme.onPrimary)
+        }
     }
 
-    LazyColumn(
-        modifier            = modifier.fillMaxSize(),
-        contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    if (showAddSheet) {
+        ExpenseInputSheet(
+            bandId         = bandId,
+            members        = members,
+            currentUserId  = currentUserId,
+            baseCurrency   = settlement?.currency ?: "KRW",
+            onDismiss      = { showAddSheet = false },
+            onConfirm      = { itemName, amount, currency, memberIds ->
+                onAddExpense(itemName, amount, currency, memberIds)
+                showAddSheet = false
+            },
+        )
+    }
+}
+
+/** 지출 카드 — 항목명/금액/결제자/날짜 표시. 본인 지출에만 삭제 버튼 표시 */
+@Composable
+private fun ExpenseCard(
+    expense: ExpenseResponse,
+    isOwner: Boolean,
+    onDelete: () -> Unit,
+) {
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title            = { Text("지출 삭제") },
+            text             = { Text("'${expense.itemName}' 지출을 삭제할까요?") },
+            confirmButton    = {
+                TextButton(onClick = { showDeleteDialog = false; onDelete() }) {
+                    Text("삭제", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton    = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("취소") }
+            },
+        )
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape    = RoundedCornerShape(12.dp),
+        colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        item {
-            Text(
-                settlement.tripTitle,
-                style = MaterialTheme.typography.displayLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        Row(
+            modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(expense.itemName, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "결제자: ${expense.payerName}",
+                    style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                )
+                if (expense.memberIds.isNotEmpty()) {
+                    Text(
+                        "${expense.memberIds.size}명 분담",
+                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    )
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    "${NumberFormat.getNumberInstance(Locale.KOREA).format(expense.amount.toLong())} ${expense.currency}",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color      = MaterialTheme.colorScheme.primary,
+                    ),
+                )
+                if (isOwner) {
+                    IconButton(onClick = { showDeleteDialog = true }, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Outlined.Delete,
+                            contentDescription = "삭제",
+                            tint     = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 지출 입력 BottomSheet — 항목명, 금액, 통화, 분담자 선택, 영수증 OCR */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExpenseInputSheet(
+    bandId: Long,
+    members: List<BandMemberResponse>,
+    currentUserId: Long,
+    baseCurrency: String,
+    onDismiss: () -> Unit,
+    onConfirm: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+) {
+    var itemName    by remember { mutableStateOf("") }
+    var amountText  by remember { mutableStateOf("") }
+    var currency    by remember { mutableStateOf(baseCurrency) }
+    var isOcrLoading by remember { mutableStateOf(false) }
+    // 분담자: 기본값은 전체 멤버
+    val selectedIds = remember { mutableStateListOf<Long>().apply { addAll(members.map { it.userId }) } }
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope      = rememberCoroutineScope()
+    val context    = androidx.compose.ui.platform.LocalContext.current
+
+    // 갤러리에서 이미지 선택 → OCR 자동 채우기
+    val imageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            isOcrLoading = true
+            val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
+            if (bytes != null) {
+                runCatching {
+                    val requestFile = bytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
+                    val part = MultipartBody.Part.createFormData("image", "receipt.jpg", requestFile)
+                    com.synctrip.app.network.ApiClient.api.scanReceipt(bandId, part)
+                }.onSuccess { result ->
+                    if (itemName.isBlank()) itemName = result.storeName ?: ""
+                    if (amountText.isBlank()) amountText = result.total?.toString() ?: ""
+                    if (result.currency != null) currency = result.currency
+                }
+            }
+            isOcrLoading = false
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Text("지출 추가", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                OutlinedButton(
+                    onClick  = { imageLauncher.launch("image/*") },
+                    enabled  = !isOcrLoading,
+                    shape    = RoundedCornerShape(8.dp),
+                ) {
+                    if (isOcrLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("스캔 중…")
+                    } else {
+                        Icon(Icons.Outlined.DocumentScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("영수증 스캔")
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value         = itemName,
+                onValueChange = { itemName = it },
+                label         = { Text("항목명") },
+                singleLine    = true,
+                modifier      = Modifier.fillMaxWidth(),
             )
-        }
-        item { TotalAmountCard(settlement = settlement) }
-        item { MyBalanceCard(balance = settlement.myBalance, currency = settlement.currency) }
-        item {
-            Text("정산 현황", style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.onSurface))
-        }
-        items(settlement.pendingTransfers) { transfer ->
-            TransferCard(transfer = transfer, onSettleClick = onSettleClick)
-        }
-        item {
-            Text("상세 지출 내역", style = MaterialTheme.typography.titleLarge)
-        }
-        items(settlement.summary) { item ->
-            ExpenseItemRow(item = item)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value         = amountText,
+                    onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' } },
+                    label         = { Text("금액") },
+                    singleLine    = true,
+                    modifier      = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value         = currency,
+                    onValueChange = { if (it.length <= 3) currency = it.uppercase() },
+                    label         = { Text("통화") },
+                    singleLine    = true,
+                    modifier      = Modifier.width(90.dp),
+                )
+            }
+
+            Text("분담자", style = MaterialTheme.typography.titleMedium)
+            members.forEach { member ->
+                Row(
+                    verticalAlignment  = Alignment.CenterVertically,
+                    modifier           = Modifier.fillMaxWidth(),
+                ) {
+                    Checkbox(
+                        checked         = selectedIds.contains(member.userId),
+                        onCheckedChange = { checked ->
+                            if (checked) selectedIds.add(member.userId) else selectedIds.remove(member.userId)
+                        },
+                    )
+                    Text(
+                        member.name + if (member.userId == currentUserId) " (나)" else "",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+
+            Button(
+                onClick  = {
+                    val amount = amountText.toDoubleOrNull() ?: return@Button
+                    if (itemName.isBlank()) return@Button
+                    onConfirm(itemName.trim(), amount, currency.ifBlank { "KRW" }, selectedIds.toList())
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled  = itemName.isNotBlank() && amountText.isNotBlank() && !isOcrLoading,
+            ) {
+                Text("추가")
+            }
         }
     }
 }
@@ -826,6 +1231,7 @@ private fun SwipeVotingPreview() {
             pendingPlaces    = previewVotePlaces,
             votedCount       = 2,
             isMyVoteComplete = false,
+            isAllComplete    = false,
             isLoading        = false,
             onVote           = { _, _ -> },
             onBackClick      = {},
@@ -836,12 +1242,30 @@ private fun SwipeVotingPreview() {
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
-private fun SwipeVotingCompletePreview() {
+private fun SwipeVotingWaitingPreview() {
     SynctripTheme {
         SwipeVotingScreen(
             pendingPlaces    = emptyList(),
             votedCount       = 4,
             isMyVoteComplete = true,
+            isAllComplete    = false,
+            isLoading        = false,
+            onVote           = { _, _ -> },
+            onBackClick      = {},
+            onVotingDone     = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Composable
+private fun SwipeVotingAllCompletePreview() {
+    SynctripTheme {
+        SwipeVotingScreen(
+            pendingPlaces    = emptyList(),
+            votedCount       = 4,
+            isMyVoteComplete = true,
+            isAllComplete    = true,
             isLoading        = false,
             onVote           = { _, _ -> },
             onBackClick      = {},
@@ -888,5 +1312,198 @@ private val previewSettlement = Settlement(
 private fun SettlementPreview() {
     SynctripTheme {
         SettlementScreen(settlement = previewSettlement, onSettleClick = {}, onBackClick = {})
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 4. Vote Result Screen  ← 투표 결과 화면
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 투표 결과 화면.
+ * 장소별 좋아요/싫어요 집계와 통과/탈락 여부를 표시한다.
+ * 좋아요 많은 순으로 정렬되며, 통과 장소는 강조 표시된다.
+ * "일정 만들기" 버튼 클릭 시 AI 일정 생성 화면으로 이동한다.
+ *
+ * @param results          투표 결과 목록 (서버에서 likeCount 내림차순 정렬됨)
+ * @param isLoading        결과 로딩 중 여부
+ * @param onCreateSchedule 일정 만들기 버튼 콜백
+ * @param onBackClick      뒤로가기
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VoteResultScreen(
+    results: List<VotePlaceResult>,
+    isLoading: Boolean,
+    onCreateSchedule: () -> Unit,
+    onBackClick: () -> Unit,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    val passedCount = results.count { it.passed }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("투표 결과", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.Outlined.ArrowBack, contentDescription = "뒤로가기")
+                    }
+                },
+            )
+        },
+        bottomBar = {
+            Surface(shadowElevation = 8.dp) {
+                Button(
+                    onClick  = onCreateSchedule,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text("일정 만들기", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        },
+        modifier = modifier,
+    ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh    = onRefresh,
+            modifier     = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
+            if (isLoading) {
+                Box(
+                    modifier         = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    PlaneLoadingIndicator()
+                }
+            } else {
+                LazyColumn(
+                    modifier            = Modifier.fillMaxSize(),
+                    contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    // 요약 헤더
+                    item {
+                        Text(
+                            text  = "총 ${results.size}개 중 ${passedCount}개 통과",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 4.dp),
+                        )
+                    }
+
+                    items(results, key = { it.placeId }) { result ->
+                        VoteResultCard(result = result)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 투표 결과 카드 — 장소 썸네일, 이름, 좋아요/싫어요 수, 통과 여부 표시 */
+@Composable
+private fun VoteResultCard(result: VotePlaceResult) {
+    val passColor = if (result.passed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+    val passLabel = if (result.passed) "통과" else "탈락"
+
+    Card(
+        shape    = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+        colors   = CardDefaults.cardColors(
+            containerColor = if (result.passed)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+            else
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+    ) {
+        Row(
+            modifier            = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment   = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // 썸네일
+            AsyncImage(
+                model             = result.thumbnailUrl,
+                contentDescription = result.name,
+                contentScale      = ContentScale.Crop,
+                modifier          = Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+            )
+
+            // 장소 정보
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text     = result.name,
+                    style    = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text  = result.category.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // 좋아요 카운트
+                    Row(
+                        verticalAlignment   = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Outlined.FavoriteBorder,
+                            contentDescription = "좋아요",
+                            tint               = Color(0xFFE91E63),
+                            modifier           = Modifier.size(14.dp),
+                        )
+                        Text(
+                            text  = "${result.likeCount}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFFE91E63),
+                        )
+                    }
+                    // 싫어요 카운트
+                    Row(
+                        verticalAlignment   = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Close,
+                            contentDescription = "싫어요",
+                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier           = Modifier.size(14.dp),
+                        )
+                        Text(
+                            text  = "${result.dislikeCount}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            // 통과/탈락 배지
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = passColor.copy(alpha = 0.15f),
+            ) {
+                Text(
+                    text     = passLabel,
+                    style    = MaterialTheme.typography.labelMedium,
+                    color    = passColor,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+        }
     }
 }
