@@ -1,5 +1,5 @@
 # SyncTrip Android 클라이언트 구현 현황
-**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-26 (버그 수정 + 투표 UX 개선)
+**인수인계 문서 기준:** v6 | **최신 업데이트:** 2026-05-27 (숙소 입력 구현)
 
 > 이 문서는 기능이 구현되거나 수정될 때마다 업데이트합니다.  
 > 기준: `SyncTrip_인수인계문서_v6.md` USR-001 ~ USR-031 + 기존 SyncTrip-Android 앱 기능 동등성
@@ -29,7 +29,7 @@
 | JWT 토큰 저장소 | ✅ 구현 | `core/TokenDataStore.kt` — DataStore<Preferences> 기반 |
 | WebSocket (STOMP) | ✅ 구현 | `network/VoteStompClient.kt` — OkHttp3 STOMP 직접 구현, VoteViewModel 통합. URL `ApiClient.wsUrl` 동적화(BuildConfig 기반). 지수 백오프 재연결(최대 5회, 최대 30s) |
 | 지도 SDK (Google Maps Compose) | ✅ 구현 | 앨범 지도 탭 + 일정 지도(ScheduleDayMapView) 두 곳에서 활용. `maps-compose` 의존성 활용 |
-| FCM 클라이언트 | ✅ 구현 | `SyncTripFirebaseService.kt` — 토큰 등록 + 푸시 알림 표시 |
+| FCM 클라이언트 | ✅ 구현 | `SyncTripFirebaseService.kt` — 토큰 등록 + 헤드업 푸시 알림(IMPORTANCE_HIGH) + 알림 탭 시 화면 이동(VOTE_STARTED→투표창, 나머지→밴드 로비) |
 
 ---
 
@@ -55,7 +55,7 @@
 |---|---|---|---|---|
 | USR-003 | 밴드 목록 조회 | ✅ 구현 | `HomeScreen` + `BandViewModel` | `GET api/bands` 최신순 정렬 |
 | USR-003 | 그룹 생성 UI (다단계) | ✅ 구현 | `ui/screens/TripCreationScreens.kt` | 2단계 플로우. 여행지 인기/검색 API 연결. 트리플 스타일 커스텀 캘린더 범위 선택. createBand() 연결 |
-| USR-003 | 숙소 입력 | ❌ 미구현 | — | CreateTripScreen에 필드 없음 |
+| USR-003 | 숙소 입력 | ✅ 구현 (2026-05-27) | `TripCreationScreens.kt` + `TripLobbyScreen.kt` + `BandViewModel` | 생성 시: 3페이지 플로우(여행지→여행정보→숙소선택). `AccommodationSearchPage` — 상단 Google Map 핀 표시 + 검색창 + 결과 목록. 우상단 "건너뛰기" 회색 버튼. 숙소 선택 시 위도·경도를 `BandCreateRequest`에 전달, 미선택 시 목적지 좌표 사용. 로비 밴드 탭: `AccommodationSection` 카드 + 방장 수정 다이얼로그. `PATCH /api/bands/{bandId}/accommodation` 연결. VOTING/GENERATING 중 편집 불가. 백엔드: `GET /api/places/search?keyword=&lat=&lng=` 엔드포인트 추가 필요 |
 | USR-004 | 초대 코드 참여 UI | ✅ 구현 | `HomeScreen` BottomSheet | "코드로 참여" 버튼 → 8자리 코드 입력 BottomSheet → joinBand API |
 | USR-004 | 딥링크 (`synctrip://`) 처리 | ✅ 구현 | `AndroidManifest.xml` + `MainActivity.kt` | synctrip://band/join + https://test.sync-trip.app/invite 두 scheme. onNewIntent + AlertDialog 확인 후 참여 |
 | USR-005 | 최대 인원 제한 표시 | ⚠️ 부분 구현 | 스낵바 에러 메시지 | 409 → 스낵바. 별도 UI 없음 |
@@ -135,7 +135,8 @@
 |---|---|---|---|---|
 | USR-026 | 알림 목록 화면 UI | ✅ 구현 | `NotificationScreen` + `NotificationViewModel` | 날짜별 그룹핑. loadNotifications/markAllRead/markRead/deleteNotification API 연결 |
 | USR-026 | FCM 토큰 등록 API | ✅ 구현 | `SyncTripFirebaseService.onNewToken()` | 로그인 상태 시 자동 서버 등록 |
-| USR-026 | FCM 푸시 알림 수신 | ✅ 구현 | `SyncTripFirebaseService` | 시스템 알림 채널 생성 + 표시 |
+| USR-026 | FCM 푸시 알림 수신 | ✅ 구현 | `SyncTripFirebaseService` | 알림 채널 IMPORTANCE_HIGH(헤드업). PRIORITY_HIGH. 포그라운드/백그라운드 모두 data 페이로드 key 통일(`bandId`, `type`)로 탭 이동 처리 |
+| USR-026 | FCM 알림 탭 → 화면 이동 | ✅ 구현 (2026-05-27) | `SyncTripFirebaseService` + `MainActivity` + `NavGraph` | `VOTE_STARTED` → `blindVoting/{bandId}`, 나머지 bandId 있는 타입 → `tripLobby/{bandId}`. 앱 실행 중/종료 상태 모두 처리. `HOLIDAY_WARNING` 타입 `ApiNotificationType`에 추가 |
 | USR-027 | 알림 토글 설정 | ✅ 구현 | `ProfileAndSettingsScreens.kt` `NotificationSettingsScreen` + `NavGraph "notificationSettings"` | GET /api/users/notification-settings 조회 + PATCH 개별 토글. 낙관적 업데이트. 드로어 "알림 설정" 퀵 아이템으로 진입 |
 | USR-030 | 공휴일 달력 표시 | ✅ 구현 | `TripCreationScreens.kt` `DateRangePickerDialog` | `GET /api/holidays?countryCode=JP&year=2026` 연동. 달력 진입 시 자동 fetch(다중 연도 지원). `CalendarDay`에 공휴일 날짜 빨간색 + 현지어명 최대 4자 표시. 날짜 선택 후 확인 버튼 위에 "여행 기간 내 공휴일 N개" 주황 배너 + 날짜/공휴일명 목록 표시(최대 3건 + "외 N개 더"). 공휴일 알림(Push) 자체는 백엔드 미구현 |
 
@@ -171,7 +172,7 @@
 | `MyPassportScreen` | `PassportAndSearchScreens.kt` | ✅ | ✅ | `BandViewModel.loadPassportStamps()` + `getMyStamps()` API 연결 완료 (2026-05-26) |
 | `BlindVotingScreen` | `VotingAndSettlementScreens.kt` | ✅ | ❌ | 레거시 — 현재 미사용 |
 | 가계부 입력 화면 | ❌ 없음 | ❌ | ❌ | 구 앱도 더미 |
-| 프로필 편집 화면 | ❌ 없음 | ❌ | ❌ | — |
+| `ProfileEditScreen` | `ProfileAndSettingsScreens.kt` | ✅ | ✅ | 이름 텍스트필드 + 갤러리 이미지 + PUT /api/users/me (2026-05-26 구현) |
 
 ---
 
@@ -253,5 +254,10 @@
 | 2026-05-26 | **투표 카드 내가 담은 장소 배지 추가** — `VotingPlaceCard` 이미지 우상단에 `myBookmark=true` 시 Primary 색 "내가 담은 곳" 배지 표시(Bookmark 아이콘 + 라벨) |
 | 2026-05-26 | **WebSocket 이벤트 처리 최적화** — `VoteViewModel.connectWebSocket()` `onEvent` 콜백에서 `refreshStatus()`(내 상태+그룹 상태 2 API) → `refreshGroupStatus()`(그룹 상태만 1 API)로 교체. 불필요한 내 상태 재조회 제거. `refreshGroupStatus()` private 메서드 분리 |
 | 2026-05-26 | **투표 실패 에러 UI 추가** — `SwipeVotingScreen`에 `snackbarHostState` 파라미터 + `Scaffold` `snackbarHost` 추가. NavGraph에서 `uiState.error` LaunchedEffect 감지 → 스낵바 표시 후 `clearError()` 호출 |
+| 2026-05-27 | **Pull-to-Refresh 전 화면 구현 (➕)** — `HomeScreen`, `NotificationScreen`, `MyPassportScreen`, `VoteResultScreen`, `TripBandHubScreen` 전 탭에 스와이프 새로고침 추가. `PullToRefreshBox` (material3.pulltorefresh 서브패키지) 사용. 탭별 새로고침 로직 분기: BAND·SETTLEMENT는 `TripBandHubScreen` 레벨 `PullToRefreshBox`로 처리, SCHEDULE은 `ScheduleContent` 내부 타임라인(`SlotTimeline`) 영역에 직접 `PullToRefreshBox` 배치(구글맵이 제스처 소비하므로 지도 아래 LazyColumn만 감쌈), PHOTO는 `AlbumContent` 내부 FEED 탭 `AlbumFeedList`에 직접 `PullToRefreshBox` 배치. NavGraph 각 라우트에 `isRefreshing` 상태 + `LaunchedEffect(isLoading)` 리셋 + `onRefresh` 콜백 연결 |
 
-**마지막 수정:** 2026-05-26 (투표 UX 개선 + 버그 수정 일괄) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+| 2026-05-27 | **FCM 알림 신뢰성 + 탭 이동 구현** — 알림 채널 중요도 `IMPORTANCE_DEFAULT` → `IMPORTANCE_HIGH`(헤드업 표시, 재설치 필요), `NotificationCompat.PRIORITY_HIGH` 추가. `HOLIDAY_WARNING` 타입 `ApiNotificationType`에 추가(없으면 알림 목록 역직렬화 NPE 위험). FCM 알림 탭 시 화면 이동: `VOTE_STARTED` → `blindVoting/{bandId}`, 나머지 → `tripLobby/{bandId}`. 포그라운드(`showNotification`) + 백그라운드(FCM SDK 자동) 양쪽에서 data 페이로드 key(`bandId`, `type`) 통일. `PendingIntent` requestCode 고유화(`System.currentTimeMillis().toInt()`). `NavGraph` 알림 route 처리: 앱 실행 중 → 즉시 이동, 앱 종료 상태 → splash 완료 후 이동 |
+
+| 2026-05-27 | **숙소 입력 (USR-003)** — `CreateTripScreen`을 3페이지 플로우로 확장(여행지→여행정보→숙소선택). 3단계 `AccommodationSearchPage` 신규: 상단 Google Map(선택 숙소 Hotel 아이콘 마커, 미선택 시 목적지 중심) + 검색창(`ImeAction.Search`) + 결과 목록(`AccommodationResultCard`). 우상단 "건너뛰기" 회색 `TextButton`. 숙소 선택 시 `ApiPlaceSearchResult.latitude/longitude`를 `BandCreateRequest.accommodationLat/Lng`에 전달, 미선택·건너뛰기 시 null(목적지 위치 기본). 로비 밴드 탭 `AccommodationSection` 카드 + 방장 `AlertDialog` 수정. `PATCH /api/bands/{bandId}/accommodation` + `GET /api/places/search` 엔드포인트 추가(후자 백엔드 구현 필요). `AccommodationUpdateRequest` DataModel, `BandViewModel.updateAccommodation()` 추가 |
+
+**마지막 수정:** 2026-05-27 (숙소 입력 구현) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

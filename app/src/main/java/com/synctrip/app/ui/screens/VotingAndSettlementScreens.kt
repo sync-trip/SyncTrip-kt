@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
@@ -1388,6 +1389,8 @@ fun VoteResultScreen(
     isLoading: Boolean,
     onCreateSchedule: () -> Unit,
     onBackClick: () -> Unit,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val passedCount = results.count { it.passed }
@@ -1419,31 +1422,37 @@ fun VoteResultScreen(
         },
         modifier = modifier,
     ) { innerPadding ->
-        if (isLoading) {
-            Box(
-                modifier         = Modifier.fillMaxSize().padding(innerPadding),
-                contentAlignment = Alignment.Center,
-            ) {
-                PlaneLoadingIndicator()
-            }
-        } else {
-            LazyColumn(
-                modifier            = Modifier.fillMaxSize().padding(innerPadding),
-                contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                // 요약 헤더
-                item {
-                    Text(
-                        text  = "총 ${results.size}개 중 ${passedCount}개 통과",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    )
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh    = onRefresh,
+            modifier     = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
+            if (isLoading) {
+                Box(
+                    modifier         = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    PlaneLoadingIndicator()
                 }
+            } else {
+                LazyColumn(
+                    modifier            = Modifier.fillMaxSize(),
+                    contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    // 요약 헤더
+                    item {
+                        Text(
+                            text  = "총 ${results.size}개 중 ${passedCount}개 통과",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 4.dp),
+                        )
+                    }
 
-                items(results, key = { it.placeId }) { result ->
-                    VoteResultCard(result = result)
+                    items(results, key = { it.placeId }) { result ->
+                        VoteResultCard(result = result)
+                    }
                 }
             }
         }

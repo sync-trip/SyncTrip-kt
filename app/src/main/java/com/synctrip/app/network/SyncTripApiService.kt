@@ -31,6 +31,20 @@ interface SyncTripApiService {
     @POST("api/bands/join")
     suspend fun joinBand(@Body body: BandJoinRequest): BandResponse
 
+    @PATCH("api/bands/{bandId}/accommodation")
+    suspend fun updateAccommodation(
+        @Path("bandId") bandId: Long,
+        @Body body: AccommodationUpdateRequest,
+    ): Unit
+
+    /** 밴드 생성 전 숙소 검색 — bandId 없이 목적지 위·경도 기반으로 장소 검색 */
+    @GET("api/places/search")
+    suspend fun searchAccommodations(
+        @Query("keyword") keyword: String,
+        @Query("lat") lat: Double,
+        @Query("lng") lng: Double,
+    ): List<ApiPlaceSearchResult>
+
     @GET("api/bands/{bandId}/members")
     suspend fun getBandMembers(@Path("bandId") bandId: Long): List<BandMemberResponse>
 

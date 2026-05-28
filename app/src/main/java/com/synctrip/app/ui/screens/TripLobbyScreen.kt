@@ -1,5 +1,6 @@
 package com.synctrip.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
@@ -107,8 +109,12 @@ fun TripBandHubScreen(
         takenAt: String?,
     ) -> Unit,
     onDeleteAlbumPhoto: (photoId: Long) -> Unit,
+    // 숙소 수정 화면으로 이동 (방장 전용, PLANNING/TRAVELLING/DONE)
+    onEditAccommodationClick: () -> Unit,
     // 방 삭제 (방장 전용)
     onDeleteBand: () -> Unit,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // 투표 강제 시작 전 확인 다이얼로그
@@ -211,23 +217,27 @@ fun TripBandHubScreen(
             )
         },
     ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) {
-            when (selectedTab) {
-                BandHubTab.BAND -> BandHubTabContent(
-                    band          = band,
-                    members       = members,
-                    picks         = picks,
-                    currentUserId = currentUserId,
-                    isBandLoading = isBandLoading,
-                    onReadyClick  = onReadyClick,
-                    onInviteClick = onInviteClick,
-                    onGoToPlaceSearch  = onGoToPlaceSearch,
-                    onGoToVoting       = onGoToVoting,
-                    onAdvanceStatusClick = {
+        // 탭별로 새로고침 처리:
+        // BAND·SETTLEMENT — 스크롤 가능 콘텐츠가 직접 자식이므로 허브 레벨 PullToRefreshBox 사용
+        // SCHEDULE·PHOTO  — 구글맵/중첩 구조로 제스처 전파가 안 되므로 각 콘텐츠 내부에서 처리
+        when (selectedTab) {
+            BandHubTab.BAND -> PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh    = onRefresh,
+                modifier     = Modifier.fillMaxSize().padding(innerPadding),
+            ) {
+                BandHubTabContent(
+                    band                  = band,
+                    members               = members,
+                    picks                 = picks,
+                    currentUserId         = currentUserId,
+                    isBandLoading         = isBandLoading,
+                    onReadyClick          = onReadyClick,
+                    onInviteClick         = onInviteClick,
+                    onGoToPlaceSearch     = onGoToPlaceSearch,
+                    onGoToVoting          = onGoToVoting,
+                    onEditAccommodationClick = onEditAccommodationClick,
+                    onAdvanceStatusClick  = {
                         // 멤버 수 * 2 미만이면 투표 차단
                         if (totalPicks < minPicksRequired) {
                             showInsufficientPicksDialog = true
@@ -235,46 +245,57 @@ fun TripBandHubScreen(
                             showAdvanceDialog = true
                         }
                     },
-                    modifier      = Modifier.fillMaxSize(),
+                    modifier              = Modifier.fillMaxSize(),
                 )
+            }
 
-                BandHubTab.SCHEDULE -> {
-                    // GENERATING 상태이면서 아직 일정이 없으면 생성 중 스피너 표시
-                    if (band.status == BandStatus.GENERATING && (schedule == null || schedule.days.isEmpty())) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                PlaneLoadingIndicator()
-                                Spacer(Modifier.height(16.dp))
-                                Text(
-                                    "일정 생성 중…",
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    ),
-                                )
-                            }
+            BandHubTab.SCHEDULE -> {
+                // GENERATING 상태이면서 아직 일정이 없으면 생성 중 스피너 표시
+                if (band.status == BandStatus.GENERATING && (schedule == null || schedule.days.isEmpty())) {
+                    Box(
+                        modifier         = Modifier.fillMaxSize().padding(innerPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            PlaneLoadingIndicator()
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "일정 생성 중…",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
                         }
-                    } else {
-                        ScheduleContent(
-                            schedule            = schedule,
-                            altOptions          = altOptions,
-                            planBResults        = planBResults,
-                            isPlanBLoading      = isPlanBLoading,
-                            isLoading           = isScheduleLoading,
-                            isEditing           = isEditing,
-                            canEdit             = false,
-                            isOverseas          = band.isOverseas,
-                            onStartEditing      = onStartEditing,
-                            onFinishEditing     = onFinishEditing,
-                            onSwapSlot          = onSwapSlot,
-                            onLoadAlts          = onLoadAlts,
-                            onRequestPlanB      = onRequestPlanB,
-                            onExecutePlanBSwap  = onExecutePlanBSwap,
-                            modifier            = Modifier.fillMaxSize(),
-                        )
                     }
+                } else {
+                    ScheduleContent(
+                        schedule            = schedule,
+                        altOptions          = altOptions,
+                        planBResults        = planBResults,
+                        isPlanBLoading      = isPlanBLoading,
+                        isLoading           = isScheduleLoading,
+                        isEditing           = isEditing,
+                        canEdit             = false,
+                        isOverseas          = band.isOverseas,
+                        onStartEditing      = onStartEditing,
+                        onFinishEditing     = onFinishEditing,
+                        onSwapSlot          = onSwapSlot,
+                        onLoadAlts          = onLoadAlts,
+                        onRequestPlanB      = onRequestPlanB,
+                        onExecutePlanBSwap  = onExecutePlanBSwap,
+                        isRefreshing        = isRefreshing,
+                        onRefresh           = onRefresh,
+                        modifier            = Modifier.fillMaxSize().padding(innerPadding),
+                    )
                 }
+            }
 
-                BandHubTab.SETTLEMENT -> SettlementContent(
+            BandHubTab.SETTLEMENT -> PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh    = onRefresh,
+                modifier     = Modifier.fillMaxSize().padding(innerPadding),
+            ) {
+                SettlementContent(
                     bandId            = band.id,
                     settlement        = settlement,
                     expenses          = expenses,
@@ -286,20 +307,22 @@ fun TripBandHubScreen(
                     onSettleClick     = onSettleClick,
                     modifier          = Modifier.fillMaxSize(),
                 )
-
-                BandHubTab.PHOTO -> AlbumContent(
-                    photos          = albumPhotos,
-                    mapPins         = albumMapPins,
-                    isLoading       = isAlbumLoading,
-                    isUploading     = isAlbumUploading,
-                    currentUserId   = currentUserId,
-                    destinationLat  = band.destinationLat,
-                    destinationLng  = band.destinationLng,
-                    onUploadPhoto   = onUploadAlbumPhoto,
-                    onDeletePhoto   = onDeleteAlbumPhoto,
-                    modifier        = Modifier.fillMaxSize(),
-                )
             }
+
+            BandHubTab.PHOTO -> AlbumContent(
+                photos          = albumPhotos,
+                mapPins         = albumMapPins,
+                isLoading       = isAlbumLoading,
+                isUploading     = isAlbumUploading,
+                currentUserId   = currentUserId,
+                destinationLat  = band.destinationLat,
+                destinationLng  = band.destinationLng,
+                onUploadPhoto   = onUploadAlbumPhoto,
+                onDeletePhoto   = onDeleteAlbumPhoto,
+                isRefreshing    = isRefreshing,
+                onRefresh       = onRefresh,
+                modifier        = Modifier.fillMaxSize().padding(innerPadding),
+            )
         }
     }
 }
@@ -425,6 +448,7 @@ private fun BandHubTabContent(
     onInviteClick: () -> Unit,
     onGoToPlaceSearch: () -> Unit,
     onGoToVoting: () -> Unit,
+    onEditAccommodationClick: () -> Unit,
     onAdvanceStatusClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -457,6 +481,18 @@ private fun BandHubTabContent(
                         isReady       = currentMember?.isReady ?: false,
                         onReadyClick  = onReadyClick,
                         onSearchClick = onGoToPlaceSearch,
+                    )
+                }
+
+                // 숙소 섹션 — 편집 가능 상태(PLANNING/TRAVELLING/DONE)에서 표시
+                // VOTING/GENERATING 중에는 서버도 거부하므로 UI에서도 비노출
+                val canEditAccommodation = band.isOwner &&
+                    band.status !in listOf(BandStatus.VOTING, BandStatus.GENERATING)
+                if (band.status !in listOf(BandStatus.VOTING, BandStatus.GENERATING)) {
+                    AccommodationSection(
+                        accommodationName = band.accommodationName,
+                        canEdit           = canEditAccommodation,
+                        onEditClick       = onEditAccommodationClick,
                     )
                 }
 
@@ -928,6 +964,59 @@ private fun InfoChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 // ─────────────────────────────────────────────────────────────────────────────
 // 멤버 섹션
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 숙소 정보 섹션.
+ * 숙소명이 없으면 "미설정" 플레이스홀더 표시, 방장이면 수정 버튼 노출.
+ */
+@Composable
+private fun AccommodationSection(
+    accommodationName: String?,
+    canEdit: Boolean,
+    onEditClick: () -> Unit,
+) {
+    Card(
+        shape  = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector        = Icons.Outlined.Hotel,
+                contentDescription = null,
+                tint               = MaterialTheme.colorScheme.primary,
+                modifier           = Modifier.size(22.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text  = "숙소",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+                Text(
+                    text  = accommodationName ?: "미설정",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = if (accommodationName != null)
+                            MaterialTheme.colorScheme.onSurface
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            }
+            if (canEdit) {
+                TextButton(onClick = onEditClick) {
+                    Text("수정", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun MembersSection(

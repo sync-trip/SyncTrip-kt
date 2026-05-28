@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import android.content.Intent
 import android.net.Uri
 import coil3.compose.AsyncImage
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.synctrip.app.data.models.*
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import com.synctrip.app.ui.theme.SynctripTheme
@@ -669,12 +670,15 @@ private fun placeDetailCategoryLabel(category: ApiPlaceCategory): String = when 
 // 2. My Passport Screen
 // ═════════════════════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyPassportScreen(
     user: UserProfile,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
     isLoading: Boolean = false,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     newStampIds: Set<String> = emptySet(),
 ) {
     Scaffold(
@@ -698,8 +702,13 @@ fun MyPassportScreen(
             )
         },
     ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh    = onRefresh,
+            modifier     = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
         LazyColumn(
-            modifier            = Modifier.fillMaxSize().padding(innerPadding),
+            modifier            = Modifier.fillMaxSize(),
             contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
@@ -729,6 +738,7 @@ fun MyPassportScreen(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -946,12 +956,15 @@ private fun StampCell(
 // 3. Notification Screen
 // ═════════════════════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationScreen(
     groups: Map<String, List<NotificationItem>>,
     onMarkAllRead: () -> Unit,
     onItemClick: (String) -> Unit,
     onBackClick: () -> Unit,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -977,8 +990,13 @@ fun NotificationScreen(
             )
         },
     ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh    = onRefresh,
+            modifier     = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
         LazyColumn(
-            modifier            = Modifier.fillMaxSize().padding(innerPadding),
+            modifier            = Modifier.fillMaxSize(),
             contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -995,6 +1013,7 @@ fun NotificationScreen(
                     NotificationCard(item = item, onClick = { onItemClick(item.id) })
                 }
             }
+        }
         }
     }
 }

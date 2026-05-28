@@ -1,6 +1,8 @@
 package com.synctrip.app
 
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import com.kakao.sdk.common.KakaoSdk
 import com.synctrip.app.network.ApiClient
 import kotlinx.coroutines.channels.BufferOverflow
@@ -30,9 +32,20 @@ class SyncTripApplication : Application() {
         if (BuildConfig.KAKAO_NATIVE_KEY.isNotBlank()) {
             KakaoSdk.init(this, BuildConfig.KAKAO_NATIVE_KEY)
         }
+        // 앱 시작 시 알림 채널 생성 — 백그라운드에서 Firebase가 채널을 찾지 못하는 문제 방지
+        val manager = getSystemService(NotificationManager::class.java)
+        // IMPORTANCE_HIGH: 헤드업 알림(화면 상단 팝업)을 표시하기 위해 필요
+        manager.createNotificationChannel(
+            NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "SyncTrip 알림",
+                NotificationManager.IMPORTANCE_HIGH,
+            )
+        )
     }
 
     companion object {
         lateinit var instance: SyncTripApplication
+        const val NOTIFICATION_CHANNEL_ID = "synctrip_notifications"
     }
 }

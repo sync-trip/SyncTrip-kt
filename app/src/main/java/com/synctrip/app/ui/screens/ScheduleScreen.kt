@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1454,6 +1455,8 @@ internal fun ScheduleContent(
     onLoadAlts: (scheduleId: Long) -> Unit,
     onRequestPlanB: (targetPlaceId: Long) -> Unit,
     onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var selectedDayIndex by remember { mutableIntStateOf(0) }
@@ -1495,23 +1498,30 @@ internal fun ScheduleContent(
                             .height(240.dp),
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    SlotTimeline(
-                        slots          = currentSlots,
-                        isEditing      = isEditing,
-                        isPlanBLoading = isPlanBLoading,
-                        onSlotClick    = { slot -> detailSlot = slot },
-                        onSwapClick    = { slot ->
-                            detailSlot = slot
-                            onLoadAlts(slot.scheduleId)
-                            showSwapSheet = true
-                        },
-                        onPlanBClick   = { slot ->
-                            planBTargetSlot = slot
-                            showPlanBSheet  = true
-                            onRequestPlanB(slot.place.placeId)
-                        },
-                        modifier       = Modifier.weight(1f),
-                    )
+                    // 구글맵이 제스처를 소비하므로 타임라인 영역에만 PullToRefreshBox 배치
+                    PullToRefreshBox(
+                        isRefreshing = isRefreshing,
+                        onRefresh    = onRefresh,
+                        modifier     = Modifier.weight(1f),
+                    ) {
+                        SlotTimeline(
+                            slots          = currentSlots,
+                            isEditing      = isEditing,
+                            isPlanBLoading = isPlanBLoading,
+                            onSlotClick    = { slot -> detailSlot = slot },
+                            onSwapClick    = { slot ->
+                                detailSlot = slot
+                                onLoadAlts(slot.scheduleId)
+                                showSwapSheet = true
+                            },
+                            onPlanBClick   = { slot ->
+                                planBTargetSlot = slot
+                                showPlanBSheet  = true
+                                onRequestPlanB(slot.place.placeId)
+                            },
+                            modifier       = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
         }

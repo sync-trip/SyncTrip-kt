@@ -176,6 +176,15 @@ class BandViewModel : ViewModel() {
         }
     }
 
+    /** 숙소 수정 — PATCH /api/bands/{bandId}/accommodation. 위도·경도 포함. 성공 시 밴드 목록 갱신. */
+    fun updateAccommodation(bandId: Long, name: String?, lat: Double? = null, lng: Double? = null, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            runCatching { BandRepository.updateAccommodation(bandId, name, lat, lng) }
+                .onSuccess { loadBands(); onSuccess() }
+                .onFailure { onError(it.message ?: "숙소 수정 실패") }
+        }
+    }
+
     fun createBand(request: BandCreateRequest, onSuccess: (BandResponse) -> Unit) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)

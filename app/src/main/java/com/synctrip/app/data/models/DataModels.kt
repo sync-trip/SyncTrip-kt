@@ -273,7 +273,7 @@ data class GoogleLoginRequest(@com.google.gson.annotations.SerializedName("id_to
 
 data class TokenRefreshRequest(val refreshToken: String)
 
-data class FcmTokenRequest(val fcmToken: String)
+data class FcmTokenRequest(val token: String)  // 백엔드 필드명: token
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Backend – Band  (GET /api/bands, POST /api/bands, etc.)
@@ -329,6 +329,13 @@ data class BandCreateRequest(
     val accommodationLat: Double? = null,
     val accommodationLng: Double? = null,
     val thumbnailUrl: String? = null,
+)
+
+/** 숙소 정보 수정 요청 (PATCH /api/bands/{bandId}/accommodation) */
+data class AccommodationUpdateRequest(
+    val accommodationName: String?,
+    val accommodationLat: Double? = null,
+    val accommodationLng: Double? = null,
 )
 
 data class BandJoinRequest(val inviteCode: String)
@@ -596,7 +603,8 @@ data class SettlementTransaction(
 
 enum class ApiNotificationType {
     MEMBER_READY, MEMBER_JOINED, VOTE_STARTED, SCHEDULE_UPDATED, SETTLEMENT_REQUEST,
-    TRIP_ENDED,  // 2026-05-23 백엔드 추가
+    TRIP_ENDED,        // 2026-05-23 백엔드 추가
+    HOLIDAY_WARNING,   // 가입/일정 생성 시 공휴일 안내
 }
 
 /**
