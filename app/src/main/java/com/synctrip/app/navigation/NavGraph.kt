@@ -593,7 +593,7 @@ fun SyncTripNavGraph(
                             }
                             BandHubTab.SCHEDULE   -> scheduleViewModel.loadSchedule(bandIdLong)
                             BandHubTab.SETTLEMENT -> {
-                                bandViewModel.loadSettlement(bandIdLong)
+                                bandViewModel.loadSettlement(bandIdLong, currentUserId)
                                 bandViewModel.loadExpenses(bandIdLong)
                             }
                             BandHubTab.PHOTO      -> albumViewModel.loadAlbum(bandIdLong)
