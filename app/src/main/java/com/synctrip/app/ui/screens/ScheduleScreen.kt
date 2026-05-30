@@ -396,35 +396,13 @@ private fun TravelTimeConnector(
     minutes: Int,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Box(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(end = 16.dp, top = 2.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .height(28.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant),
-        )
-        if (minutes > 0) {
-            Spacer(Modifier.width(12.dp))
-            Icon(
-                Icons.Outlined.DirectionsWalk,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(14.dp),
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = "약 ${minutes}분 이동",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-            )
-        }
-    }
+            .padding(top = 2.dp, bottom = 2.dp)
+            .width(2.dp)
+            .height(28.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant),
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -731,9 +709,6 @@ private fun PlaceDetailBottomSheet(
 
             slot.startTime?.let { DetailRow(Icons.Outlined.Schedule, "시작 시간", it) }
             slot.durationMinutes?.let { DetailRow(Icons.Outlined.Timer, "예상 소요", "약 ${it}분") }
-            (slot.travelTimeFromPrev ?: 0).takeIf { it > 0 }?.let {
-                DetailRow(Icons.Outlined.DirectionsWalk, "이동 시간", "이전 장소에서 약 ${it}분")
-            }
             slot.place.address?.let { DetailRow(Icons.Outlined.LocationOn, "주소", it) }
             slot.place.rating?.let { DetailRow(Icons.Outlined.Star, "평점", "%.1f / 5.0".format(it)) }
 
