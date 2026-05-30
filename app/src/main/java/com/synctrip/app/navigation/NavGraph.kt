@@ -359,7 +359,7 @@ fun SyncTripNavGraph(
                         scope.launch {
                             isAccommodationLoading = true
                             runCatching {
-                                ApiClient.api.searchAccommodations(keyword, dest.lat, dest.lng)
+                                ApiClient.api.searchAccommodations(dest.lat, dest.lng, keyword.ifBlank { null })
                             }.onSuccess { accommodationResults = it }
                                 .onFailure { snackbarState.showSnackbar("숙소 검색 실패. 다시 시도해주세요.") }
                             isAccommodationLoading = false
@@ -662,10 +662,11 @@ fun SyncTripNavGraph(
                         albumViewModel.deletePhoto(bandIdLong, photoId)
                     },
                     onEditAccommodationClick = {
-                        val dest = bandUiState.bands.find { it.id == bandIdLong }
-                        val lat  = dest?.destinationLat ?: 37.5665
-                        val lng  = dest?.destinationLng ?: 126.9780
-                        navController.navigate("accommodationSearch/$bandIdLong/$lat/$lng")
+                        val dest     = bandUiState.bands.find { it.id == bandIdLong }
+                        val lat      = dest?.destinationLat ?: 37.5665
+                        val lng      = dest?.destinationLng ?: 126.9780
+                        val destName = java.net.URLEncoder.encode(dest?.destination ?: "", "UTF-8")
+                        navController.navigate("accommodationSearch/$bandIdLong/$lat/$lng/$destName")
                     },
                     onDeleteBand      = {
                         bandViewModel.deleteBand(bandIdLong) {
@@ -679,15 +680,19 @@ fun SyncTripNavGraph(
         }
 
         // 숙소 검색 화면 — 로비에서 방장이 숙소 수정 시 진입
-        composable("accommodationSearch/{bandId}/{lat}/{lng}") { backStackEntry ->
-            val bandIdLong = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
-            val lat        = backStackEntry.arguments?.getString("lat")?.toDoubleOrNull() ?: 37.5665
-            val lng        = backStackEntry.arguments?.getString("lng")?.toDoubleOrNull() ?: 126.9780
+        composable("accommodationSearch/{bandId}/{lat}/{lng}/{destinationName}") { backStackEntry ->
+            val bandIdLong      = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
+            val lat             = backStackEntry.arguments?.getString("lat")?.toDoubleOrNull() ?: 37.5665
+            val lng             = backStackEntry.arguments?.getString("lng")?.toDoubleOrNull() ?: 126.9780
+            val destinationName = backStackEntry.arguments?.getString("destinationName")
+                ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+                ?.takeIf { it.isNotBlank() }
             val bandViewModel: BandViewModel = viewModel()
 
             AccommodationSearchScreen(
-                destinationLat = lat,
-                destinationLng = lng,
+                destinationLat  = lat,
+                destinationLng  = lng,
+                destinationName = destinationName,
                 onBack         = { navController.popBackStack() },
                 onSave         = { selectedPlace ->
                     bandViewModel.updateAccommodation(

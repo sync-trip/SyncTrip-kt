@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -967,7 +968,9 @@ private fun InfoChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 
 /**
  * 숙소 정보 섹션.
- * 숙소명이 없으면 "미설정" 플레이스홀더 표시, 방장이면 수정 버튼 노출.
+ * 숙소 설정 여부에 따라 시각적으로 구분되는 두 가지 상태를 표시한다.
+ * - 설정됨: primaryContainer 배경 + 원형 아이콘 + 숙소명 + 수정 아이콘
+ * - 미설정: 라인 카드 + 회색 아이콘 + "선택" 버튼
  */
 @Composable
 private fun AccommodationSection(
@@ -975,43 +978,107 @@ private fun AccommodationSection(
     canEdit: Boolean,
     onEditClick: () -> Unit,
 ) {
-    Card(
-        shape  = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+    if (accommodationName != null) {
+        // 숙소 설정됨 — primaryContainer 강조 카드
+        Card(
+            shape    = RoundedCornerShape(20.dp),
+            colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Icon(
-                imageVector        = Icons.Outlined.Hotel,
-                contentDescription = null,
-                tint               = MaterialTheme.colorScheme.primary,
-                modifier           = Modifier.size(22.dp),
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text  = "숙소",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                )
-                Text(
-                    text  = accommodationName ?: "미설정",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = if (accommodationName != null)
-                            MaterialTheme.colorScheme.onSurface
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                )
+            Row(
+                modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                // 원형 아이콘 배지
+                Surface(
+                    shape    = CircleShape,
+                    color    = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Hotel,
+                            contentDescription = null,
+                            tint               = MaterialTheme.colorScheme.onPrimary,
+                            modifier           = Modifier.size(22.dp),
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "숙소",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                        ),
+                    )
+                    Text(
+                        accommodationName,
+                        style    = MaterialTheme.typography.bodyLarge.copy(
+                            color      = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (canEdit) {
+                    IconButton(onClick = onEditClick) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Edit,
+                            contentDescription = "숙소 수정",
+                            tint               = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier           = Modifier.size(20.dp),
+                        )
+                    }
+                }
             }
-            if (canEdit) {
-                TextButton(onClick = onEditClick) {
-                    Text("수정", style = MaterialTheme.typography.labelLarge)
+        }
+    } else {
+        // 숙소 미설정 — 아웃라인 카드
+        Card(
+            shape    = RoundedCornerShape(20.dp),
+            colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Surface(
+                    shape    = CircleShape,
+                    color    = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Hotel,
+                            contentDescription = null,
+                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier           = Modifier.size(22.dp),
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "숙소",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                    Text(
+                        "아직 선택된 숙소가 없어요",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        ),
+                    )
+                }
+                if (canEdit) {
+                    FilledTonalButton(onClick = onEditClick) {
+                        Text("선택")
+                    }
                 }
             }
         }

@@ -37,12 +37,12 @@ interface SyncTripApiService {
         @Body body: AccommodationUpdateRequest,
     ): Unit
 
-    /** 밴드 생성 전 숙소 검색 — bandId 없이 목적지 위·경도 기반으로 장소 검색 */
+    /** 밴드 생성 전 숙소 검색 — rectangle restriction(50km)으로 지역 제한, keyword 없으면 근처 숙소 목록 반환 */
     @GET("api/places/search")
     suspend fun searchAccommodations(
-        @Query("keyword") keyword: String,
         @Query("lat") lat: Double,
         @Query("lng") lng: Double,
+        @Query("keyword") keyword: String? = null,
     ): List<ApiPlaceSearchResult>
 
     @GET("api/bands/{bandId}/members")
