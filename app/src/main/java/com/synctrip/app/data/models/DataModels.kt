@@ -430,13 +430,6 @@ data class SchedulePlaceInfo(
     val thumbnailUrl: String?,
 )
 
-data class ScheduleAltResponse(
-    val scheduleAltId: Long,
-    val category: ApiPlaceCategory,
-    val priorityScore: Float,
-    val place: SchedulePlaceInfo,
-)
-
 data class ScheduleSwapRequest(
     val scheduleId: Long,
     val newPlaceId: Long,
@@ -465,8 +458,19 @@ data class ScheduleMoveRequest(
 
 data class PlanBRequest(val targetPlaceId: Long)
 
-/** POST /api/bands/{bandId}/schedule/add — altPool 장소를 특정 Day에 추가 */
-data class ScheduleAddRequest(val placeId: Long, val targetDayNumber: Int)
+/** POST /api/bands/{bandId}/schedule/add-search — 검색 결과 장소를 특정 Day에 직접 추가 */
+data class ScheduleAddFromSearchRequest(
+    val apiSource: PlaceApiSource,
+    val externalId: String,
+    val name: String,
+    val category: ApiPlaceCategory,
+    val latitude: Double,
+    val longitude: Double,
+    val address: String?,
+    val rating: Float?,
+    val thumbnailUrl: String?,
+    val targetDayNumber: Int,
+)
 
 data class PlanBResponse(
     val placeId: Long,

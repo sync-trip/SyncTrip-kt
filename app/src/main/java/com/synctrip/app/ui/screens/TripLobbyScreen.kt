@@ -56,7 +56,6 @@ enum class BandHubTab(val label: String, val icon: ImageVector) {
  * @param selectedTab        현재 선택된 탭 (상위에서 관리 — scheduleReadyEvent 연동)
  * @param onTabSelected      탭 선택 콜백
  * @param schedule           일정 데이터; null이면 로딩 중 또는 미생성
- * @param altOptions         일정 슬롯 교체 후보 목록
  * @param isScheduleLoading  일정 탭 로딩 상태
  * @param isEditing          일정 편집 락 보유 여부
  * @param settlement         정산 데이터; null이면 로딩 중
@@ -71,7 +70,6 @@ fun TripBandHubScreen(
     currentUserId: Long,
     isBandLoading: Boolean,
     schedule: ScheduleResponse?,
-    altOptions: List<ScheduleAltResponse>,
     isScheduleLoading: Boolean,
     isEditing: Boolean,
     settlement: Settlement?,
@@ -88,15 +86,12 @@ fun TripBandHubScreen(
     onGoToPlaceSearch: () -> Unit,
     onGoToVoting: () -> Unit,
     // 일정 탭 콜백
-    onLoadAlts: (scheduleId: Long) -> Unit,
     onSwapSlot: (scheduleId: Long, newPlaceId: Long) -> Unit,
     onStartEditing: () -> Unit,
     onFinishEditing: () -> Unit,
     planBResults: List<PlanBResponse>,
     isPlanBLoading: Boolean,
     onRequestPlanB: (targetPlaceId: Long) -> Unit,
-    onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
-    onAddSlot: (placeId: Long, targetDayNumber: Int) -> Unit = { _, _ -> },
     // 정산 탭 콜백
     onSettleClick: (transferId: String) -> Unit,
     onAddExpense: (itemName: String, amount: Double, currency: String, payerId: Long, memberIds: List<Long>) -> Unit,
@@ -279,7 +274,6 @@ fun TripBandHubScreen(
                 } else {
                     ScheduleContent(
                         schedule            = schedule,
-                        altOptions          = altOptions,
                         planBResults        = planBResults,
                         isPlanBLoading      = isPlanBLoading,
                         isLoading           = isScheduleLoading,
@@ -289,10 +283,7 @@ fun TripBandHubScreen(
                         onStartEditing      = onStartEditing,
                         onFinishEditing     = onFinishEditing,
                         onSwapSlot          = onSwapSlot,
-                        onLoadAlts          = onLoadAlts,
                         onRequestPlanB      = onRequestPlanB,
-                        onExecutePlanBSwap  = onExecutePlanBSwap,
-                        onAddSlot           = onAddSlot,
                         accommodationName   = band.accommodationName,
                         accommodationLat    = band.accommodationLat,
                         accommodationLng    = band.accommodationLng,

@@ -68,9 +68,6 @@ interface SyncTripApiService {
     @GET("api/bands/{bandId}/schedule")
     suspend fun getSchedule(@Path("bandId") bandId: Long): ScheduleResponse
 
-    @GET("api/bands/{bandId}/schedule/alts")
-    suspend fun getScheduleAlts(@Path("bandId") bandId: Long): List<ScheduleAltResponse>
-
     @POST("api/bands/{bandId}/schedule/swap")
     suspend fun swapScheduleSlot(
         @Path("bandId") bandId: Long,
@@ -101,11 +98,11 @@ interface SyncTripApiService {
         @Body body: PlanBRequest,
     ): List<PlanBResponse>
 
-    /** 빈 Day에 altPool 장소 추가 */
-    @POST("api/bands/{bandId}/schedule/add")
-    suspend fun addToSchedule(
+    /** 장소 검색 결과를 특정 Day에 직접 추가 */
+    @POST("api/bands/{bandId}/schedule/add-search")
+    suspend fun addSlotFromSearch(
         @Path("bandId") bandId: Long,
-        @Body body: ScheduleAddRequest,
+        @Body body: ScheduleAddFromSearchRequest,
     ): Unit
 
     // ── Vote ─────────────────────────────────────────────────────────────────

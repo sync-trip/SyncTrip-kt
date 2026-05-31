@@ -11,9 +11,6 @@ object ScheduleRepository {
     suspend fun getSchedule(bandId: Long): ScheduleResponse =
         ApiClient.api.getSchedule(bandId)
 
-    suspend fun getAlts(bandId: Long): List<ScheduleAltResponse> =
-        ApiClient.api.getScheduleAlts(bandId)
-
     suspend fun swapSlot(bandId: Long, scheduleId: Long, newPlaceId: Long) =
         ApiClient.api.swapScheduleSlot(bandId, ScheduleSwapRequest(scheduleId, newPlaceId))
 
@@ -32,6 +29,6 @@ object ScheduleRepository {
     suspend fun getPlanB(bandId: Long, targetPlaceId: Long): List<PlanBResponse> =
         ApiClient.api.getPlanB(bandId, PlanBRequest(targetPlaceId))
 
-    suspend fun addToSchedule(bandId: Long, request: ScheduleAddRequest) =
-        ApiClient.api.addToSchedule(bandId, request)
+    suspend fun addSlotFromSearch(bandId: Long, request: ScheduleAddFromSearchRequest) =
+        ApiClient.api.addSlotFromSearch(bandId, request)
 }

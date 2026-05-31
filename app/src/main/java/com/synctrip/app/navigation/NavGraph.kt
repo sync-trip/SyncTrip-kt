@@ -623,7 +623,6 @@ fun SyncTripNavGraph(
                         }
                     },
                     schedule          = scheduleUiState.schedule,
-                    altOptions        = scheduleUiState.altOptions,
                     isScheduleLoading = scheduleUiState.isLoading,
                     isEditing         = scheduleUiState.isEditing,
                     settlement        = bandUiState.settlement,
@@ -648,15 +647,12 @@ fun SyncTripNavGraph(
                     },
                     onGoToPlaceSearch = { navController.navigate("placeSearch/$bandIdLong") },
                     onGoToVoting      = { navController.navigate("blindVoting/$bandIdLong") },
-                    onLoadAlts        = { scheduleViewModel.loadAlts(bandIdLong) },
                     onSwapSlot        = { sid, pid -> scheduleViewModel.swapSlot(bandIdLong, sid, pid) },
                     onStartEditing    = { scheduleViewModel.startEditing(bandIdLong) },
                     onFinishEditing   = { scheduleViewModel.finishEditing(bandIdLong) },
                     planBResults      = scheduleUiState.planBResults,
                     isPlanBLoading    = scheduleUiState.isPlanBLoading,
                     onRequestPlanB    = { pid -> scheduleViewModel.loadPlanB(bandIdLong, pid) },
-                    onExecutePlanBSwap = { sid, pid -> scheduleViewModel.executePlanBSwap(bandIdLong, sid, pid) },
-                    onAddSlot          = { placeId, dayNum -> scheduleViewModel.addSlot(bandIdLong, placeId, dayNum) },
                     onSettleClick     = {},
                     onAddExpense      = { itemName, amount, currency, payerId, memberIds ->
                         val now = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
@@ -1057,7 +1053,6 @@ fun SyncTripNavGraph(
                 ScheduleScreen(
                     destination     = destination,
                     schedule        = scheduleState.schedule,
-                    altOptions      = scheduleState.altOptions,
                     isLoading       = scheduleState.isLoading,
                     isEditing       = scheduleState.isEditing,
                     canEdit         = scheduleState.schedule?.canEdit ?: false,
@@ -1065,11 +1060,9 @@ fun SyncTripNavGraph(
                     onStartEditing      = { scheduleViewModel.startEditing(bandId) },
                     onFinishEditing     = { scheduleViewModel.finishEditing(bandId) },
                     onSwapSlot          = { sid, pid -> scheduleViewModel.swapSlot(bandId, sid, pid) },
-                    onLoadAlts          = { scheduleViewModel.loadAlts(bandId) },
                     planBResults        = scheduleState.planBResults,
                     isPlanBLoading      = scheduleState.isPlanBLoading,
                     onRequestPlanB      = { pid -> scheduleViewModel.loadPlanB(bandId, pid) },
-                    onExecutePlanBSwap  = { sid, pid -> scheduleViewModel.executePlanBSwap(bandId, sid, pid) },
                     onBackClick         = { navController.popBackStack() },
                     onShareClick        = {},
                     onEditClick         = { navController.navigate("scheduleEdit/$bandId") },
@@ -1092,10 +1085,80 @@ fun SyncTripNavGraph(
             LaunchedEffect(bandId) { bandViewModel.loadBands() }
             val band = bandState.bands.find { it.id == bandId }
             ScheduleEditScreen(
-                bandId     = bandId,
-                isOverseas = band?.isOverseas ?: false,
-                viewModel  = scheduleViewModel,
-                onBack     = { navController.popBackStack() },
+                bandId                = bandId,
+                isOverseas            = band?.isOverseas ?: false,
+                viewModel             = scheduleViewModel,
+                // finishEditing은 ScheduleEditScreen.DisposableEffect.onDispose에서 처리
+                // — back arrow, 시스템 제스처 뒤로가기 모두 커버
+                onBack                = { navController.popBackStack() },
+                onNavigateToAddPlace  = { dayNumber ->
+                    navController.navigate("scheduleAddPlace/$bandId/$dayNumber")
+                },
+            )
+        }
+
+        // 일정 편집 중 장소 검색 후 추가 — Day 헤더 "+" 버튼에서 진입
+        composable("scheduleAddPlace/{bandId}/{dayNumber}") { backStackEntry ->
+            val bandId    = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
+            val dayNumber = backStackEntry.arguments?.getString("dayNumber")?.toIntOrNull() ?: return@composable
+            val bandViewModel: BandViewModel = viewModel()
+            val scheduleViewModel: ScheduleViewModel = viewModel(
+                viewModelStoreOwner = navController.previousBackStackEntry ?: backStackEntry
+            )
+            val uiState          by bandViewModel.uiState.collectAsState()
+            val scheduleUiState  by scheduleViewModel.uiState.collectAsState()
+            val snackbarState = remember { SnackbarHostState() }
+            var query            by remember { mutableStateOf("") }
+            var selectedCategory by remember { mutableStateOf(PlaceCategory.ALL) }
+
+            LaunchedEffect(uiState.error) {
+                uiState.error?.let { err ->
+                    snackbarState.showSnackbar(err)
+                    bandViewModel.clearError()
+                }
+            }
+            // 장소 추가 실패 시 에러 표시
+            LaunchedEffect(scheduleUiState.error) {
+                scheduleUiState.error?.let { err ->
+                    snackbarState.showSnackbar(err)
+                    scheduleViewModel.clearError()
+                }
+            }
+
+            PlaceSearchScreen(
+                query            = query,
+                onQueryChange    = { query = it },
+                selectedCategory = selectedCategory,
+                onCategoryChange = { cat ->
+                    selectedCategory = cat
+                    if (query.isNotBlank()) {
+                        bandViewModel.searchPlaces(
+                            bandId   = bandId,
+                            keyword  = query,
+                            category = if (cat == PlaceCategory.ALL) null else cat.name,
+                        )
+                    }
+                },
+                onSearch = {
+                    if (query.isNotBlank()) {
+                        bandViewModel.searchPlaces(
+                            bandId   = bandId,
+                            keyword  = query,
+                            category = if (selectedCategory == PlaceCategory.ALL) null else selectedCategory.name,
+                        )
+                    }
+                },
+                places            = uiState.searchResults,
+                isLoading         = uiState.isSearchLoading,
+                onPlaceClick      = {},
+                onCartToggle      = {},
+                onBackClick       = { navController.popBackStack() },
+                snackbarHostState = snackbarState,
+                onAddToSchedule   = { place ->
+                    scheduleViewModel.addSlotFromSearch(bandId, dayNumber, place) {
+                        navController.popBackStack()
+                    }
+                },
             )
         }
 

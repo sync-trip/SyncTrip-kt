@@ -12,16 +12,15 @@ import kotlinx.coroutines.launch
 
 /** 일정 화면 UI 상태 */
 data class ScheduleUiState(
-    val schedule: ScheduleResponse?          = null,
-    val altOptions: List<ScheduleAltResponse> = emptyList(),
-    val destination: String                  = "",
-    val isLoading: Boolean                   = false,
-    val isEditing: Boolean                   = false,
-    /** Plan B 추천 결과 목록 */
-    val planBResults: List<PlanBResponse>    = emptyList(),
-    /** Plan B 추천 로딩 중 여부 */
-    val isPlanBLoading: Boolean              = false,
-    val error: String?                       = null,
+    val schedule: ScheduleResponse?       = null,
+    val destination: String               = "",
+    val isLoading: Boolean                = false,
+    val isEditing: Boolean                = false,
+    /** 장소 교체 대안 추천 결과 목록 (POST /schedule/plan-b) */
+    val planBResults: List<PlanBResponse> = emptyList(),
+    /** 장소 교체 추천 API 로딩 중 여부 */
+    val isPlanBLoading: Boolean           = false,
+    val error: String?                    = null,
 )
 
 /** 일정 화면 ViewModel — ScheduleRepository 위임, 편집 락 포함 */
@@ -44,23 +43,11 @@ class ScheduleViewModel : ViewModel() {
         }
     }
 
-    /** GET /api/bands/{bandId}/schedule/alts — 슬롯 선택 시 대체 후보 로드 */
-    fun loadAlts(bandId: Long) {
-        viewModelScope.launch {
-            runCatching { ScheduleRepository.getAlts(bandId) }
-                .onSuccess { alts -> _uiState.update { it.copy(altOptions = alts) } }
-                .onFailure { /* 대체 후보 오류는 UI에서 빈 목록으로 처리 */ }
-        }
-    }
-
     /** POST /api/bands/{bandId}/schedule/swap — 장소 교체 후 일정 새로고침 */
     fun swapSlot(bandId: Long, scheduleId: Long, newPlaceId: Long) {
         viewModelScope.launch {
             runCatching { ScheduleRepository.swapSlot(bandId, scheduleId, newPlaceId) }
-                .onSuccess {
-                    _uiState.update { it.copy(altOptions = emptyList()) }
-                    loadSchedule(bandId)
-                }
+                .onSuccess { loadSchedule(bandId) }
                 .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
         }
     }
@@ -132,27 +119,6 @@ class ScheduleViewModel : ViewModel() {
     }
 
     /**
-     * Plan B 교체 — 편집 락 획득 → 교체 → 락 반환을 순서대로 원자적으로 실행.
-     * UI에서 별도의 편집 모드 진입 없이 호출 가능.
-     */
-    fun executePlanBSwap(bandId: Long, scheduleId: Long, newPlaceId: Long) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, planBResults = emptyList()) }
-            runCatching {
-                ScheduleRepository.startEditing(bandId)
-                ScheduleRepository.swapSlot(bandId, scheduleId, newPlaceId)
-                ScheduleRepository.finishEditing(bandId)
-            }
-            .onSuccess { loadSchedule(bandId) }
-            .onFailure { e ->
-                // 교체 실패 시에도 락 반환 시도
-                runCatching { ScheduleRepository.finishEditing(bandId) }
-                _uiState.update { it.copy(isLoading = false, error = e.toUserMessage()) }
-            }
-        }
-    }
-
-    /**
      * 저장 버튼 — 크로스 Day 이동 후 각 Day 순서 확정.
      * 알림은 마지막 API 호출 한 번에만 발송 (notify=true), 나머지는 notify=false.
      * 성공 시 onSuccess 콜백 호출 (화면 닫기 등).
@@ -197,14 +163,46 @@ class ScheduleViewModel : ViewModel() {
         }
     }
 
-    /** 빈 Day에 altPool 장소 추가 (POST /schedule/add) */
-    fun addSlot(bandId: Long, placeId: Long, targetDayNumber: Int) {
+    /**
+     * 장소 검색 결과를 특정 Day에 추가한다.
+     * ScheduleEditScreen의 편집 락(isNavigatingToChild 플래그)이 유지된 채로 호출되므로
+     * startEditing/finishEditing 없이 API만 호출한다.
+     * 성공 시 onSuccess 콜백 호출 (화면 닫기 등).
+     */
+    fun addSlotFromSearch(
+        bandId: Long,
+        dayNumber: Int,
+        place: ApiPlaceSearchResult,
+        onSuccess: () -> Unit = {},
+    ) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
             runCatching {
-                ScheduleRepository.addToSchedule(bandId, com.synctrip.app.data.models.ScheduleAddRequest(placeId, targetDayNumber))
+                ScheduleRepository.addSlotFromSearch(
+                    bandId,
+                    ScheduleAddFromSearchRequest(
+                        apiSource       = place.apiSource,
+                        externalId      = place.externalId,
+                        name            = place.name,
+                        category        = place.category,
+                        latitude        = place.latitude,
+                        longitude       = place.longitude,
+                        address         = place.address,
+                        rating          = place.rating,
+                        thumbnailUrl    = place.thumbnailUrl,
+                        targetDayNumber = dayNumber,
+                    )
+                )
             }
-            .onSuccess { loadSchedule(bandId) }
-            .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
+            .onSuccess {
+                _uiState.update { it.copy(isLoading = false) }
+                loadSchedule(bandId)
+                onSuccess()
+            }
+            .onFailure { e ->
+                // 락은 ScheduleEditScreen이 유지 중 — 여기서 finishEditing 하면 안 됨
+                _uiState.update { it.copy(isLoading = false, error = e.toUserMessage()) }
+            }
         }
     }
 
