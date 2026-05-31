@@ -303,6 +303,10 @@ data class BandResponse(
     val destinationLat: Double = 37.5665,   // 기본값: 서울
     /** 여행지 경도 */
     val destinationLng: Double = 126.9780,
+    /** 숙소 위도 — 일정 지도 핀 표시용. null = 숙소 미설정 */
+    val accommodationLat: Double? = null,
+    /** 숙소 경도 */
+    val accommodationLng: Double? = null,
 )
 
 data class BandMemberResponse(
@@ -378,6 +382,12 @@ data class ScheduleResponse(
     val startDate: String,
     val endDate: String,
     val days: List<ScheduleDayResponse>,
+    /** 현재 편집 락을 보유한 멤버 ID (없으면 null) */
+    val editingUserId: Long? = null,
+    /** 편집 중인 멤버 이름 — "○○님이 편집 중" 표시용 */
+    val editingUserName: String? = null,
+    /** 편집 가능 여부 (DONE 아님 + 후합류 아님 + 락 없거나 본인 보유) */
+    val canEdit: Boolean = true,
 )
 
 data class ScheduleDayResponse(
@@ -393,6 +403,19 @@ data class ScheduleSlotResponse(
     val durationMinutes: Int?,
     val travelTimeFromPrev: Int?,
     val place: SchedulePlaceInfo,
+    // ── 알고리즘 경고 플래그 (배지 표시용) ──────────────────────────────
+    // 백엔드 record 컴포넌트 네이밍(isXxx / xxx) 불확실성 대비 alternate 병기.
+    // 키가 없으면 기본값 false → 안전.
+    @com.google.gson.annotations.SerializedName(value = "isOutlierCandidate", alternate = ["outlierCandidate"])
+    val isOutlierCandidate: Boolean = false,
+    @com.google.gson.annotations.SerializedName(value = "openingHoursViolation", alternate = ["isOpeningHoursViolation"])
+    val openingHoursViolation: Boolean = false,
+    @com.google.gson.annotations.SerializedName(value = "mealWindowViolation", alternate = ["isMealWindowViolation"])
+    val mealWindowViolation: Boolean = false,
+    @com.google.gson.annotations.SerializedName(value = "lateSchedule", alternate = ["isLateSchedule"])
+    val lateSchedule: Boolean = false,
+    @com.google.gson.annotations.SerializedName(value = "openingHoursUnverified", alternate = ["isOpeningHoursUnverified"])
+    val openingHoursUnverified: Boolean = false,
 )
 
 data class SchedulePlaceInfo(
@@ -417,6 +440,19 @@ data class ScheduleAltResponse(
 data class ScheduleSwapRequest(
     val scheduleId: Long,
     val newPlaceId: Long,
+)
+
+/** Drag & Drop 순서 변경 요청 — dayNumber: 재정렬할 일차, orderedScheduleIds: 새 순서의 id 목록 */
+data class ScheduleReorderRequest(
+    val dayNumber: Int,
+    val orderedScheduleIds: List<Long>,
+)
+
+/** 크로스 Day 슬롯 이동 요청 — targetSlotOrder: 삽입 위치(1-based) */
+data class ScheduleMoveRequest(
+    val scheduleId: Long,
+    val targetDayNumber: Int,
+    val targetSlotOrder: Int,
 )
 
 data class PlanBRequest(val targetPlaceId: Long)

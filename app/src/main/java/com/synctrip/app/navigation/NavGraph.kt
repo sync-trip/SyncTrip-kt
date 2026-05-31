@@ -31,6 +31,7 @@ import com.synctrip.app.network.ApiClient
 import com.synctrip.app.ui.screens.*
 import com.synctrip.app.ui.viewmodel.AlbumViewModel
 import com.synctrip.app.ui.viewmodel.AuthUiState
+import com.synctrip.app.util.toUserMessage
 import com.synctrip.app.ui.viewmodel.AuthViewModel
 import com.synctrip.app.ui.viewmodel.BandViewModel
 import com.synctrip.app.ui.viewmodel.NotificationViewModel
@@ -98,7 +99,7 @@ fun SyncTripNavGraph(
                                 navController.navigate("tripLobby/${band.id}")
                             }
                             .onFailure { e ->
-                                joinError = e.message ?: "참여 실패"
+                                joinError = e.toUserMessage()
                             }
                     }
                 }) { Text("참여하기") }
@@ -668,6 +669,7 @@ fun SyncTripNavGraph(
                         val destName = java.net.URLEncoder.encode(dest?.destination ?: "", "UTF-8")
                         navController.navigate("accommodationSearch/$bandIdLong/$lat/$lng/$destName")
                     },
+                    onGoToScheduleEdit = { navController.navigate("scheduleEdit/$bandIdLong") },
                     onDeleteBand      = {
                         bandViewModel.deleteBand(bandIdLong) {
                             navController.navigate("home") {
@@ -1033,7 +1035,7 @@ fun SyncTripNavGraph(
                     altOptions      = scheduleState.altOptions,
                     isLoading       = scheduleState.isLoading,
                     isEditing       = scheduleState.isEditing,
-                    canEdit         = false,
+                    canEdit         = scheduleState.schedule?.canEdit ?: false,
                     isOverseas      = isOverseas,
                     onStartEditing      = { scheduleViewModel.startEditing(bandId) },
                     onFinishEditing     = { scheduleViewModel.finishEditing(bandId) },
@@ -1043,10 +1045,30 @@ fun SyncTripNavGraph(
                     isPlanBLoading      = scheduleState.isPlanBLoading,
                     onRequestPlanB      = { pid -> scheduleViewModel.loadPlanB(bandId, pid) },
                     onExecutePlanBSwap  = { sid, pid -> scheduleViewModel.executePlanBSwap(bandId, sid, pid) },
-                    onBackClick     = { navController.popBackStack() },
-                    onShareClick    = {},
+                    onBackClick         = { navController.popBackStack() },
+                    onShareClick        = {},
+                    onEditClick         = { navController.navigate("scheduleEdit/$bandId") },
+                    accommodationName   = band?.accommodationName,
+                    accommodationLat    = band?.accommodationLat,
+                    accommodationLng    = band?.accommodationLng,
                 )
             }
+        }
+
+        // 일정 편집 화면 — 드래그 순서 변경 + swap + 편집 락 관리
+        composable("scheduleEdit/{bandId}") { backStackEntry ->
+            val bandId = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
+            val scheduleViewModel: ScheduleViewModel = viewModel()
+            val bandViewModel: BandViewModel = viewModel()
+            val bandState by bandViewModel.uiState.collectAsState()
+            LaunchedEffect(bandId) { bandViewModel.loadBands() }
+            val band = bandState.bands.find { it.id == bandId }
+            ScheduleEditScreen(
+                bandId     = bandId,
+                isOverseas = band?.isOverseas ?: false,
+                viewModel  = scheduleViewModel,
+                onBack     = { navController.popBackStack() },
+            )
         }
 
         // 정산 화면 — DONE 상태 밴드에서 진입

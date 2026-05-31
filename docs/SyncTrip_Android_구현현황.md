@@ -111,8 +111,10 @@
 | USR-015 | 일자별 동선 일정 UI | ✅ 구현 | `ui/screens/ScheduleScreen.kt` | 타임라인 + 날짜 탭. `TripBandHubScreen` SCHEDULE 탭에 `ScheduleContent`로 임베드 |
 | USR-015 | 일정 조회 API | ✅ 구현 | `ScheduleViewModel` + `ScheduleRepository.getSchedule()` | hub SCHEDULE 탭 진입 시 자동 로드. `startTime: String?` nullable 처리(자유 시간 슬롯) |
 | USR-015 | 대체 장소(alts) 카테고리 필터 | ✅ 구현 | `ScheduleScreen.kt` `SlotSwapBottomSheet` | `altOptions`를 `swapSlot.place.category`로 필터링하여 동일 카테고리만 표시 |
-| USR-016 | 이상치 배지 표시 | ❌ 미구현 | — | 배지 UI 없음 |
-| USR-017 | Drag & Drop 순서 변경 | ❌ 미구현 | — | 구 앱도 미구현 |
+| USR-016 | 이상치/경고 플래그 배지 표시 | ✅ 구현 (2026-05-30) | `ScheduleScreen.kt` `SlotWarningBadges` | `ScheduleSlotResponse`에 플래그 5종(isOutlierCandidate/openingHoursViolation/mealWindowViolation/lateSchedule/openingHoursUnverified) 추가. `SlotWarningBadges` 컴포넌트 → 슬롯 카드에 ⚠ 영업시간/🌙 심야/🍽 식사시간/📍 동선이탈/❓ 영업미확인 배지 표시. `@SerializedName(alternate=[...])` 으로 백엔드 isXxx 변형 대응 |
+| ➕ | 편집자 게이팅 (canEdit / 편집 오버레이) | ✅ 구현 (2026-05-30) | `ScheduleScreen.kt` `EditingByOtherBanner` + `DataModels.kt` `ScheduleResponse` | `ScheduleResponse`에 `editingUserId/editingUserName/canEdit` 추가. 타인 편집 락 보유 시 "○○님이 편집 중입니다" 배너 표시(ScheduleScreen·ScheduleContent 양쪽). 편집 버튼을 백엔드 `canEdit` 값으로 게이팅(DONE/후합류/락 시 자동 숨김) |
+| USR-017 | Drag & Drop 순서 변경 | ✅ 구현 (2026-05-31) | `ScheduleEditScreen`(`ScheduleScreen.kt`) | `sh.calvin.reorderable` 라이브러리. 전용 편집 화면 내 `LazyColumn` + `ReorderableItem`. 드롭 완료 시 1회 `PATCH /schedule/reorder` 호출. 실패 시 서버 순서로 자동 롤백 |
+| ➕ | 크로스 Day 드래그 이동 | ✅ 구현 (2026-05-31) | `ScheduleEditScreen`(`ScheduleScreen.kt`) + `ScheduleViewModel.moveSlot()` | `ScheduleEditScreen` 전면 개편: Day 탭 제거, 전체 Day 플랫 리스트(`FlatItem.DayHeader/SlotItem`). Day 헤더 넘는 드래그 허용. 드래그 완료 후 같은 Day면 `reorderSlots`, 다른 Day면 `POST /schedule/move` 호출. `ScheduleMoveRequest` DataModel 추가. 실패 시 서버 상태로 자동 롤백 |
 | USR-018 | Plan B 대안 팝업 | ✅ 구현 | 2026-05-26 | `ScheduleScreen.kt` `PlanBBottomSheet` — 각 슬롯 카드 아래 "Plan B 추천받기" 버튼, 선택 시 락 획득·교체·락 반환 원자 처리 |
 | USR-031 | 실시간 Plan B 추천 | ✅ 구현 | 2026-05-26 | `ScheduleViewModel.loadPlanB()` → `POST /schedule/plan-b` → `PlanBBottomSheet` 결과 표시 (최대 7개, 거리 표시) |
 
@@ -260,4 +262,17 @@
 
 | 2026-05-27 | **숙소 입력 (USR-003)** — `CreateTripScreen`을 3페이지 플로우로 확장(여행지→여행정보→숙소선택). 3단계 `AccommodationSearchPage` 신규: 상단 Google Map(선택 숙소 Hotel 아이콘 마커, 미선택 시 목적지 중심) + 검색창(`ImeAction.Search`) + 결과 목록(`AccommodationResultCard`). 우상단 "건너뛰기" 회색 `TextButton`. 숙소 선택 시 `ApiPlaceSearchResult.latitude/longitude`를 `BandCreateRequest.accommodationLat/Lng`에 전달, 미선택·건너뛰기 시 null(목적지 위치 기본). 로비 밴드 탭 `AccommodationSection` 카드 + 방장 `AlertDialog` 수정. `PATCH /api/bands/{bandId}/accommodation` + `GET /api/places/search` 엔드포인트 추가(후자 백엔드 구현 필요). `AccommodationUpdateRequest` DataModel, `BandViewModel.updateAccommodation()` 추가 |
 
-**마지막 수정:** 2026-05-27 (숙소 입력 구현) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+| 2026-05-31 | **B-3 숙소 좌표 + 지도 핀** — `BandResponse`에 `accommodationLat/Lng` 추가. `ScheduleDayMapView`에 amber "숙" 호텔 마커 추가(탭 시 숙소명 AlertDialog). `AccommodationSection`에 "지도에서 보기" TextButton 추가(geo: URI 기기 지도 앱). Spring `BandResponse.java` + `toBandResponse()`에 숙소 좌표 포함. `ScheduleContent`/`ScheduleScreen`/`NavGraph`/`TripLobbyScreen` 파라미터 전파 |
+| 2026-05-31 | **전용 편집 화면 (A-3/B-4)** — `ScheduleEditScreen` 신규(`ScheduleScreen.kt` 하단). 진입 시 편집 락 획득(`startEditing`), `DisposableEffect`로 이탈 시 자동 해제. 락 실패 시 "○○님이 편집 중" AlertDialog + 자동 복귀. 드래그앤드랍 슬롯 순서 변경(`sh.calvin.reorderable`, 드롭 시 1회 API 호출). swap/Plan B 선택 시 확인 AlertDialog(바텀시트 유지, 취소 가능). 락 만료 에러 스낵바 처리. NavGraph `scheduleEdit/{bandId}` 라우트 추가. `ScheduleReorderRequest` DataModel + `reorderSchedule` API + `reorderSlots` ViewModel 함수 신규 |
+| 2026-05-30 | **경고 플래그 배지 (USR-016/A-1)** — `DataModels.kt` `ScheduleSlotResponse`에 플래그 5종 추가(`isOutlierCandidate`/`openingHoursViolation`/`mealWindowViolation`/`lateSchedule`/`openingHoursUnverified`). `@SerializedName(alternate=[...])` 으로 백엔드 isXxx 네이밍 변형 대응. `ScheduleScreen.kt` `SlotWarningBadges` 컴포넌트 신규 → 슬롯 카드에 ⚠ 영업시간위반 / 🌙 심야 / 🍽 식사시간 / 📍 동선이탈 / ❓ 영업미확인 배지 표시. ScheduleScreen·ScheduleContent 공용 `ScheduleSlotCard` 경유로 양쪽 화면 자동 적용 |
+| 2026-05-30 | **편집자 게이팅 (A-2)** — `DataModels.kt` `ScheduleResponse`에 `editingUserId: Long?`·`editingUserName: String?`·`canEdit: Boolean` 추가. `ScheduleScreen.kt` `EditingByOtherBanner` 컴포넌트 신규 → 타인이 편집 락 보유 시 "○○님이 편집 중입니다" 배너 표시(ScheduleScreen·ScheduleContent 양쪽). 편집 버튼을 백엔드 `canEdit` 값으로 게이팅. `NavGraph.kt` `schedule/{bandId}` 라우트 `canEdit` 배선을 백엔드 응답 값으로 교체 |
+
+| 2026-05-31 | **HTTP 에러 메시지 사용자 친화적 처리 (➕)** — `util/ErrorUtils.kt` 신규. `Throwable.toUserMessage()` 확장 함수: `IOException`→네트워크 안내, `HttpException 5xx`→서버 오류 안내, `401/403` 등 상태별 한국어 메시지. `BandViewModel`, `ScheduleViewModel`, `VoteViewModel`, `AlbumViewModel`, `NotificationViewModel`, `AuthViewModel`, `NavGraph.kt` 전체 `.message` → `.toUserMessage()` 교체 |
+| 2026-05-31 | **일정 편집 버튼 연결 (➕)** — `TripBandHubScreen` 일정 탭에서 "방 삭제" 옆 EditNote 아이콘 버튼 추가. 클릭 시 `scheduleEdit/{bandId}` 화면으로 이동. `TripBandHubScreen.onGoToScheduleEdit` 파라미터 추가. NavGraph 연결 |
+| 2026-05-31 | **영업시간 미확인 뱃지 제거 (➕)** — `ScheduleScreen.kt` `SlotWarningBadges`에서 "❓ 영업시간 미확인" 항목 제거. 지도 API가 영업시간을 미제공하는 경우가 많아 노이즈로 판단 |
+| 2026-05-31 | **타임라인 숙소 출발 행 추가 (➕)** — `SlotTimeline`에 `accommodationName` 파라미터 추가. 숙소가 설정된 경우 타임라인 최상단에 `AccommodationDepartureRow`(호텔 아이콘 + 숙소명 + "09:00 출발") 표시. 이후 첫 슬롯까지 `TravelTimeConnector`로 연결. 이동시간 원인 시각화 |
+| 2026-05-31 | **TravelTimeConnector 이동시간 텍스트 표시 (➕)** — `TravelTimeConnector`의 기존 미사용 `minutes` 파라미터를 실제 표시에 활용. 연결선 옆에 "Xmin" 텍스트 추가. 슬롯 간 이동시간 가시화 |
+| 2026-05-31 | **지도 마커 Day 전환 버그 수정 (➕)** — `ScheduleDayMapView` `forEachIndexed` 내 `MarkerComposable`에 `key(slot.scheduleId)` 래퍼 추가. 기존 코드는 Day 전환 시 `rememberMarkerState`가 위치 기반으로 재사용돼 이전 Day 좌표가 유지되는 버그 발생. `key()`로 슬롯 ID 변경 시 강제 재생성 |
+| 2026-05-31 | **크로스 Day 드래그 이동 구현 (➕)** — `ScheduleEditScreen` 전면 개편: Day 탭 → 전체 Day 플랫 리스트(`FlatItem` sealed class). `EditDayHeaderRow` 신규(Day 헤더, 비드래그). 드래그 완료 후 `movedIndex` 앞 `DayHeader`로 목적지 Day 판별. 같은 Day: `reorderSlots`, 다른 Day: `moveSlot(POST /schedule/move)`. `ScheduleMoveRequest` DataModel + `SyncTripApiService.moveSchedule` + `ScheduleRepository.moveSlot` + `ScheduleViewModel.moveSlot()` 추가 |
+
+**마지막 수정:** 2026-05-31 (크로스 Day 드래그·타임라인 숙소 행·에러 메시지·지도 마커 버그 수정) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

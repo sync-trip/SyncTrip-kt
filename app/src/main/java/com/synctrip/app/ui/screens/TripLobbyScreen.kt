@@ -1,5 +1,7 @@
 package com.synctrip.app.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,6 +21,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -112,6 +115,8 @@ fun TripBandHubScreen(
     onDeleteAlbumPhoto: (photoId: Long) -> Unit,
     // 숙소 수정 화면으로 이동 (방장 전용, PLANNING/TRAVELLING/DONE)
     onEditAccommodationClick: () -> Unit,
+    // 일정 편집 화면으로 이동
+    onGoToScheduleEdit: () -> Unit,
     // 방 삭제 (방장 전용)
     onDeleteBand: () -> Unit,
     isRefreshing: Boolean = false,
@@ -208,6 +213,7 @@ fun TripBandHubScreen(
                 onBackClick   = onBackClick,
                 onStartEditing  = onStartEditing,
                 onFinishEditing = onFinishEditing,
+                onGoToScheduleEdit = onGoToScheduleEdit,
                 onDeleteBand    = { showDeleteDialog = true },
             )
         },
@@ -284,6 +290,9 @@ fun TripBandHubScreen(
                         onLoadAlts          = onLoadAlts,
                         onRequestPlanB      = onRequestPlanB,
                         onExecutePlanBSwap  = onExecutePlanBSwap,
+                        accommodationName   = band.accommodationName,
+                        accommodationLat    = band.accommodationLat,
+                        accommodationLng    = band.accommodationLng,
                         isRefreshing        = isRefreshing,
                         onRefresh           = onRefresh,
                         modifier            = Modifier.fillMaxSize().padding(innerPadding),
@@ -343,6 +352,7 @@ private fun HubTopBar(
     onBackClick: () -> Unit,
     onStartEditing: () -> Unit,
     onFinishEditing: () -> Unit,
+    onGoToScheduleEdit: () -> Unit,
     onDeleteBand: () -> Unit,
 ) {
     TopAppBar(
@@ -376,6 +386,12 @@ private fun HubTopBar(
                     IconButton(onClick = onStartEditing) {
                         Icon(Icons.Outlined.EditNote, contentDescription = "일정 편집")
                     }
+                }
+            }
+            // 일정 탭: 일정 편집 화면 이동 버튼
+            if (selectedTab == BandHubTab.SCHEDULE) {
+                IconButton(onClick = onGoToScheduleEdit) {
+                    Icon(Icons.Outlined.EditNote, contentDescription = "일정 편집")
                 }
             }
             // 방장만: 방 삭제 버튼 (임시)
@@ -492,6 +508,8 @@ private fun BandHubTabContent(
                 if (band.status !in listOf(BandStatus.VOTING, BandStatus.GENERATING)) {
                     AccommodationSection(
                         accommodationName = band.accommodationName,
+                        accommodationLat  = band.accommodationLat,
+                        accommodationLng  = band.accommodationLng,
                         canEdit           = canEditAccommodation,
                         onEditClick       = onEditAccommodationClick,
                     )
@@ -975,6 +993,8 @@ private fun InfoChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 @Composable
 private fun AccommodationSection(
     accommodationName: String?,
+    accommodationLat: Double? = null,
+    accommodationLng: Double? = null,
     canEdit: Boolean,
     onEditClick: () -> Unit,
 ) {
@@ -1006,6 +1026,7 @@ private fun AccommodationSection(
                     }
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    val context = LocalContext.current
                     Text(
                         "숙소",
                         style = MaterialTheme.typography.labelSmall.copy(
@@ -1021,6 +1042,25 @@ private fun AccommodationSection(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    // 좌표 있을 때만 지도 앱 연결 버튼 표시
+                    if (accommodationLat != null && accommodationLng != null) {
+                        TextButton(
+                            onClick = {
+                                val uri = android.net.Uri.parse(
+                                    "geo:$accommodationLat,$accommodationLng?q=${android.net.Uri.encode(accommodationName)}"
+                                )
+                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
+                            },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                        ) {
+                            Text(
+                                "지도에서 보기",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = MaterialTheme.colorScheme.primary,
+                                ),
+                            )
+                        }
+                    }
                 }
                 if (canEdit) {
                     IconButton(onClick = onEditClick) {

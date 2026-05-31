@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.synctrip.app.data.models.*
 import com.synctrip.app.data.repository.VoteRepository
+import com.synctrip.app.util.toUserMessage
 import com.synctrip.app.network.VoteEvent
 import com.synctrip.app.network.VoteStompClient
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,7 +81,7 @@ class VoteViewModel : ViewModel() {
                     }
                     if (autoLike.isNotEmpty()) refreshStatus()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.toUserMessage()) }
         }
     }
 
@@ -98,7 +99,7 @@ class VoteViewModel : ViewModel() {
                     // 모두 투표 완료 시 상태 조회
                     if (remaining.isEmpty()) refreshStatus()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.toUserMessage()) }
         }
     }
 
@@ -118,7 +119,7 @@ class VoteViewModel : ViewModel() {
                     )
                     if (remaining.isEmpty()) refreshStatus()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.toUserMessage()) }
         }
     }
 
@@ -147,7 +148,7 @@ class VoteViewModel : ViewModel() {
             _uiState.update { it.copy(isLoading = true, error = null) }
             runCatching { VoteRepository.getVoteResults(bandId) }
                 .onSuccess { results -> _uiState.update { it.copy(voteResults = results, isLoading = false) } }
-                .onFailure { err -> _uiState.update { it.copy(isLoading = false, error = err.message) } }
+                .onFailure { err -> _uiState.update { it.copy(isLoading = false, error = err.toUserMessage()) } }
         }
     }
 

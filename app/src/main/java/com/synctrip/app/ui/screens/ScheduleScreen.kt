@@ -7,9 +7,17 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.draw.shadow
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.synctrip.app.ui.viewmodel.ScheduleViewModel
+import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -94,6 +102,10 @@ fun ScheduleScreen(
     onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
     onBackClick: () -> Unit,
     onShareClick: () -> Unit,
+    onEditClick: () -> Unit = {},
+    accommodationName: String? = null,
+    accommodationLat: Double? = null,
+    accommodationLng: Double? = null,
     modifier: Modifier = Modifier,
 ) {
     var selectedDayIndex by remember { mutableIntStateOf(0) }
@@ -120,7 +132,8 @@ fun ScheduleScreen(
                     }
                 },
                 actions = {
-                    if (canEdit) {
+                    // 백엔드 canEdit(DONE/후합류/편집 락)도 함께 반영 — 서버가 막으면 버튼 숨김
+                    if (canEdit && schedule?.canEdit != false) {
                         if (isEditing) {
                             TextButton(onClick = onFinishEditing) {
                                 Text(
@@ -132,7 +145,7 @@ fun ScheduleScreen(
                                 )
                             }
                         } else {
-                            IconButton(onClick = onStartEditing) {
+                            IconButton(onClick = onEditClick) {
                                 Icon(Icons.Outlined.EditNote, contentDescription = "일정 편집")
                             }
                         }
@@ -165,6 +178,8 @@ fun ScheduleScreen(
 
             if (isEditing) {
                 EditingBanner()
+            } else if (schedule?.editingUserId != null) {
+                EditingByOtherBanner(schedule?.editingUserName ?: "다른 사용자")
             }
 
             when {
@@ -176,29 +191,33 @@ fun ScheduleScreen(
                     // 지도(240dp 고정) + 타임라인 분할 화면
                     Column(modifier = Modifier.fillMaxSize()) {
                         ScheduleDayMapView(
-                            slots      = currentSlots,
-                            isOverseas = isOverseas,
-                            modifier   = Modifier
+                            slots             = currentSlots,
+                            isOverseas        = isOverseas,
+                            accommodationName = accommodationName,
+                            accommodationLat  = accommodationLat,
+                            accommodationLng  = accommodationLng,
+                            modifier          = Modifier
                                 .fillMaxWidth()
                                 .height(240.dp),
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         SlotTimeline(
-                            slots          = currentSlots,
-                            isEditing      = isEditing,
-                            isPlanBLoading = isPlanBLoading,
-                            onSlotClick    = { slot -> detailSlot = slot },
-                            onSwapClick    = { slot ->
+                            slots             = currentSlots,
+                            isEditing         = isEditing,
+                            isPlanBLoading    = isPlanBLoading,
+                            accommodationName = accommodationName,
+                            onSlotClick       = { slot -> detailSlot = slot },
+                            onSwapClick       = { slot ->
                                 detailSlot = slot
                                 onLoadAlts(slot.scheduleId)
                                 showSwapSheet = true
                             },
-                            onPlanBClick   = { slot ->
+                            onPlanBClick      = { slot ->
                                 planBTargetSlot = slot
                                 showPlanBSheet  = true
                                 onRequestPlanB(slot.place.placeId)
                             },
-                            modifier       = Modifier.weight(1f),
+                            modifier          = Modifier.weight(1f),
                         )
                     }
                 }
@@ -345,6 +364,72 @@ private fun EditingBanner() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Editing-by-other Banner  (다른 멤버가 편집 락 보유 중일 때)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun EditingByOtherBanner(editorName: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.Lock,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "${editorName}님이 편집 중입니다 — 편집이 끝나면 수정할 수 있어요",
+                style = MaterialTheme.typography.labelMedium.copy(
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                ),
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slot Warning Badges  (알고리즘 경고 플래그 5종 표시)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SlotWarningBadges(slot: ScheduleSlotResponse, modifier: Modifier = Modifier) {
+    // (라벨, 색) 쌍 — 켜진 플래그만 배지로 노출
+    val warnings = buildList {
+        if (slot.openingHoursViolation)  add("⚠ 영업시간 위반" to MaterialTheme.colorScheme.error)
+        if (slot.lateSchedule)           add("🌙 심야 일정" to MaterialTheme.colorScheme.tertiary)
+        if (slot.mealWindowViolation)    add("🍽 식사시간 어긋남" to MaterialTheme.colorScheme.secondary)
+        if (slot.isOutlierCandidate)     add("📍 동선 이탈" to MaterialTheme.colorScheme.outline)
+    }
+    if (warnings.isEmpty()) return
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        warnings.forEach { (label, color) -> WarningBadge(label, color) }
+    }
+}
+
+@Composable
+private fun WarningBadge(label: String, color: Color) {
+    Surface(shape = RoundedCornerShape(999.dp), color = color.copy(alpha = 0.12f)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(color = color),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Slot Timeline
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -356,6 +441,7 @@ private fun SlotTimeline(
     onSlotClick: (ScheduleSlotResponse) -> Unit,
     onSwapClick: (ScheduleSlotResponse) -> Unit,
     onPlanBClick: (ScheduleSlotResponse) -> Unit,
+    accommodationName: String? = null,
     modifier: Modifier = Modifier,
 ) {
     if (slots.isEmpty()) {
@@ -367,6 +453,21 @@ private fun SlotTimeline(
         modifier = modifier,
         contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp),
     ) {
+        // 숙소 출발 행 — 첫 슬롯 이동시간의 기준점을 명확히 표시
+        if (accommodationName != null) {
+            item(key = "accommodation_header") {
+                AccommodationDepartureRow(
+                    name = accommodationName,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                slots.firstOrNull()?.travelTimeFromPrev?.let { minutes ->
+                    TravelTimeConnector(
+                        minutes = minutes,
+                        modifier = Modifier.padding(start = 34.dp),
+                    )
+                }
+            }
+        }
         itemsIndexed(slots) { index, slot ->
             if (index > 0) {
                 TravelTimeConnector(
@@ -392,17 +493,75 @@ private fun SlotTimeline(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
+private fun AccommodationDepartureRow(
+    name: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.Hotel,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(
+                name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "09:00 출발",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
 private fun TravelTimeConnector(
     minutes: Int,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .padding(top = 2.dp, bottom = 2.dp)
-            .width(2.dp)
-            .height(28.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant),
-    )
+    Row(
+        modifier = modifier.padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .height(28.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant),
+        )
+        if (minutes > 0) {
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "${minutes}분",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -594,6 +753,9 @@ private fun ScheduleSlotCard(
                         MetaBadge(icon = Icons.Outlined.Schedule, label = "${mins}분")
                     }
                 }
+
+                // 알고리즘 경고 배지 (영업시간/심야/식사/동선이탈/미확인)
+                SlotWarningBadges(slot = slot)
             }
 
             // 편집 모드일 때 교체 버튼
@@ -1075,6 +1237,9 @@ private fun PlanBOptionCard(
 private fun ScheduleDayMapView(
     slots: List<ScheduleSlotResponse>,
     isOverseas: Boolean,
+    accommodationName: String? = null,
+    accommodationLat: Double? = null,
+    accommodationLng: Double? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1086,6 +1251,8 @@ private fun ScheduleDayMapView(
 
     // 탭된 슬롯 — 길찾기 바텀시트 표시용
     var tappedSlot by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
+    // 호텔 마커 탭 — 숙소명 팝업 표시용
+    var tappedHotel by remember { mutableStateOf(false) }
 
     // 지도 카메라 상태
     val cameraPositionState = rememberCameraPositionState()
@@ -1130,23 +1297,48 @@ private fun ScheduleDayMapView(
             ) {
                 validSlots.forEachIndexed { index, slot ->
                     val position = LatLng(slot.place.latitude, slot.place.longitude)
+                    // key()로 슬롯 ID가 바뀌면 rememberMarkerState를 강제 재생성
+                    // — key() 없으면 Day 전환 시 이전 Day의 좌표가 유지되는 버그 발생
+                    key(slot.scheduleId) {
+                        MarkerComposable(
+                            keys     = arrayOf(slot.scheduleId, index),
+                            state    = rememberMarkerState(position = position),
+                            onClick  = { _ ->
+                                tappedSlot = slot
+                                true
+                            },
+                        ) {
+                            NumberedMarker(
+                                number   = index + 1,
+                                category = slot.place.category,
+                            )
+                        }
+                    }
+                }
+                // 숙소 핀 — amber 원 "숙" 마커. 탭 시 숙소명 팝업
+                if (accommodationLat != null && accommodationLng != null) {
                     MarkerComposable(
-                        keys     = arrayOf(slot.scheduleId, index),
-                        state    = rememberMarkerState(position = position),
-                        onClick  = { _ ->
-                            tappedSlot = slot
-                            true
-                        },
+                        keys  = arrayOf("hotel"),
+                        state = rememberMarkerState(position = LatLng(accommodationLat, accommodationLng)),
+                        onClick = { _ -> tappedHotel = true; true },
                     ) {
-                        // 카테고리 색 원 안에 흰 숫자 — 순번 표시
-                        NumberedMarker(
-                            number   = index + 1,
-                            category = slot.place.category,
-                        )
+                        HotelMarker()
                     }
                 }
             }
         }
+    }
+
+    // 호텔 마커 탭 → 숙소명 다이얼로그
+    if (tappedHotel && accommodationName != null) {
+        AlertDialog(
+            onDismissRequest = { tappedHotel = false },
+            title = { Text("숙소") },
+            text  = { Text(accommodationName) },
+            confirmButton = {
+                TextButton(onClick = { tappedHotel = false }) { Text("확인") }
+            },
+        )
     }
 
     // 마커 탭 → 장소 미니 바텀시트
@@ -1184,6 +1376,30 @@ private fun NumberedMarker(
         Text(
             text      = number.toString(),
             style     = MaterialTheme.typography.labelMedium.copy(
+                color      = Color.White,
+                fontWeight = FontWeight.Bold,
+            ),
+        )
+    }
+}
+
+/**
+ * 숙소 위치를 나타내는 지도 마커.
+ * amber 배경 원 + 흰 "숙" 텍스트로 슬롯 마커와 구분된다.
+ */
+@Composable
+private fun HotelMarker() {
+    Box(
+        modifier         = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(Color(0xFFFFC107))
+            .border(2.dp, Color.White, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text  = "숙",
+            style = MaterialTheme.typography.labelMedium.copy(
                 color      = Color.White,
                 fontWeight = FontWeight.Bold,
             ),
@@ -1430,6 +1646,9 @@ internal fun ScheduleContent(
     onLoadAlts: (scheduleId: Long) -> Unit,
     onRequestPlanB: (targetPlaceId: Long) -> Unit,
     onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
+    accommodationName: String? = null,
+    accommodationLat: Double? = null,
+    accommodationLng: Double? = null,
     isRefreshing: Boolean = false,
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -1453,8 +1672,12 @@ internal fun ScheduleContent(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
 
-        // 편집 중 배너
-        if (isEditing) EditingBanner()
+        // 편집 중 배너 — 본인 편집 중이면 편집 배너, 타인이 락 보유 중이면 안내 배너
+        if (isEditing) {
+            EditingBanner()
+        } else if (schedule?.editingUserId != null) {
+            EditingByOtherBanner(schedule?.editingUserName ?: "다른 사용자")
+        }
 
         // 주요 콘텐츠 (로딩·빈상태·지도+타임라인 분할)
         when {
@@ -1466,9 +1689,12 @@ internal fun ScheduleContent(
                 // 지도(240dp 고정) + 타임라인 분할 화면
                 Column(modifier = Modifier.weight(1f)) {
                     ScheduleDayMapView(
-                        slots      = currentSlots,
-                        isOverseas = isOverseas,
-                        modifier   = Modifier
+                        slots             = currentSlots,
+                        isOverseas        = isOverseas,
+                        accommodationName = accommodationName,
+                        accommodationLat  = accommodationLat,
+                        accommodationLng  = accommodationLng,
+                        modifier          = Modifier
                             .fillMaxWidth()
                             .height(240.dp),
                     )
@@ -1480,21 +1706,22 @@ internal fun ScheduleContent(
                         modifier     = Modifier.weight(1f),
                     ) {
                         SlotTimeline(
-                            slots          = currentSlots,
-                            isEditing      = isEditing,
-                            isPlanBLoading = isPlanBLoading,
-                            onSlotClick    = { slot -> detailSlot = slot },
-                            onSwapClick    = { slot ->
+                            slots             = currentSlots,
+                            isEditing         = isEditing,
+                            isPlanBLoading    = isPlanBLoading,
+                            accommodationName = accommodationName,
+                            onSlotClick       = { slot -> detailSlot = slot },
+                            onSwapClick       = { slot ->
                                 detailSlot = slot
                                 onLoadAlts(slot.scheduleId)
                                 showSwapSheet = true
                             },
-                            onPlanBClick   = { slot ->
+                            onPlanBClick      = { slot ->
                                 planBTargetSlot = slot
                                 showPlanBSheet  = true
                                 onRequestPlanB(slot.place.placeId)
                             },
-                            modifier       = Modifier.fillMaxSize(),
+                            modifier          = Modifier.fillMaxSize(),
                         )
                     }
                 }
@@ -1670,5 +1897,373 @@ private fun ScheduleScreenEmptyPreview() {
             onRequestPlanB = {}, onExecutePlanBSwap = { _, _ -> },
             onBackClick = {}, onShareClick = {},
         )
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ScheduleEditScreen — 전용 일정 편집 화면 (크로스 Day 드래그 + swap)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** 플랫 리스트 아이템 — Day 헤더(비드래그)와 슬롯(드래그 가능) */
+private sealed class FlatItem {
+    data class DayHeader(val dayNumber: Int, val date: String) : FlatItem()
+    data class SlotItem(val slot: ScheduleSlotResponse, val originalDayNumber: Int) : FlatItem()
+}
+
+private fun buildFlatItems(days: List<ScheduleDayResponse>): List<FlatItem> = buildList {
+    for (day in days) {
+        add(FlatItem.DayHeader(day.dayNumber, day.date))
+        for (slot in day.slots) add(FlatItem.SlotItem(slot, day.dayNumber))
+    }
+}
+
+/** Day 헤더 행 — 비드래그, 구분선 역할 */
+@Composable
+private fun EditDayHeaderRow(dayNumber: Int, date: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Day $dayNumber",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                date.toShortDate(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+            )
+        }
+    }
+}
+
+/**
+ * 일정 편집 전용 화면.
+ * - 진입 시 편집 락 획득, 이탈 시 자동 해제.
+ * - 전체 Day를 하나의 플랫 리스트로 표시 — Day 헤더를 넘어 크로스 Day 드래그 가능.
+ * - 같은 Day 내 이동: PATCH /schedule/reorder, 다른 Day 이동: POST /schedule/move.
+ * - 슬롯 교체(swap) 및 Plan B 선택 시 확인 다이얼로그 표시 후 실행.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ScheduleEditScreen(
+    bandId: Long,
+    @Suppress("UNUSED_PARAMETER") isOverseas: Boolean,
+    viewModel: ScheduleViewModel = viewModel(),
+    onBack: () -> Unit,
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    var showLockErrorDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(bandId) {
+        viewModel.startEditing(bandId)
+        viewModel.loadSchedule(bandId)
+        viewModel.loadAlts(bandId)
+    }
+
+    DisposableEffect(bandId) {
+        onDispose { viewModel.finishEditing(bandId) }
+    }
+
+    LaunchedEffect(uiState.error, uiState.isEditing) {
+        if (uiState.error != null && !uiState.isEditing) showLockErrorDialog = true
+    }
+
+    var showSessionExpiredDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let {
+            if (uiState.isEditing) showSessionExpiredDialog = true
+            viewModel.clearError()
+        }
+    }
+
+    if (showSessionExpiredDialog) {
+        AlertDialog(
+            onDismissRequest = { showSessionExpiredDialog = false; onBack() },
+            title = { Text("편집 세션 만료") },
+            text  = { Text("편집 세션이 만료됐습니다. 다시 편집해주세요.") },
+            confirmButton = {
+                TextButton(onClick = { showSessionExpiredDialog = false; onBack() }) { Text("확인") }
+            },
+        )
+    }
+
+    if (showLockErrorDialog) {
+        AlertDialog(
+            onDismissRequest = { showLockErrorDialog = false; onBack() },
+            title = { Text("편집 불가") },
+            text  = {
+                val editorName = uiState.schedule?.editingUserName
+                Text(if (editorName != null) "${editorName}님이 편집 중입니다." else "다른 멤버가 편집 중입니다.")
+            },
+            confirmButton = {
+                TextButton(onClick = { showLockErrorDialog = false; onBack() }) { Text("확인") }
+            },
+        )
+    }
+
+    // ── 모든 remember는 조건부 return 앞에 선언 (Compose 규칙) ─────────────
+    val schedule = uiState.schedule
+    val days     = schedule?.days ?: emptyList()
+
+    // 전체 Day를 포함한 플랫 리스트 — schedule 갱신 시 LaunchedEffect로 동기화
+    val flatItems = remember { mutableStateListOf<FlatItem>() }
+
+    // 드래그 추적 — onMove에서 최초 1회 원본 Day 캡처
+    var draggedScheduleId   by remember { mutableLongStateOf(-1L) }
+    var dragSourceDayNumber by remember { mutableIntStateOf(-1) }
+    var hasDragged          by remember { mutableStateOf(false) }
+
+    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(
+        lazyListState = lazyListState,
+        onMove = { from, to ->
+            // 드래그 시작 시 최초 1회 원본 Day 캡처
+            if (draggedScheduleId == -1L) {
+                (flatItems.getOrNull(from.index) as? FlatItem.SlotItem)?.let {
+                    draggedScheduleId   = it.slot.scheduleId
+                    dragSourceDayNumber = it.originalDayNumber
+                }
+            }
+            // DayHeader 위치로는 이동 불가 — 슬롯이 헤더를 지나쳐 다음 Day로 이동은 허용
+            if (flatItems.getOrNull(to.index) is FlatItem.DayHeader) return@rememberReorderableLazyListState
+            flatItems.add(to.index, flatItems.removeAt(from.index))
+            hasDragged = true
+        }
+    )
+
+    var swapTargetSlot      by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
+    var showSwapSheet       by remember { mutableStateOf(false) }
+    var planBTargetSlot     by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
+    var showPlanBSheet      by remember { mutableStateOf(false) }
+    var pendingSwapPlaceId  by remember { mutableStateOf<Long?>(null) }
+    var pendingPlanBPlaceId by remember { mutableStateOf<Long?>(null) }
+
+    // schedule 갱신 시 flatItems 동기화 — 드래그 중에는 갱신 무시
+    LaunchedEffect(schedule) {
+        if (!reorderState.isAnyItemDragging) {
+            flatItems.clear()
+            flatItems.addAll(buildFlatItems(days))
+        }
+    }
+
+    // 드래그 완료 시 같은 Day/다른 Day 분기 처리
+    LaunchedEffect(reorderState.isAnyItemDragging) {
+        if (!reorderState.isAnyItemDragging && hasDragged && draggedScheduleId != -1L) {
+            hasDragged = false
+
+            val movedIndex = flatItems.indexOfFirst {
+                it is FlatItem.SlotItem && it.slot.scheduleId == draggedScheduleId
+            }
+
+            if (movedIndex == -1) {
+                viewModel.loadSchedule(bandId)
+            } else {
+                // movedIndex 앞의 가장 가까운 DayHeader → 목적지 Day
+                val targetDayHeaderIdx = (0 until movedIndex).lastOrNull {
+                    flatItems[it] is FlatItem.DayHeader
+                } ?: -1
+                val targetDayNumber = if (targetDayHeaderIdx >= 0)
+                    (flatItems[targetDayHeaderIdx] as FlatItem.DayHeader).dayNumber
+                else dragSourceDayNumber
+
+                // DayHeader 다음부터 movedIndex까지의 SlotItem 개수 = 1-based slotOrder
+                val targetSlotOrder = flatItems
+                    .subList(targetDayHeaderIdx + 1, movedIndex + 1)
+                    .count { it is FlatItem.SlotItem }
+
+                if (targetDayNumber == dragSourceDayNumber) {
+                    // 같은 Day: 해당 헤더 이후 다음 헤더 전까지 SlotItem 순서로 reorderSlots
+                    val orderedIds = buildList {
+                        for (i in (targetDayHeaderIdx + 1) until flatItems.size) {
+                            val item = flatItems[i]
+                            if (item is FlatItem.DayHeader) break
+                            if (item is FlatItem.SlotItem) add(item.slot.scheduleId)
+                        }
+                    }
+                    viewModel.reorderSlots(bandId, targetDayNumber, orderedIds)
+                } else {
+                    // 다른 Day: moveSlot
+                    viewModel.moveSlot(bandId, draggedScheduleId, targetDayNumber, targetSlotOrder)
+                }
+            }
+
+            draggedScheduleId   = -1L
+            dragSourceDayNumber = -1
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = { Text("일정 편집", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Outlined.ArrowBack, contentDescription = "뒤로가기")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+            )
+        },
+    ) { innerPadding ->
+        if (!uiState.isEditing) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
+            return@Scaffold
+        }
+
+        if (days.isEmpty()) {
+            ScheduleEmptyContent(modifier = Modifier.fillMaxSize().padding(innerPadding))
+            return@Scaffold
+        }
+
+        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            EditingBanner()
+
+            LazyColumn(
+                state          = lazyListState,
+                modifier       = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items(
+                    items = flatItems,
+                    key   = { item ->
+                        when (item) {
+                            is FlatItem.DayHeader -> "header_${item.dayNumber}"
+                            is FlatItem.SlotItem  -> "slot_${item.slot.scheduleId}"
+                        }
+                    },
+                ) { item ->
+                    when (item) {
+                        is FlatItem.DayHeader -> {
+                            EditDayHeaderRow(item.dayNumber, item.date)
+                        }
+                        is FlatItem.SlotItem -> {
+                            val slot = item.slot
+                            ReorderableItem(reorderState, key = "slot_${slot.scheduleId}") { isDragging ->
+                                val elevation by androidx.compose.animation.core.animateDpAsState(
+                                    targetValue = if (isDragging) 8.dp else 0.dp,
+                                    label = "drag_elevation",
+                                )
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .shadow(elevation = elevation, shape = RoundedCornerShape(16.dp)),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.DragHandle,
+                                            contentDescription = "순서 변경",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .draggableHandle(),
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        ScheduleSlotCard(
+                                            slot      = slot,
+                                            isEditing = true,
+                                            onClick   = {},
+                                            onSwapClick = {
+                                                swapTargetSlot = slot
+                                                viewModel.loadAlts(bandId)
+                                                showSwapSheet = true
+                                            },
+                                            modifier  = Modifier.weight(1f),
+                                        )
+                                        IconButton(onClick = {
+                                            planBTargetSlot = slot
+                                            viewModel.loadPlanB(bandId, slot.place.placeId)
+                                            showPlanBSheet = true
+                                        }) {
+                                            Icon(
+                                                Icons.Outlined.AutoAwesome,
+                                                contentDescription = "Plan B",
+                                                tint = MaterialTheme.colorScheme.secondary,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val swapSlot = swapTargetSlot
+        if (showSwapSheet && swapSlot != null) {
+            SlotSwapBottomSheet(
+                slot        = swapSlot,
+                options     = uiState.altOptions.filter { it.category == swapSlot.place.category },
+                onDismiss   = { showSwapSheet = false; swapTargetSlot = null },
+                onSelectAlt = { id -> pendingSwapPlaceId = id },
+            )
+        }
+
+        val planBSlot = planBTargetSlot
+        if (showPlanBSheet && planBSlot != null) {
+            PlanBBottomSheet(
+                slot      = planBSlot,
+                results   = uiState.planBResults,
+                isLoading = uiState.isPlanBLoading,
+                onDismiss = { showPlanBSheet = false; planBTargetSlot = null },
+                onSelect  = { id -> pendingPlanBPlaceId = id },
+            )
+        }
+
+        if (pendingSwapPlaceId != null) {
+            AlertDialog(
+                onDismissRequest = { pendingSwapPlaceId = null },
+                title = { Text("장소 교체") },
+                text  = { Text("이 장소로 교체할까요?\n동선이 자동으로 재계산됩니다.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.swapSlot(bandId, swapTargetSlot!!.scheduleId, pendingSwapPlaceId!!)
+                        pendingSwapPlaceId = null; showSwapSheet = false; swapTargetSlot = null
+                    }) { Text("교체") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingSwapPlaceId = null }) { Text("취소") }
+                },
+            )
+        }
+
+        if (pendingPlanBPlaceId != null) {
+            AlertDialog(
+                onDismissRequest = { pendingPlanBPlaceId = null },
+                title = { Text("장소 교체") },
+                text  = { Text("이 장소로 교체할까요?\n동선이 자동으로 재계산됩니다.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.swapSlot(bandId, planBTargetSlot!!.scheduleId, pendingPlanBPlaceId!!)
+                        pendingPlanBPlaceId = null; showPlanBSheet = false; planBTargetSlot = null
+                    }) { Text("교체") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingPlanBPlaceId = null }) { Text("취소") }
+                },
+            )
+        }
     }
 }

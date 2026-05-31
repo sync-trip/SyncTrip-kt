@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.synctrip.app.data.models.*
 import com.synctrip.app.data.repository.ScheduleRepository
+import com.synctrip.app.util.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -38,7 +39,7 @@ class ScheduleViewModel : ViewModel() {
                     _uiState.update { it.copy(schedule = resp, isLoading = false) }
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(isLoading = false, error = e.message) }
+                    _uiState.update { it.copy(isLoading = false, error = e.toUserMessage()) }
                 }
         }
     }
@@ -60,7 +61,35 @@ class ScheduleViewModel : ViewModel() {
                     _uiState.update { it.copy(altOptions = emptyList()) }
                     loadSchedule(bandId)
                 }
-                .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+                .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
+        }
+    }
+
+    /** POST /api/bands/{bandId}/schedule/move — 슬롯을 다른 Day로 이동. 실패 시 서버 상태로 롤백 */
+    fun moveSlot(bandId: Long, scheduleId: Long, targetDayNumber: Int, targetSlotOrder: Int) {
+        viewModelScope.launch {
+            runCatching {
+                ScheduleRepository.moveSlot(bandId, ScheduleMoveRequest(scheduleId, targetDayNumber, targetSlotOrder))
+            }
+                .onSuccess { loadSchedule(bandId) }
+                .onFailure { e ->
+                    loadSchedule(bandId)
+                    _uiState.update { it.copy(error = e.toUserMessage()) }
+                }
+        }
+    }
+
+    /** PATCH /api/bands/{bandId}/schedule/reorder — Drag & Drop 순서 저장. 실패 시 서버 상태로 롤백 */
+    fun reorderSlots(bandId: Long, dayNumber: Int, orderedIds: List<Long>) {
+        viewModelScope.launch {
+            runCatching {
+                ScheduleRepository.reorderSchedule(bandId, ScheduleReorderRequest(dayNumber, orderedIds))
+            }
+                .onSuccess { loadSchedule(bandId) }
+                .onFailure { e ->
+                    loadSchedule(bandId)  // 실패 시 서버 순서로 롤백
+                    _uiState.update { it.copy(error = e.toUserMessage()) }
+                }
         }
     }
 
@@ -69,7 +98,7 @@ class ScheduleViewModel : ViewModel() {
         viewModelScope.launch {
             runCatching { ScheduleRepository.startEditing(bandId) }
                 .onSuccess { _uiState.update { it.copy(isEditing = true) } }
-                .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+                .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
         }
     }
 
@@ -78,7 +107,7 @@ class ScheduleViewModel : ViewModel() {
         viewModelScope.launch {
             runCatching { ScheduleRepository.finishEditing(bandId) }
                 .onSuccess { _uiState.update { it.copy(isEditing = false) } }
-                .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+                .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
         }
     }
 
@@ -94,7 +123,7 @@ class ScheduleViewModel : ViewModel() {
                     _uiState.update { it.copy(planBResults = results, isPlanBLoading = false) }
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(isPlanBLoading = false, error = e.message) }
+                    _uiState.update { it.copy(isPlanBLoading = false, error = e.toUserMessage()) }
                 }
         }
     }
@@ -115,7 +144,7 @@ class ScheduleViewModel : ViewModel() {
             .onFailure { e ->
                 // 교체 실패 시에도 락 반환 시도
                 runCatching { ScheduleRepository.finishEditing(bandId) }
-                _uiState.update { it.copy(isLoading = false, error = e.message) }
+                _uiState.update { it.copy(isLoading = false, error = e.toUserMessage()) }
             }
         }
     }

@@ -100,6 +100,7 @@
 | — | 일정 변경 WebSocket 브로드캐스트 | ➕ 추가 구현 | 2026-05-19 | `ScheduleService` → `SimpMessagingTemplate` | 장소 교체 시 `/topic/bands/{bandId}/schedule` 채널로 `ScheduleUpdatedEvent` 발송 |
 
 | — | 숙소 단독 변경 + partial TSP 재계산 | ➕ 추가 구현 | 2026-05-23 | `BandService.updateAccommodation()`, `ScheduleService.recalculateFutureDays()` | `PATCH /api/bands/{bandId}/accommodation` / 방장 전용 / VOTING·GENERATING 단계 차단 / TRAVELLING 시 오늘 이후 day TSP 재계산 (v2.4 FIX-35/36) |
+| ➕ | 크로스 Day 슬롯 이동 | ➕ 추가 구현 | 2026-05-31 | `ScheduleService.moveSchedule()`, `ScheduleController.moveSchedule()` | `POST /api/bands/{bandId}/schedule/move` / `ScheduleMoveRequest(scheduleId, targetDayNumber, targetSlotOrder)` / 소스·타겟 양쪽 Day `assignTimesInOrder` 재계산 / Day 범위 검증(startDate~endDate) / TSP 재실행 없이 시간만 재계산 / WebSocket 브로드캐스트 + 푸시 알림 |
 
 **보완할 점**
 - (없음)
@@ -270,7 +271,8 @@
 | 2026-05-23 | USR-017 Drag & Drop 순서 변경 실제 구현: `ScheduleService.reorderSchedule()` / `PATCH /schedule/reorder` |
 | 2026-05-23 | 숙소 변경 + TRAVELLING 단계 partial TSP 재계산 구현: `Band.updateAccommodation()` / `BandService.updateAccommodation()` / `ScheduleService.recalculateFutureDays()` / `PATCH /api/bands/{bandId}/accommodation` (v2.4 FIX-35/36) |
 | 2026-05-24 | ➕ 밴드 썸네일 저장 구현: `Band.thumbnailUrl` 필드 추가, `BandCreateRequest.thumbnailUrl` 수신, `BandResponse.thumbnailUrl` 반환. DDL v11(`user_groups.thumbnail_url` 컬럼 추가). Android 홈 화면 밴드 카드 이미지 표시 연동. |
+| 2026-05-31 | ➕ 크로스 Day 슬롯 이동 구현: `Schedule.updateDayNumber()` 메서드 추가(dayNumber 변경용 setter 미존재로 신규). `ScheduleMoveRequest` DTO 신규(`scheduleId`, `targetDayNumber`, `targetSlotOrder`). `ScheduleService.moveSchedule()` 추가 — 권한 검증(reorderSchedule 동일 패턴), Day 범위 검증(`ChronoUnit.DAYS`), 소스 Day 슬롯 제거 → targetDay 삽입 → 양쪽 `assignTimesInOrder` 재계산 → WebSocket 브로드캐스트 + FCM 알림. `POST /api/bands/{bandId}/schedule/move` 엔드포인트 추가. |
 
 ---
 
-**마지막 수정:** 2026-05-24 (밴드 썸네일 저장/반환 구현, DDL v11) | **최신 DDL:** `SyncTrip_DDL_v11.sql`
+**마지막 수정:** 2026-05-31 (크로스 Day 슬롯 이동 API 추가) | **최신 DDL:** `SyncTrip_DDL_v11.sql`

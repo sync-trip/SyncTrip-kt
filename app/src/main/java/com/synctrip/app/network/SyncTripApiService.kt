@@ -77,6 +77,18 @@ interface SyncTripApiService {
         @Body body: ScheduleSwapRequest,
     ): Unit
 
+    @PATCH("api/bands/{bandId}/schedule/reorder")
+    suspend fun reorderSchedule(
+        @Path("bandId") bandId: Long,
+        @Body body: ScheduleReorderRequest,
+    ): Unit
+
+    @POST("api/bands/{bandId}/schedule/move")
+    suspend fun moveSchedule(
+        @Path("bandId") bandId: Long,
+        @Body body: ScheduleMoveRequest,
+    ): Unit
+
     @POST("api/bands/{bandId}/schedule/edit/start")
     suspend fun startEditing(@Path("bandId") bandId: Long)
 
