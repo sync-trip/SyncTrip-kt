@@ -442,17 +442,25 @@ data class ScheduleSwapRequest(
     val newPlaceId: Long,
 )
 
-/** Drag & Drop 순서 변경 요청 — dayNumber: 재정렬할 일차, orderedScheduleIds: 새 순서의 id 목록 */
+/**
+ * Drag & Drop 순서 변경 요청 — dayNumber: 재정렬할 일차, orderedScheduleIds: 새 순서의 id 목록
+ * notify=false면 이 요청에서 그룹 알림 생략 (연속 호출 시 마지막에만 true로 전달)
+ */
 data class ScheduleReorderRequest(
     val dayNumber: Int,
     val orderedScheduleIds: List<Long>,
+    val notify: Boolean = true,
 )
 
-/** 크로스 Day 슬롯 이동 요청 — targetSlotOrder: 삽입 위치(1-based) */
+/**
+ * 크로스 Day 슬롯 이동 요청 — targetSlotOrder: 삽입 위치(1-based)
+ * notify=false면 이 요청에서 그룹 알림 생략 (연속 호출 시 마지막에만 true로 전달)
+ */
 data class ScheduleMoveRequest(
     val scheduleId: Long,
     val targetDayNumber: Int,
     val targetSlotOrder: Int,
+    val notify: Boolean = true,
 )
 
 data class PlanBRequest(val targetPlaceId: Long)

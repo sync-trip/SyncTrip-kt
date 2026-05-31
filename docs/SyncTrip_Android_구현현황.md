@@ -277,4 +277,6 @@
 
 | 2026-05-31 | **투표 진행률 표시 버그 수정 (➕)** — `VoteViewModel.loadVotePlaces()`에서 autoLike 장소 제출 후 `votedPlaces`에도 추가. 북마크 장소가 있을 때 `totalCount(= votedPlaces.size + pendingPlaces.size)`가 전체 장소 수보다 작게 표시되던 문제 해결. 백엔드 `BandMember.voteCompleted` 플래그 도입(DDL v14) 대응 — `groupStatus.isAllComplete`이 `voteCompleted` DB 플래그 기반으로 판정됨 |
 
-**마지막 수정:** 2026-05-31 (투표 진행률 표시 버그 수정 + voteCompleted 플래그 백엔드 대응) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+| 2026-06-01 | **ScheduleEditScreen 버그 수정 9건 (➕)** — ① `BackHandler` 추가(시스템 뒤로가기 미저장 확인). ② `FlatItem.EmptyDayPlaceholder` 신규 — 빈 Day에 드롭존 제공(`buildFlatItems` 수정). ③ `onMove` DayHeader·EmptyDayPlaceholder 가드 추가 — 헤더 위치로 슬롯 이동 차단. ④ `LaunchedEffect(schedule)`에 `hasPendingChanges = false` 추가 — swap 후 저장 버튼 오잔류 해결. ⑤ `onSelectAlt` / `onSelect`에 `showSwapSheet/showPlanBSheet = false` 추가 — 바텀시트+다이얼로그 중첩 해결. ⑥ `detailSlot` 상태 + `PlaceDetailBottomSheet` 연결 — 슬롯 카드 탭 시 상세정보 표시. ⑦ `saveScheduleChanges`에서 마지막 API 호출에만 `notify=true` — 알림 중복 1건으로 집약. ⑧ 실패 에러 메시지 구체화. ⑨ 백엔드 `ScheduleMoveRequest` / `ScheduleReorderRequest` DTO에 `notify` 필드 추가, `ScheduleService`에 `shouldNotify()` 체크 |
+
+**마지막 수정:** 2026-06-01 (ScheduleEditScreen 버그 수정 9건) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

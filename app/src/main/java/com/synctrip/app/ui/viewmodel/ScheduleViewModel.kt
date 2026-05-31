@@ -154,6 +154,7 @@ class ScheduleViewModel : ViewModel() {
 
     /**
      * 저장 버튼 — 크로스 Day 이동 후 각 Day 순서 확정.
+     * 알림은 마지막 API 호출 한 번에만 발송 (notify=true), 나머지는 notify=false.
      * 성공 시 onSuccess 콜백 호출 (화면 닫기 등).
      */
     fun saveScheduleChanges(
@@ -164,12 +165,20 @@ class ScheduleViewModel : ViewModel() {
     ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
+            val filteredDays = allDayOrders.filter { it.value.isNotEmpty() }
+            val dayNums = filteredDays.keys.toList()
             runCatching {
-                // 1단계: 크로스 Day 이동 (flatItems 순서대로)
-                moves.forEach { ScheduleRepository.moveSlot(bandId, it) }
-                // 2단계: 각 Day 최종 순서 확정 (빈 Day는 스킵)
-                allDayOrders.filter { it.value.isNotEmpty() }.forEach { (dayNum, ids) ->
-                    ScheduleRepository.reorderSchedule(bandId, ScheduleReorderRequest(dayNum, ids))
+                // 1단계: 크로스 Day 이동 — reorder가 없을 때만 마지막 move에서 알림 발송
+                moves.forEachIndexed { i, move ->
+                    val isLast = i == moves.lastIndex && dayNums.isEmpty()
+                    ScheduleRepository.moveSlot(bandId, move.copy(notify = isLast))
+                }
+                // 2단계: 각 Day 최종 순서 확정 — 마지막 Day에서만 알림 발송
+                dayNums.forEachIndexed { i, dayNum ->
+                    val isLast = i == dayNums.lastIndex
+                    ScheduleRepository.reorderSchedule(
+                        bandId, ScheduleReorderRequest(dayNum, filteredDays[dayNum]!!, notify = isLast)
+                    )
                 }
             }
             .onSuccess {
@@ -179,7 +188,11 @@ class ScheduleViewModel : ViewModel() {
             }
             .onFailure { e ->
                 loadSchedule(bandId)
-                _uiState.update { it.copy(isLoading = false, error = e.toUserMessage()) }
+                // move가 포함된 경우 일부만 서버에 반영됐을 수 있음
+                val msg = if (moves.isNotEmpty())
+                    "일부 변경사항만 저장됐을 수 있습니다. 다시 확인해주세요."
+                else e.toUserMessage()
+                _uiState.update { it.copy(isLoading = false, error = msg) }
             }
         }
     }

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -2022,16 +2023,19 @@ private fun ScheduleScreenEmptyPreview() {
 // ScheduleEditScreen — 전용 일정 편집 화면 (크로스 Day 드래그 + swap)
 // ═════════════════════════════════════════════════════════════════════════════
 
-/** 플랫 리스트 아이템 — Day 헤더(비드래그)와 슬롯(드래그 가능) */
+/** 플랫 리스트 아이템 — Day 헤더(비드래그), 슬롯(드래그), 빈 Day 드롭존(비드래그) */
 private sealed class FlatItem {
     data class DayHeader(val dayNumber: Int, val date: String) : FlatItem()
     data class SlotItem(val slot: ScheduleSlotResponse, val originalDayNumber: Int) : FlatItem()
+    // 빈 Day에 드롭 공간을 제공 — buildFlatItems에서 슬롯이 없는 Day에 삽입
+    data class EmptyDayPlaceholder(val dayNumber: Int) : FlatItem()
 }
 
 private fun buildFlatItems(days: List<ScheduleDayResponse>): List<FlatItem> = buildList {
     for (day in days) {
         add(FlatItem.DayHeader(day.dayNumber, day.date))
-        for (slot in day.slots) add(FlatItem.SlotItem(slot, day.dayNumber))
+        if (day.slots.isEmpty()) add(FlatItem.EmptyDayPlaceholder(day.dayNumber))
+        else for (slot in day.slots) add(FlatItem.SlotItem(slot, day.dayNumber))
     }
 }
 
@@ -2132,17 +2136,24 @@ fun ScheduleEditScreen(
     // 미저장 상태에서 뒤로가기 시 확인 다이얼로그
     var showDiscardDialog by remember { mutableStateOf(false) }
 
+    // 시스템 뒤로가기(제스처·하드웨어 버튼)에서도 미저장 확인
+    BackHandler(enabled = hasPendingChanges) { showDiscardDialog = true }
+
     val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(
         lazyListState = lazyListState,
         onMove = { from, to ->
-            // 첫 번째 Day 헤더(인덱스 0) 앞으로는 이동 불가
             if (to.index == 0) return@rememberReorderableLazyListState
+            // DayHeader·EmptyDayPlaceholder는 이동 출발지/도착지 모두 불가
+            if (flatItems.getOrNull(from.index) is FlatItem.DayHeader) return@rememberReorderableLazyListState
+            if (flatItems.getOrNull(from.index) is FlatItem.EmptyDayPlaceholder) return@rememberReorderableLazyListState
+            if (flatItems.getOrNull(to.index) is FlatItem.DayHeader) return@rememberReorderableLazyListState
             flatItems.add(to.index, flatItems.removeAt(from.index))
             hasPendingChanges = true
         }
     )
 
+    var detailSlot          by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
     var swapTargetSlot      by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
     var showSwapSheet       by remember { mutableStateOf(false) }
     var planBTargetSlot     by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
@@ -2151,10 +2162,12 @@ fun ScheduleEditScreen(
     var pendingPlanBPlaceId by remember { mutableStateOf<Long?>(null) }
 
     // schedule 갱신 시 flatItems 동기화 — 드래그 중에는 갱신 무시
+    // swap/Plan B 성공 후 서버 상태를 덮어쓰므로 hasPendingChanges도 초기화
     LaunchedEffect(schedule) {
         if (!reorderState.isAnyItemDragging) {
             flatItems.clear()
             flatItems.addAll(buildFlatItems(days))
+            hasPendingChanges = false
         }
     }
 
@@ -2164,8 +2177,9 @@ fun ScheduleEditScreen(
         var curDay = -1; var curOrder = 0
         flatItems.forEach { item ->
             when (item) {
-                is FlatItem.DayHeader -> { curDay = item.dayNumber; curOrder = 0 }
-                is FlatItem.SlotItem  -> { curOrder++; result[item.slot.scheduleId] = curDay to curOrder }
+                is FlatItem.DayHeader          -> { curDay = item.dayNumber; curOrder = 0 }
+                is FlatItem.SlotItem           -> { curOrder++; result[item.slot.scheduleId] = curDay to curOrder }
+                is FlatItem.EmptyDayPlaceholder -> {}
             }
         }
         return result
@@ -2182,8 +2196,9 @@ fun ScheduleEditScreen(
         var curDay2 = -1
         flatItems.forEach { item ->
             when (item) {
-                is FlatItem.DayHeader -> { curDay2 = item.dayNumber; daySlots.getOrPut(curDay2) { mutableListOf() } }
-                is FlatItem.SlotItem  -> daySlots.getOrPut(curDay2) { mutableListOf() }.add(item.slot.scheduleId)
+                is FlatItem.DayHeader           -> { curDay2 = item.dayNumber; daySlots.getOrPut(curDay2) { mutableListOf() } }
+                is FlatItem.SlotItem            -> daySlots.getOrPut(curDay2) { mutableListOf() }.add(item.slot.scheduleId)
+                is FlatItem.EmptyDayPlaceholder -> {}
             }
         }
         val moves = mutableListOf<ScheduleMoveRequest>()
@@ -2271,14 +2286,32 @@ fun ScheduleEditScreen(
                     items = flatItems,
                     key   = { item ->
                         when (item) {
-                            is FlatItem.DayHeader -> "header_${item.dayNumber}"
-                            is FlatItem.SlotItem  -> "slot_${item.slot.scheduleId}"
+                            is FlatItem.DayHeader           -> "header_${item.dayNumber}"
+                            is FlatItem.SlotItem            -> "slot_${item.slot.scheduleId}"
+                            is FlatItem.EmptyDayPlaceholder -> "placeholder_${item.dayNumber}"
                         }
                     },
                 ) { item ->
                     when (item) {
                         is FlatItem.DayHeader -> {
                             EditDayHeaderRow(item.dayNumber, item.date)
+                        }
+                        is FlatItem.EmptyDayPlaceholder -> {
+                            // 빈 Day의 드롭 목적지 — 시각적 안내만, 드래그 불가
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(80.dp)
+                                    .padding(4.dp)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    "여기에 장소를 드래그하세요",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                )
+                            }
                         }
                         is FlatItem.SlotItem -> {
                             val slot = item.slot
@@ -2310,7 +2343,7 @@ fun ScheduleEditScreen(
                                         ScheduleSlotCard(
                                             slot      = slot,
                                             isEditing = true,
-                                            onClick   = {},
+                                            onClick   = { detailSlot = slot },
                                             onSwapClick = {
                                                 swapTargetSlot = slot
                                                 viewModel.loadAlts(bandId)
@@ -2344,7 +2377,8 @@ fun ScheduleEditScreen(
                 slot        = swapSlot,
                 options     = uiState.altOptions.filter { it.category == swapSlot.place.category },
                 onDismiss   = { showSwapSheet = false; swapTargetSlot = null },
-                onSelectAlt = { id -> pendingSwapPlaceId = id },
+                // 장소 선택 즉시 바텀시트를 닫아야 확인 다이얼로그가 단독 표시됨 (Bug 4)
+                onSelectAlt = { id -> pendingSwapPlaceId = id; showSwapSheet = false },
             )
         }
 
@@ -2355,7 +2389,19 @@ fun ScheduleEditScreen(
                 results   = uiState.planBResults,
                 isLoading = uiState.isPlanBLoading,
                 onDismiss = { showPlanBSheet = false; planBTargetSlot = null },
-                onSelect  = { id -> pendingPlanBPlaceId = id },
+                // 장소 선택 즉시 바텀시트를 닫아야 확인 다이얼로그가 단독 표시됨 (Bug 5)
+                onSelect  = { id -> pendingPlanBPlaceId = id; showPlanBSheet = false },
+            )
+        }
+
+        // 장소 상세 바텀시트 — swap/planB 시트가 없을 때만 표시
+        val activeDetailSlot = detailSlot
+        if (activeDetailSlot != null && !showSwapSheet && !showPlanBSheet) {
+            PlaceDetailBottomSheet(
+                slot       = activeDetailSlot,
+                isEditing  = false,
+                onDismiss  = { detailSlot = null },
+                onSwapClick = {},
             )
         }
 

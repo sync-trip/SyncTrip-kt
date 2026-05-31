@@ -136,7 +136,7 @@
 | `MEMBER_JOINED` | 새 멤버 합류 | `BandService.joinBand()` | ➕ 추가 구현 | 2026-05-21 |
 | `VOTE_STARTED` | 투표 시작 | `BandService.markReady()` / `advanceBandStatus()` | ✅ 구현 | 2026-05-21 ~ 05-23 |
 | `TRIP_ENDED` | 여행 종료 | `BandService.advanceBandStatus()` (TRAVELLING→DONE) | ➕ 추가 구현 | 2026-05-23 |
-| `SCHEDULE_UPDATED` | 일정 변경 | `ScheduleService.generateInternal()` / `swapSchedulePlace()` | ✅ 구현 | 2026-05-21 |
+| `SCHEDULE_UPDATED` | 일정 변경 | `ScheduleService.generateInternal()` / `swapSchedulePlace()` / `reorderSchedule()` / `moveSchedule()` | ✅ 구현 | 2026-05-21 |
 | `SETTLEMENT_REQUEST` | 정산 요청 | `SettlementController` → `NotificationService.requestSettlement()` | ➕ 추가 구현 | 2026-05-21 |
 | `HOLIDAY_WARNING` | 현지 공휴일 안내 | `BandService.joinBand()` / `ScheduleService.generateInternal()` / `HolidayWarningScheduler` | ➕ 추가 구현 | 2026-05-23 |
 
@@ -272,7 +272,8 @@
 | 2026-05-23 | 숙소 변경 + TRAVELLING 단계 partial TSP 재계산 구현: `Band.updateAccommodation()` / `BandService.updateAccommodation()` / `ScheduleService.recalculateFutureDays()` / `PATCH /api/bands/{bandId}/accommodation` (v2.4 FIX-35/36) |
 | 2026-05-24 | ➕ 밴드 썸네일 저장 구현: `Band.thumbnailUrl` 필드 추가, `BandCreateRequest.thumbnailUrl` 수신, `BandResponse.thumbnailUrl` 반환. DDL v11(`user_groups.thumbnail_url` 컬럼 추가). Android 홈 화면 밴드 카드 이미지 표시 연동. |
 | 2026-05-31 | ➕ 크로스 Day 슬롯 이동 구현: `Schedule.updateDayNumber()` 메서드 추가(dayNumber 변경용 setter 미존재로 신규). `ScheduleMoveRequest` DTO 신규(`scheduleId`, `targetDayNumber`, `targetSlotOrder`). `ScheduleService.moveSchedule()` 추가 — 권한 검증(reorderSchedule 동일 패턴), Day 범위 검증(`ChronoUnit.DAYS`), 소스 Day 슬롯 제거 → targetDay 삽입 → 양쪽 `assignTimesInOrder` 재계산 → WebSocket 브로드캐스트 + FCM 알림. `POST /api/bands/{bandId}/schedule/move` 엔드포인트 추가. |
+| 2026-06-01 | ➕ 알림 중복 발송 방지 — `ScheduleMoveRequest` / `ScheduleReorderRequest` DTO에 `notify: Boolean` 필드 추가(기본값 `null` → `shouldNotify()` true). `ScheduleService.reorderSchedule()` / `moveSchedule()` 양쪽에서 `if (request.shouldNotify())` 체크 후 `notifyAll()` 호출. Android `saveScheduleChanges()`가 연속 API 호출 시 마지막 요청에만 `notify=true` 전달 → 저장 완료 시 알림 1건만 발송. WebSocket 브로드캐스트는 `notify` 무관하게 매 요청마다 유지. |
 
 ---
 
-**마지막 수정:** 2026-05-31 (크로스 Day 슬롯 이동 API 추가) | **최신 DDL:** `SyncTrip_DDL_v11.sql`
+**마지막 수정:** 2026-06-01 (알림 중복 방지 notify 플래그) | **최신 DDL:** `SyncTrip_DDL_v11.sql`
