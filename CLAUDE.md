@@ -30,9 +30,9 @@ After every implementation or fix, update `docs/SyncTrip_Android_구현현황.md
 
 ## 4. Tech Stack
 
-**Android** (`C:\projects\SyncTrip-kt`): Kotlin + Jetpack Compose + Material 3, state hoisting (all state in ViewModel), Retrofit2 + OkHttp (`ApiClient.api`), Navigation Compose (`navigation/NavGraph.kt`)
+**Android** (`C:\Users\Min\StudioProjects\SyncTrip-kt`): Kotlin + Jetpack Compose + Material 3, state hoisting (all state in ViewModel), Retrofit2 + OkHttp (`ApiClient.api`), Navigation Compose (`navigation/NavGraph.kt`)
 
-**Backend** (`C:\projects\SyncTrip-Spring`): Java + Spring Boot, MySQL 8.0.16+, JWT, WebSocket (STOMP) — see `docs/SyncTrip_구현현황.md`
+**Backend** (`C:\SyncTrip-Spring`): Java + Spring Boot, MySQL 8.0.16+, JWT, WebSocket (STOMP) — see `docs/SyncTrip_구현현황.md`
 
 ---
 

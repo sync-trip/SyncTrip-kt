@@ -101,6 +101,13 @@ interface SyncTripApiService {
         @Body body: PlanBRequest,
     ): List<PlanBResponse>
 
+    /** 빈 Day에 altPool 장소 추가 */
+    @POST("api/bands/{bandId}/schedule/add")
+    suspend fun addToSchedule(
+        @Path("bandId") bandId: Long,
+        @Body body: ScheduleAddRequest,
+    ): Unit
+
     // ── Vote ─────────────────────────────────────────────────────────────────
 
     @GET("api/bands/{bandId}/votes/places")

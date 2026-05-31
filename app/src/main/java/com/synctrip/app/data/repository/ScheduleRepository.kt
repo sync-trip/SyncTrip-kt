@@ -31,4 +31,7 @@ object ScheduleRepository {
 
     suspend fun getPlanB(bandId: Long, targetPlaceId: Long): List<PlanBResponse> =
         ApiClient.api.getPlanB(bandId, PlanBRequest(targetPlaceId))
+
+    suspend fun addToSchedule(bandId: Long, request: ScheduleAddRequest) =
+        ApiClient.api.addToSchedule(bandId, request)
 }

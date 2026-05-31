@@ -88,7 +88,7 @@
 | USR-010 | 스와이프 투표 UI | ✅ 구현 | `VotingAndSettlementScreens.kt` `SwipeVotingScreen` | 카드 1장씩 표시, 좋아요/싫어요 버튼, 카드 이탈 애니메이션, 진행률 배지. 투표 실패 시 Snackbar 에러 표시 |
 | USR-010 | 투표 API 연결 | ✅ 구현 | `VoteViewModel.voteForPlace()` | placeId 기반 투표. 내 투표 완료 시 대기 UI, 전원 완료(`isAllComplete`) 시 aiLoading 이동. `isMyComplete` 타이밍 버그 수정(isLoading 가드 추가) |
 | USR-010 | WebSocket 실시간 투표 | ✅ 구현 | `network/VoteStompClient.kt` + `VoteViewModel.connectWebSocket()` | 투표 화면 진입 시 자동 연결. 이벤트 수신 시 groupStatus만 재조회(`refreshGroupStatus`) — 불필요한 내 상태 API 재호출 제거 |
-| USR-010 | 내가 담은 장소 자동 좋아요 | ✅ 구현 | `VoteViewModel.loadVotePlaces()` | 투표 화면 진입 시 myBookmark=true 장소를 pending에서 제외 + result=1 순차 자동 제출(백엔드에서 0으로 저장). 화면 재진입 시 CONFLICT 무시. votedPlaces 초기값 올바르게 설정됨(재진입 시 진행률 0 표시 버그 없음) |
+| USR-010 | 내가 담은 장소 자동 좋아요 | ✅ 구현 | `VoteViewModel.loadVotePlaces()` | 투표 화면 진입 시 myBookmark=true 장소를 pending에서 제외 + result=1 순차 자동 제출(백엔드에서 0으로 저장). 화면 재진입 시 CONFLICT 무시. autoLike 장소를 `votedPlaces`에도 포함 → `totalCount = votedPlaces.size + pendingPlaces.size` 가 전체 장소 수 정확히 반영 (2026-05-31 버그 수정) |
 | ➕ | 투표 카드 — 내가 담은 장소 배지 | ✅ 구현 | `VotingPlaceCard` | `myBookmark=true`이면 이미지 우상단에 Primary 색 "내가 담은 곳" 배지 표시 |
 | USR-011 | 투표 결과 화면 | ✅ 구현 (2026-05-26) | `VoteResultScreen` + `VoteViewModel.loadVoteResults()` + `GET /api/bands/{bandId}/votes/results` (백엔드 신규) | 장소별 좋아요/싫어요 집계 표시, 통과/탈락 배지, likeCount 내림차순 정렬. 투표 완료 시 blindVoting → voteResults 자동 이동 후 "일정 만들기" → aiLoading 이동 |
 | USR-012 | Density 기반 슬롯 편입 | — | 백엔드 전담 | Android 클라이언트 별도 구현 불필요 |
@@ -275,4 +275,6 @@
 | 2026-05-31 | **지도 마커 Day 전환 버그 수정 (➕)** — `ScheduleDayMapView` `forEachIndexed` 내 `MarkerComposable`에 `key(slot.scheduleId)` 래퍼 추가. 기존 코드는 Day 전환 시 `rememberMarkerState`가 위치 기반으로 재사용돼 이전 Day 좌표가 유지되는 버그 발생. `key()`로 슬롯 ID 변경 시 강제 재생성 |
 | 2026-05-31 | **크로스 Day 드래그 이동 구현 (➕)** — `ScheduleEditScreen` 전면 개편: Day 탭 → 전체 Day 플랫 리스트(`FlatItem` sealed class). `EditDayHeaderRow` 신규(Day 헤더, 비드래그). 드래그 완료 후 `movedIndex` 앞 `DayHeader`로 목적지 Day 판별. 같은 Day: `reorderSlots`, 다른 Day: `moveSlot(POST /schedule/move)`. `ScheduleMoveRequest` DataModel + `SyncTripApiService.moveSchedule` + `ScheduleRepository.moveSlot` + `ScheduleViewModel.moveSlot()` 추가 |
 
-**마지막 수정:** 2026-05-31 (크로스 Day 드래그·타임라인 숙소 행·에러 메시지·지도 마커 버그 수정) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+| 2026-05-31 | **투표 진행률 표시 버그 수정 (➕)** — `VoteViewModel.loadVotePlaces()`에서 autoLike 장소 제출 후 `votedPlaces`에도 추가. 북마크 장소가 있을 때 `totalCount(= votedPlaces.size + pendingPlaces.size)`가 전체 장소 수보다 작게 표시되던 문제 해결. 백엔드 `BandMember.voteCompleted` 플래그 도입(DDL v14) 대응 — `groupStatus.isAllComplete`이 `voteCompleted` DB 플래그 기반으로 판정됨 |
+
+**마지막 수정:** 2026-05-31 (투표 진행률 표시 버그 수정 + voteCompleted 플래그 백엔드 대응) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`

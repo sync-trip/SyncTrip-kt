@@ -96,6 +96,7 @@ fun TripBandHubScreen(
     isPlanBLoading: Boolean,
     onRequestPlanB: (targetPlaceId: Long) -> Unit,
     onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
+    onAddSlot: (placeId: Long, targetDayNumber: Int) -> Unit = { _, _ -> },
     // 정산 탭 콜백
     onSettleClick: (transferId: String) -> Unit,
     onAddExpense: (itemName: String, amount: Double, currency: String, payerId: Long, memberIds: List<Long>) -> Unit,
@@ -205,12 +206,13 @@ fun TripBandHubScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar       = {
             HubTopBar(
-                title         = band.destination,
-                selectedTab   = selectedTab,
-                isEditing     = isEditing,
-                canEdit       = false,
-                isOwner       = band.isOwner,
-                onBackClick   = onBackClick,
+                title           = band.destination,
+                selectedTab     = selectedTab,
+                isEditing       = isEditing,
+                canEdit         = false,
+                isOtherEditing  = schedule?.editingUserId != null && schedule.editingUserId != currentUserId,
+                isOwner         = band.isOwner,
+                onBackClick     = onBackClick,
                 onStartEditing  = onStartEditing,
                 onFinishEditing = onFinishEditing,
                 onGoToScheduleEdit = onGoToScheduleEdit,
@@ -290,6 +292,7 @@ fun TripBandHubScreen(
                         onLoadAlts          = onLoadAlts,
                         onRequestPlanB      = onRequestPlanB,
                         onExecutePlanBSwap  = onExecutePlanBSwap,
+                        onAddSlot           = onAddSlot,
                         accommodationName   = band.accommodationName,
                         accommodationLat    = band.accommodationLat,
                         accommodationLng    = band.accommodationLng,
@@ -348,6 +351,7 @@ private fun HubTopBar(
     selectedTab: BandHubTab,
     isEditing: Boolean,
     canEdit: Boolean,
+    isOtherEditing: Boolean,
     isOwner: Boolean,
     onBackClick: () -> Unit,
     onStartEditing: () -> Unit,
@@ -376,22 +380,20 @@ private fun HubTopBar(
             }
         },
         actions = {
-            // 일정 탭: 편집 버튼
-            if (selectedTab == BandHubTab.SCHEDULE && canEdit) {
-                if (isEditing) {
-                    TextButton(onClick = onFinishEditing) {
-                        Text("편집 완료", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
-                    }
-                } else {
-                    IconButton(onClick = onStartEditing) {
-                        Icon(Icons.Outlined.EditNote, contentDescription = "일정 편집")
-                    }
-                }
-            }
-            // 일정 탭: 일정 편집 화면 이동 버튼
+            // 일정 탭: "편집" 텍스트 버튼 — 타인 편집 중이면 "편집중" (비활성화)
             if (selectedTab == BandHubTab.SCHEDULE) {
-                IconButton(onClick = onGoToScheduleEdit) {
-                    Icon(Icons.Outlined.EditNote, contentDescription = "일정 편집")
+                TextButton(
+                    onClick = onGoToScheduleEdit,
+                    enabled = !isOtherEditing,
+                ) {
+                    Text(
+                        text  = if (isOtherEditing) "편집중" else "편집",
+                        color = if (isOtherEditing)
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        else
+                            MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    )
                 }
             }
             // 방장만: 방 삭제 버튼 (임시)

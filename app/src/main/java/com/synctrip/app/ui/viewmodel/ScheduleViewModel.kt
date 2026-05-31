@@ -152,6 +152,49 @@ class ScheduleViewModel : ViewModel() {
         }
     }
 
+    /**
+     * 저장 버튼 — 크로스 Day 이동 후 각 Day 순서 확정.
+     * 성공 시 onSuccess 콜백 호출 (화면 닫기 등).
+     */
+    fun saveScheduleChanges(
+        bandId: Long,
+        moves: List<ScheduleMoveRequest>,
+        allDayOrders: Map<Int, List<Long>>,
+        onSuccess: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            runCatching {
+                // 1단계: 크로스 Day 이동 (flatItems 순서대로)
+                moves.forEach { ScheduleRepository.moveSlot(bandId, it) }
+                // 2단계: 각 Day 최종 순서 확정 (빈 Day는 스킵)
+                allDayOrders.filter { it.value.isNotEmpty() }.forEach { (dayNum, ids) ->
+                    ScheduleRepository.reorderSchedule(bandId, ScheduleReorderRequest(dayNum, ids))
+                }
+            }
+            .onSuccess {
+                loadSchedule(bandId)
+                _uiState.update { it.copy(isLoading = false) }
+                onSuccess()
+            }
+            .onFailure { e ->
+                loadSchedule(bandId)
+                _uiState.update { it.copy(isLoading = false, error = e.toUserMessage()) }
+            }
+        }
+    }
+
+    /** 빈 Day에 altPool 장소 추가 (POST /schedule/add) */
+    fun addSlot(bandId: Long, placeId: Long, targetDayNumber: Int) {
+        viewModelScope.launch {
+            runCatching {
+                ScheduleRepository.addToSchedule(bandId, com.synctrip.app.data.models.ScheduleAddRequest(placeId, targetDayNumber))
+            }
+            .onSuccess { loadSchedule(bandId) }
+            .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
+        }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }

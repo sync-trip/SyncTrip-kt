@@ -79,7 +79,12 @@ class VoteViewModel : ViewModel() {
                         runCatching { VoteRepository.submitVote(bandId, place.placeId, 1) }
                         // CONFLICT(이미 투표)는 무시 — 화면 재진입 시 중복 방지
                     }
-                    if (autoLike.isNotEmpty()) refreshStatus()
+                    // autoLike 장소도 votedPlaces에 포함해야 totalCount(진행률 분모)가 정확함
+                    // 미포함 시 "8/8" 완료인데 서버는 "10/10"으로 판단 → 화면 불일치
+                    if (autoLike.isNotEmpty()) {
+                        _uiState.update { it.copy(votedPlaces = it.votedPlaces + autoLike) }
+                        refreshStatus()
+                    }
                 }
                 .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.toUserMessage()) }
         }

@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.synctrip.app.ui.components.PlaneLoadingIndicator
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -67,8 +68,10 @@ fun SyncTripNavGraph(
     }
 
     // 딥링크 초대 코드 상태 — NavHost 밖에 선언해야 어느 화면에서도 다이얼로그 표시 가능
-    var pendingJoinCode by remember { mutableStateOf<String?>(null) }
-    var joinError       by remember { mutableStateOf<String?>(null) }
+    var pendingJoinCode  by remember { mutableStateOf<String?>(null) }
+    var joinError        by remember { mutableStateOf<String?>(null) }
+    // 409: 이미 참여 중이거나 참여 불가 — 에러 메시지 노출 없이 별도 안내 다이얼로그로 처리
+    var joinBlockedMsg   by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(pendingDeepLinkCode) {
         if (!pendingDeepLinkCode.isNullOrEmpty()) {
@@ -76,6 +79,18 @@ fun SyncTripNavGraph(
             joinError = null
             onDeepLinkConsumed()
         }
+    }
+
+    // 이미 참여 중 / 참여 불가 안내 다이얼로그
+    if (joinBlockedMsg != null) {
+        AlertDialog(
+            onDismissRequest = { joinBlockedMsg = null },
+            title            = { Text("참여할 수 없어요") },
+            text             = { Text(joinBlockedMsg!!) },
+            confirmButton    = {
+                TextButton(onClick = { joinBlockedMsg = null }) { Text("확인") }
+            },
+        )
     }
 
     if (pendingJoinCode != null) {
@@ -99,7 +114,14 @@ fun SyncTripNavGraph(
                                 navController.navigate("tripLobby/${band.id}")
                             }
                             .onFailure { e ->
-                                joinError = e.toUserMessage()
+                                if (e is retrofit2.HttpException && e.code() == 409) {
+                                    // 409: 기술적 에러 메시지 숨기고 사용자 친화적 안내로 전환
+                                    pendingJoinCode = null
+                                    joinError = null
+                                    joinBlockedMsg = "이미 참여 중인 여행이거나\n현재 참여할 수 없는 상태예요.\n홈 화면에서 여행 목록을 확인해보세요."
+                                } else {
+                                    joinError = e.toUserMessage()
+                                }
                             }
                     }
                 }) { Text("참여하기") }
@@ -461,8 +483,8 @@ fun SyncTripNavGraph(
             val bandIdLong = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: 0L
             var currentUserId by remember { mutableStateOf(0L) }
 
-            // 허브 탭 선택 상태 — NavGraph에서 관리해야 scheduleReadyEvent와 연동 가능
-            var selectedTab by remember { mutableStateOf(BandHubTab.BAND) }
+            // 허브 탭 선택 상태 — rememberSaveable: scheduleEdit 복귀 시 탭 상태 보존
+            var selectedTab by rememberSaveable { mutableStateOf(BandHubTab.BAND) }
             var isRefreshing by remember { mutableStateOf(false) }
             // 이전 상태 추적 — GENERATING→TRAVELLING 전환 시에만 탭 자동 전환
             var prevBandStatus by remember { mutableStateOf<BandStatus?>(null) }
@@ -634,6 +656,7 @@ fun SyncTripNavGraph(
                     isPlanBLoading    = scheduleUiState.isPlanBLoading,
                     onRequestPlanB    = { pid -> scheduleViewModel.loadPlanB(bandIdLong, pid) },
                     onExecutePlanBSwap = { sid, pid -> scheduleViewModel.executePlanBSwap(bandIdLong, sid, pid) },
+                    onAddSlot          = { placeId, dayNum -> scheduleViewModel.addSlot(bandIdLong, placeId, dayNum) },
                     onSettleClick     = {},
                     onAddExpense      = { itemName, amount, currency, payerId, memberIds ->
                         val now = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
@@ -870,9 +893,11 @@ fun SyncTripNavGraph(
             // 전원 투표 완료 여부: 서버 groupStatus 기준
             val isAllComplete = uiState.groupStatus?.isAllComplete == true
 
-            // 전원 투표 완료 → 1.5초 후 투표 결과 화면으로 자동 이동
-            LaunchedEffect(isAllComplete) {
-                if (isAllComplete) {
+            // 전원 완료 + 내 투표 완료 → 1.5초 후 투표 결과 화면으로 자동 이동
+            // isAllComplete만 키로 쓰면: 내가 아직 투표 중인데 다른 멤버가 먼저 끝나면
+            // 조기 이동되는 버그 발생 → isMyComplete도 키에 포함해 내 완료 시점에 재평가
+            LaunchedEffect(isAllComplete, isMyComplete) {
+                if (isAllComplete && isMyComplete) {
                     delay(1_500L)
                     navController.navigate("voteResults/$bandId") {
                         popUpTo("blindVoting/$bandId") { inclusive = true }
@@ -1058,7 +1083,10 @@ fun SyncTripNavGraph(
         // 일정 편집 화면 — 드래그 순서 변경 + swap + 편집 락 관리
         composable("scheduleEdit/{bandId}") { backStackEntry ->
             val bandId = backStackEntry.arguments?.getString("bandId")?.toLongOrNull() ?: return@composable
-            val scheduleViewModel: ScheduleViewModel = viewModel()
+            // tripLobby 엔트리의 ViewModel 공유 — 편집 완료(finishEditing→loadSchedule) 시 허브 UI 자동 갱신
+            val scheduleViewModel: ScheduleViewModel = viewModel(
+                viewModelStoreOwner = navController.previousBackStackEntry ?: backStackEntry
+            )
             val bandViewModel: BandViewModel = viewModel()
             val bandState by bandViewModel.uiState.collectAsState()
             LaunchedEffect(bandId) { bandViewModel.loadBands() }

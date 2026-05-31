@@ -457,6 +457,9 @@ data class ScheduleMoveRequest(
 
 data class PlanBRequest(val targetPlaceId: Long)
 
+/** POST /api/bands/{bandId}/schedule/add — altPool 장소를 특정 Day에 추가 */
+data class ScheduleAddRequest(val placeId: Long, val targetDayNumber: Int)
+
 data class PlanBResponse(
     val placeId: Long,
     val category: ApiPlaceCategory,
