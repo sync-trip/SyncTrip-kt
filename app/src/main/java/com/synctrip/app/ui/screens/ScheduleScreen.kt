@@ -2025,9 +2025,15 @@ fun ScheduleEditScreen(
                     dragSourceDayNumber = it.originalDayNumber
                 }
             }
-            // DayHeader 위치로는 이동 불가 — 슬롯이 헤더를 지나쳐 다음 Day로 이동은 허용
-            if (flatItems.getOrNull(to.index) is FlatItem.DayHeader) return@rememberReorderableLazyListState
-            flatItems.add(to.index, flatItems.removeAt(from.index))
+            // 헤더를 만나면 드래그 방향으로 건너뛰어 그 너머 슬롯 위치로 이동 (크로스 Day 허용)
+            // return으로 막으면 sh.calvin.reorderable이 해당 스텝을 취소해 헤더 직전에서 드래그가 멈춤
+            var targetIdx = to.index
+            val direction = if (to.index > from.index) 1 else -1
+            while (targetIdx in flatItems.indices && flatItems[targetIdx] is FlatItem.DayHeader) {
+                targetIdx += direction
+            }
+            if (targetIdx !in flatItems.indices) return@rememberReorderableLazyListState
+            flatItems.add(targetIdx, flatItems.removeAt(from.index))
             hasDragged = true
         }
     )
