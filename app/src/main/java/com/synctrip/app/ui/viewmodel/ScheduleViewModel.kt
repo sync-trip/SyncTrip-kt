@@ -102,11 +102,14 @@ class ScheduleViewModel : ViewModel() {
         }
     }
 
-    /** POST /api/bands/{bandId}/schedule/edit/finish — 편집 락 반환 */
+    /** POST /api/bands/{bandId}/schedule/edit/finish — 편집 락 반환 후 일정 새로고침 (editingUserId 초기화) */
     fun finishEditing(bandId: Long) {
         viewModelScope.launch {
             runCatching { ScheduleRepository.finishEditing(bandId) }
-                .onSuccess { _uiState.update { it.copy(isEditing = false) } }
+                .onSuccess {
+                    _uiState.update { it.copy(isEditing = false) }
+                    loadSchedule(bandId)  // 허브 화면에서 "○○님이 편집 중" 배너가 남지 않도록 갱신
+                }
                 .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
         }
     }

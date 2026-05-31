@@ -1980,23 +1980,12 @@ fun ScheduleEditScreen(
         if (uiState.error != null && !uiState.isEditing) showLockErrorDialog = true
     }
 
-    var showSessionExpiredDialog by remember { mutableStateOf(false) }
+    // 편집 중 발생한 에러(드래그 실패, 네트워크 등)는 스낵바로 표시 — 세션 만료 다이얼로그 금지
     LaunchedEffect(uiState.error) {
-        uiState.error?.let {
-            if (uiState.isEditing) showSessionExpiredDialog = true
+        uiState.error?.let { msg ->
+            if (uiState.isEditing) snackbarHostState.showSnackbar(msg)
             viewModel.clearError()
         }
-    }
-
-    if (showSessionExpiredDialog) {
-        AlertDialog(
-            onDismissRequest = { showSessionExpiredDialog = false; onBack() },
-            title = { Text("편집 세션 만료") },
-            text  = { Text("편집 세션이 만료됐습니다. 다시 편집해주세요.") },
-            confirmButton = {
-                TextButton(onClick = { showSessionExpiredDialog = false; onBack() }) { Text("확인") }
-            },
-        )
     }
 
     if (showLockErrorDialog) {
@@ -2084,15 +2073,24 @@ fun ScheduleEditScreen(
                     .count { it is FlatItem.SlotItem }
 
                 if (targetDayNumber == dragSourceDayNumber) {
-                    // 같은 Day: 해당 헤더 이후 다음 헤더 전까지 SlotItem 순서로 reorderSlots
+                    // 같은 Day: originalDayNumber가 targetDay인 슬롯만 포함 (스테일 데이터 방어)
+                    // 이전 drag의 loadSchedule이 미완료 상태에서 재드래그 시 다른 Day 슬롯이
+                    // 섞일 수 있으므로 originalDayNumber로 필터링
                     val orderedIds = buildList {
                         for (i in (targetDayHeaderIdx + 1) until flatItems.size) {
                             val item = flatItems[i]
                             if (item is FlatItem.DayHeader) break
-                            if (item is FlatItem.SlotItem) add(item.slot.scheduleId)
+                            if (item is FlatItem.SlotItem && item.originalDayNumber == targetDayNumber) {
+                                add(item.slot.scheduleId)
+                            }
                         }
                     }
-                    viewModel.reorderSlots(bandId, targetDayNumber, orderedIds)
+                    if (orderedIds.isEmpty()) {
+                        // 유효한 슬롯이 없으면 서버 상태로 롤백
+                        viewModel.loadSchedule(bandId)
+                    } else {
+                        viewModel.reorderSlots(bandId, targetDayNumber, orderedIds)
+                    }
                 } else {
                     // 다른 Day: moveSlot
                     viewModel.moveSlot(bandId, draggedScheduleId, targetDayNumber, targetSlotOrder)
