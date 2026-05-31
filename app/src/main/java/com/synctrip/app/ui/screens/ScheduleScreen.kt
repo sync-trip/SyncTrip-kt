@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.Dash
+import com.google.android.gms.maps.model.Gap
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
 import com.synctrip.app.data.models.*
@@ -109,11 +112,13 @@ fun ScheduleScreen(
     accommodationLng: Double? = null,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     var selectedDayIndex by remember { mutableIntStateOf(0) }
     var detailSlot by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
     var showSwapSheet by remember { mutableStateOf(false) }
     var showPlanBSheet by remember { mutableStateOf(false) }
     var planBTargetSlot by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
+    var showHotelSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier,
@@ -194,6 +199,7 @@ fun ScheduleScreen(
                         ScheduleDayMapView(
                             slots             = currentSlots,
                             isOverseas        = isOverseas,
+                            selectedSlot      = detailSlot,
                             accommodationName = accommodationName,
                             accommodationLat  = accommodationLat,
                             accommodationLng  = accommodationLng,
@@ -203,22 +209,23 @@ fun ScheduleScreen(
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         SlotTimeline(
-                            slots             = currentSlots,
-                            isEditing         = isEditing,
-                            isPlanBLoading    = isPlanBLoading,
-                            accommodationName = accommodationName,
-                            onSlotClick       = { slot -> detailSlot = slot },
-                            onSwapClick       = { slot ->
+                            slots                = currentSlots,
+                            isEditing            = isEditing,
+                            isPlanBLoading       = isPlanBLoading,
+                            accommodationName    = accommodationName,
+                            onAccommodationClick = { showHotelSheet = true },
+                            onSlotClick          = { slot -> detailSlot = slot },
+                            onSwapClick          = { slot ->
                                 detailSlot = slot
                                 onLoadAlts(slot.scheduleId)
                                 showSwapSheet = true
                             },
-                            onPlanBClick      = { slot ->
+                            onPlanBClick         = { slot ->
                                 planBTargetSlot = slot
                                 showPlanBSheet  = true
                                 onRequestPlanB(slot.place.placeId)
                             },
-                            modifier          = Modifier.weight(1f),
+                            modifier             = Modifier.weight(1f),
                         )
                     }
                 }
@@ -226,13 +233,25 @@ fun ScheduleScreen(
         }
     }
 
+    if (showHotelSheet && accommodationName != null && accommodationLat != null && accommodationLng != null) {
+        HotelBottomSheet(
+            name       = accommodationName,
+            lat        = accommodationLat,
+            lng        = accommodationLng,
+            isOverseas = isOverseas,
+            onDismiss  = { showHotelSheet = false },
+            context    = context,
+        )
+    }
+
     // 장소 상세 바텀시트 (swap/planB 시트가 닫혀 있을 때만 표시)
     val activeDetailSlot = detailSlot
     if (activeDetailSlot != null && !showSwapSheet && !showPlanBSheet) {
         PlaceDetailBottomSheet(
-            slot = activeDetailSlot,
-            isEditing = isEditing,
-            onDismiss = { detailSlot = null },
+            slot       = activeDetailSlot,
+            isEditing  = isEditing,
+            isOverseas = isOverseas,
+            onDismiss  = { detailSlot = null },
             onSwapClick = {
                 onLoadAlts(activeDetailSlot.scheduleId)
                 showSwapSheet = true
@@ -444,6 +463,7 @@ private fun SlotTimeline(
     onPlanBClick: (ScheduleSlotResponse) -> Unit,
     onAddClick: () -> Unit = {},
     accommodationName: String? = null,
+    onAccommodationClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     if (slots.isEmpty()) {
@@ -459,7 +479,8 @@ private fun SlotTimeline(
         if (accommodationName != null) {
             item(key = "accommodation_header") {
                 AccommodationDepartureRow(
-                    name = accommodationName,
+                    name     = accommodationName,
+                    onClick  = onAccommodationClick,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
                 slots.firstOrNull()?.travelTimeFromPrev?.let { minutes ->
@@ -497,10 +518,15 @@ private fun SlotTimeline(
 @Composable
 private fun AccommodationDepartureRow(
     name: String,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -751,9 +777,6 @@ private fun ScheduleSlotCard(
                             label = "%.1f".format(rating),
                         )
                     }
-                    slot.durationMinutes?.let { mins ->
-                        MetaBadge(icon = Icons.Outlined.Schedule, label = "${mins}분")
-                    }
                 }
 
                 // 알고리즘 경고 배지 (영업시간/심야/식사/동선이탈/미확인)
@@ -827,9 +850,11 @@ private fun CategoryChip(category: ApiPlaceCategory, modifier: Modifier = Modifi
 private fun PlaceDetailBottomSheet(
     slot: ScheduleSlotResponse,
     isEditing: Boolean,
+    isOverseas: Boolean,
     onDismiss: () -> Unit,
     onSwapClick: () -> Unit,
 ) {
+    val context = LocalContext.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
@@ -872,12 +897,12 @@ private fun PlaceDetailBottomSheet(
             Spacer(Modifier.height(12.dp))
 
             slot.startTime?.let { DetailRow(Icons.Outlined.Schedule, "시작 시간", it) }
-            slot.durationMinutes?.let { DetailRow(Icons.Outlined.Timer, "예상 소요", "약 ${it}분") }
             slot.place.address?.let { DetailRow(Icons.Outlined.LocationOn, "주소", it) }
             slot.place.rating?.let { DetailRow(Icons.Outlined.Star, "평점", "%.1f / 5.0".format(it)) }
 
+            Spacer(Modifier.height(20.dp))
+
             if (isEditing) {
-                Spacer(Modifier.height(20.dp))
                 Button(
                     onClick = onSwapClick,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -888,6 +913,19 @@ private fun PlaceDetailBottomSheet(
                     Spacer(Modifier.width(8.dp))
                     Text("장소 교체", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
                 }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            OutlinedButton(
+                onClick = {
+                    openDirections(context, slot.place.latitude, slot.place.longitude, slot.place.name, isOverseas)
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Icon(Icons.Outlined.Directions, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("길찾기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
             }
         }
     }
@@ -1300,6 +1338,7 @@ private fun PlanBOptionCard(
 private fun ScheduleDayMapView(
     slots: List<ScheduleSlotResponse>,
     isOverseas: Boolean,
+    selectedSlot: ScheduleSlotResponse? = null,
     accommodationName: String? = null,
     accommodationLat: Double? = null,
     accommodationLng: Double? = null,
@@ -1320,7 +1359,7 @@ private fun ScheduleDayMapView(
     // 지도 카메라 상태
     val cameraPositionState = rememberCameraPositionState()
 
-    // 슬롯 목록이 바뀔 때마다 카메라를 첫 번째 유효 슬롯 위치로 이동
+    // Day 전환 시 카메라를 첫 번째 슬롯으로 이동
     LaunchedEffect(validSlots) {
         if (validSlots.isNotEmpty()) {
             val first = validSlots.first()
@@ -1331,6 +1370,22 @@ private fun ScheduleDayMapView(
                         14f,
                     )
                 )
+            )
+        }
+    }
+
+    // 슬롯 카드 탭 시 해당 마커로 카메라 이동 + zoom in
+    LaunchedEffect(selectedSlot) {
+        val slot = selectedSlot ?: return@LaunchedEffect
+        if (slot.place.latitude != 0.0 && slot.place.longitude != 0.0) {
+            cameraPositionState.animate(
+                update = CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.fromLatLngZoom(
+                        LatLng(slot.place.latitude, slot.place.longitude),
+                        16f,
+                    )
+                ),
+                durationMs = 500,
             )
         }
     }
@@ -1358,13 +1413,27 @@ private fun ScheduleDayMapView(
                     myLocationButtonEnabled = false,
                 ),
             ) {
+                // 숙소 → 슬롯 1 → 슬롯 2 → ... 순서로 점선 연결
+                val routePoints = buildList {
+                    if (accommodationLat != null && accommodationLng != null)
+                        add(LatLng(accommodationLat, accommodationLng))
+                    validSlots.forEach { add(LatLng(it.place.latitude, it.place.longitude)) }
+                }
+                if (routePoints.size >= 2) {
+                    Polyline(
+                        points  = routePoints,
+                        color   = androidx.compose.ui.graphics.Color(0x99888888),
+                        width   = 5f,
+                        pattern = listOf(Dash(20f), Gap(12f)),
+                    )
+                }
+
                 validSlots.forEachIndexed { index, slot ->
-                    val position = LatLng(slot.place.latitude, slot.place.longitude)
-                    // key()로 슬롯 ID가 바뀌면 rememberMarkerState를 강제 재생성
-                    // — key() 없으면 Day 전환 시 이전 Day의 좌표가 유지되는 버그 발생
+                    val position   = LatLng(slot.place.latitude, slot.place.longitude)
+                    val isSelected = selectedSlot?.scheduleId == slot.scheduleId
                     key(slot.scheduleId) {
                         MarkerComposable(
-                            keys     = arrayOf(slot.scheduleId, index),
+                            keys     = arrayOf(slot.scheduleId, index, isSelected),
                             state    = rememberMarkerState(position = position),
                             onClick  = { _ ->
                                 tappedSlot = slot
@@ -1372,8 +1441,9 @@ private fun ScheduleDayMapView(
                             },
                         ) {
                             NumberedMarker(
-                                number   = index + 1,
-                                category = slot.place.category,
+                                number     = index + 1,
+                                category   = slot.place.category,
+                                isSelected = isSelected,
                             )
                         }
                     }
@@ -1392,15 +1462,15 @@ private fun ScheduleDayMapView(
         }
     }
 
-    // 호텔 마커 탭 → 숙소명 다이얼로그
-    if (tappedHotel && accommodationName != null) {
-        AlertDialog(
-            onDismissRequest = { tappedHotel = false },
-            title = { Text("숙소") },
-            text  = { Text(accommodationName) },
-            confirmButton = {
-                TextButton(onClick = { tappedHotel = false }) { Text("확인") }
-            },
+    // 호텔 마커 탭 → 숙소 미니 바텀시트
+    if (tappedHotel && accommodationName != null && accommodationLat != null && accommodationLng != null) {
+        HotelBottomSheet(
+            name       = accommodationName,
+            lat        = accommodationLat,
+            lng        = accommodationLng,
+            isOverseas = isOverseas,
+            onDismiss  = { tappedHotel = false },
+            context    = context,
         )
     }
 
@@ -1426,14 +1496,17 @@ private fun ScheduleDayMapView(
 private fun NumberedMarker(
     number: Int,
     category: ApiPlaceCategory,
+    isSelected: Boolean = false,
 ) {
-    val dotColor = category.color()
+    val size        = if (isSelected) 44.dp else 32.dp
+    val borderWidth = if (isSelected) 3.dp  else 2.dp
+    val dotColor    = category.color()
     Box(
         modifier         = Modifier
-            .size(32.dp)
+            .size(size)
             .clip(CircleShape)
             .background(dotColor)
-            .border(2.dp, Color.White, CircleShape),
+            .border(borderWidth, Color.White, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -1454,19 +1527,88 @@ private fun NumberedMarker(
 private fun HotelMarker() {
     Box(
         modifier         = Modifier
-            .size(32.dp)
+            .size(38.dp)
             .clip(CircleShape)
             .background(Color(0xFFFFC107))
             .border(2.dp, Color.White, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text  = "숙",
-            style = MaterialTheme.typography.labelMedium.copy(
-                color      = Color.White,
-                fontWeight = FontWeight.Bold,
-            ),
+        Icon(
+            imageVector        = Icons.Outlined.Hotel,
+            contentDescription = "숙소",
+            tint               = Color.White,
+            modifier           = Modifier.size(20.dp),
         )
+    }
+}
+
+/** 숙소 마커 탭 시 표시되는 미니 바텀시트 — 숙소명 + 길찾기 버튼 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HotelBottomSheet(
+    name: String,
+    lat: Double,
+    lng: Double,
+    isOverseas: Boolean,
+    onDismiss: () -> Unit,
+    context: android.content.Context,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor   = MaterialTheme.colorScheme.surface,
+        shape            = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFFFC107)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Outlined.Hotel,
+                        contentDescription = null,
+                        tint     = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "숙소",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color      = MaterialTheme.colorScheme.onSurface,
+                        ),
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick  = { openDirections(context, lat, lng, name, isOverseas); onDismiss() },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape    = RoundedCornerShape(12.dp),
+                colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC107)),
+            ) {
+                Icon(Icons.Outlined.Directions, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("숙소 길찾기", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+            }
+        }
     }
 }
 
@@ -1686,12 +1828,12 @@ private fun ScheduleEmptyContent(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ApiPlaceCategory.color(): Color = when (this) {
-    ApiPlaceCategory.FOOD     -> MaterialTheme.colorScheme.error
-    ApiPlaceCategory.CULTURE  -> MaterialTheme.colorScheme.tertiary
-    ApiPlaceCategory.ACTIVITY -> MaterialTheme.colorScheme.primary
-    ApiPlaceCategory.SHOPPING -> Color(0xFF7B1FA2)
-    ApiPlaceCategory.NATURE   -> Color(0xFF2E7D32)
-    ApiPlaceCategory.ETC      -> MaterialTheme.colorScheme.outline
+    ApiPlaceCategory.FOOD     -> Color(0xFFE53935)  // 빨강
+    ApiPlaceCategory.CULTURE  -> Color(0xFF1E88E5)  // 파랑
+    ApiPlaceCategory.ACTIVITY -> Color(0xFFFB8C00)  // 주황
+    ApiPlaceCategory.SHOPPING -> Color(0xFF8E24AA)  // 보라
+    ApiPlaceCategory.NATURE   -> Color(0xFF43A047)  // 초록
+    ApiPlaceCategory.ETC      -> Color(0xFF546E7A)  // 블루그레이
 }
 
 private fun ApiPlaceCategory.icon(): ImageVector = when (this) {
@@ -1744,14 +1886,15 @@ internal fun ScheduleContent(
     onLoadAlts: (scheduleId: Long) -> Unit,
     onRequestPlanB: (targetPlaceId: Long) -> Unit,
     onExecutePlanBSwap: (scheduleId: Long, newPlaceId: Long) -> Unit,
+    modifier: Modifier = Modifier,
     onAddSlot: (placeId: Long, targetDayNumber: Int) -> Unit = { _, _ -> },
     accommodationName: String? = null,
     accommodationLat: Double? = null,
     accommodationLng: Double? = null,
     isRefreshing: Boolean = false,
     onRefresh: () -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     var selectedDayIndex    by remember { mutableIntStateOf(0) }
     var detailSlot          by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
     var showSwapSheet       by remember { mutableStateOf(false) }
@@ -1759,6 +1902,7 @@ internal fun ScheduleContent(
     var planBTargetSlot     by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
     // 빈 Day에 altPool 장소 추가 — null이면 시트 닫힘, 아니면 해당 Day 번호
     var addTargetDayNumber  by remember { mutableStateOf<Int?>(null) }
+    var showHotelSheet      by remember { mutableStateOf(false) }
 
     val days = schedule?.days ?: emptyList()
 
@@ -1793,6 +1937,7 @@ internal fun ScheduleContent(
                         ScheduleDayMapView(
                             slots             = currentSlots,
                             isOverseas        = isOverseas,
+                            selectedSlot      = detailSlot,
                             accommodationName = accommodationName,
                             accommodationLat  = accommodationLat,
                             accommodationLng  = accommodationLng,
@@ -1809,26 +1954,27 @@ internal fun ScheduleContent(
                         modifier     = Modifier.weight(1f),
                     ) {
                         SlotTimeline(
-                            slots             = currentSlots,
-                            isEditing         = isEditing,
-                            isPlanBLoading    = isPlanBLoading,
-                            accommodationName = accommodationName,
-                            onSlotClick       = { slot -> detailSlot = slot },
-                            onSwapClick       = { slot ->
+                            slots                = currentSlots,
+                            isEditing            = isEditing,
+                            isPlanBLoading       = isPlanBLoading,
+                            accommodationName    = accommodationName,
+                            onAccommodationClick = { showHotelSheet = true },
+                            onSlotClick          = { slot -> detailSlot = slot },
+                            onSwapClick          = { slot ->
                                 detailSlot = slot
                                 onLoadAlts(slot.scheduleId)
                                 showSwapSheet = true
                             },
-                            onPlanBClick      = { slot ->
+                            onPlanBClick         = { slot ->
                                 planBTargetSlot = slot
                                 showPlanBSheet  = true
                                 onRequestPlanB(slot.place.placeId)
                             },
-                            onAddClick        = {
-                                onLoadAlts(0L)  // altPool 선행 로드
+                            onAddClick           = {
+                                onLoadAlts(0L)
                                 addTargetDayNumber = days[dayIndex].dayNumber
                             },
-                            modifier          = Modifier.fillMaxSize(),
+                            modifier             = Modifier.fillMaxSize(),
                         )
                     }
                 }
@@ -1842,6 +1988,7 @@ internal fun ScheduleContent(
         PlaceDetailBottomSheet(
             slot        = activeDetailSlot,
             isEditing   = isEditing,
+            isOverseas  = isOverseas,
             onDismiss   = { detailSlot = null },
             onSwapClick = {
                 onLoadAlts(activeDetailSlot.scheduleId)
@@ -1896,6 +2043,17 @@ internal fun ScheduleContent(
                 onAddSlot(placeId, addTargetDayNumber!!)
                 addTargetDayNumber = null
             },
+        )
+    }
+
+    if (showHotelSheet && accommodationName != null && accommodationLat != null && accommodationLng != null) {
+        HotelBottomSheet(
+            name       = accommodationName,
+            lat        = accommodationLat,
+            lng        = accommodationLng,
+            isOverseas = isOverseas,
+            onDismiss  = { showHotelSheet = false },
+            context    = context,
         )
     }
 }
@@ -2144,11 +2302,18 @@ fun ScheduleEditScreen(
         lazyListState = lazyListState,
         onMove = { from, to ->
             if (to.index == 0) return@rememberReorderableLazyListState
-            // DayHeader·EmptyDayPlaceholder는 이동 출발지/도착지 모두 불가
+            // DayHeader·EmptyDayPlaceholder는 이동 출발지 불가
             if (flatItems.getOrNull(from.index) is FlatItem.DayHeader) return@rememberReorderableLazyListState
             if (flatItems.getOrNull(from.index) is FlatItem.EmptyDayPlaceholder) return@rememberReorderableLazyListState
-            if (flatItems.getOrNull(to.index) is FlatItem.DayHeader) return@rememberReorderableLazyListState
-            flatItems.add(to.index, flatItems.removeAt(from.index))
+            if (flatItems.getOrNull(to.index) is FlatItem.DayHeader) {
+                // DayHeader 위치로 드래그 → 차단 대신 헤더 바로 다음(해당 Day 첫 위치)에 삽입
+                // removeAt 후 from < to이면 to 인덱스가 1 감소하므로 조정
+                val moved = flatItems.removeAt(from.index)
+                val adjustedTo = if (from.index < to.index) to.index - 1 else to.index
+                flatItems.add(adjustedTo + 1, moved)
+            } else {
+                flatItems.add(to.index, flatItems.removeAt(from.index))
+            }
             hasPendingChanges = true
         }
     )
@@ -2297,20 +2462,23 @@ fun ScheduleEditScreen(
                             EditDayHeaderRow(item.dayNumber, item.date)
                         }
                         is FlatItem.EmptyDayPlaceholder -> {
-                            // 빈 Day의 드롭 목적지 — 시각적 안내만, 드래그 불가
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(80.dp)
-                                    .padding(4.dp)
-                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    "여기에 장소를 드래그하세요",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                )
+                            // ReorderableItem으로 감싸야 라이브러리가 드롭 대상으로 인식함
+                            // draggableHandle 없음 → 사용자가 직접 끌 수 없고, 슬롯이 이 위치로 이동만 가능
+                            ReorderableItem(reorderState, key = "placeholder_${item.dayNumber}") { _ ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(80.dp)
+                                        .padding(4.dp)
+                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        "여기에 장소를 드래그하세요",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    )
+                                }
                             }
                         }
                         is FlatItem.SlotItem -> {
@@ -2400,6 +2568,7 @@ fun ScheduleEditScreen(
             PlaceDetailBottomSheet(
                 slot       = activeDetailSlot,
                 isEditing  = false,
+                isOverseas = isOverseas,
                 onDismiss  = { detailSlot = null },
                 onSwapClick = {},
             )

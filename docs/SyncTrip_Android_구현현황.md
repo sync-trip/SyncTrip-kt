@@ -279,4 +279,6 @@
 
 | 2026-06-01 | **ScheduleEditScreen 버그 수정 9건 (➕)** — ① `BackHandler` 추가(시스템 뒤로가기 미저장 확인). ② `FlatItem.EmptyDayPlaceholder` 신규 — 빈 Day에 드롭존 제공(`buildFlatItems` 수정). ③ `onMove` DayHeader·EmptyDayPlaceholder 가드 추가 — 헤더 위치로 슬롯 이동 차단. ④ `LaunchedEffect(schedule)`에 `hasPendingChanges = false` 추가 — swap 후 저장 버튼 오잔류 해결. ⑤ `onSelectAlt` / `onSelect`에 `showSwapSheet/showPlanBSheet = false` 추가 — 바텀시트+다이얼로그 중첩 해결. ⑥ `detailSlot` 상태 + `PlaceDetailBottomSheet` 연결 — 슬롯 카드 탭 시 상세정보 표시. ⑦ `saveScheduleChanges`에서 마지막 API 호출에만 `notify=true` — 알림 중복 1건으로 집약. ⑧ 실패 에러 메시지 구체화. ⑨ 백엔드 `ScheduleMoveRequest` / `ScheduleReorderRequest` DTO에 `notify` 필드 추가, `ScheduleService`에 `shouldNotify()` 체크 |
 
-**마지막 수정:** 2026-06-01 (ScheduleEditScreen 버그 수정 9건) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+| 2026-06-01 | **일정 화면 UX 개선 (➕)** — ① 슬롯 카드 탭 시 `cameraPositionState.animate()` (zoom 16f, 500ms)로 지도 마커 포커스. ② 선택된 마커 32dp→44dp 확대·테두리 강조. ③ `HotelMarker` "숙" 텍스트→`Icons.Outlined.Hotel` 아이콘 교체. ④ 숙소 마커/타임라인 숙소 행 탭 시 `AlertDialog`→`HotelBottomSheet`(숙소 길찾기 버튼) 교체. ⑤ 지도 마커 간 순서대로 대시 점선(`Dash(20f)+Gap(12f)`) 연결 — 숙소 포함. ⑥ `PlaceDetailBottomSheet`에 길찾기 버튼 추가·`durationMinutes` MetaBadge 제거. ⑦ 카테고리 마커 색상 고정 hex 전환 — CULTURE `#1E88E5`(파랑)·ETC `#546E7A`(블루그레이)로 회색 탈피. ⑧ `AccommodationDepartureRow` 클릭 시 HotelBottomSheet 표시. ⑨ Plan B fallback — altPool 3km 초과 시 거리 무관 카테고리 매칭 반환 (백엔드 연동). |
+
+**마지막 수정:** 2026-06-01 (일정 화면 UX 개선 9건) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
