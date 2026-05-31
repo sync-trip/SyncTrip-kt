@@ -882,7 +882,7 @@ private fun DetailRow(icon: ImageVector, label: String, value: String) {
 /**
  * Plan B 추천 바텀시트.
  * 현재 슬롯 장소의 위경도 기준으로 1~3km 반경 내 동일 카테고리 대안 장소를 최대 7개 표시한다.
- * 장소 선택 시 onSelect 콜백으로 newPlaceId 전달 → ViewModel이 락 획득·교체·반환을 처리한다.
+ * 장소 선택 시 onSelect 콜백으로 newPlaceId 전달 → 호출자가 onSwapSlot으로 교체를 실행한다.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -976,7 +976,8 @@ private fun PlanBBottomSheet(
                 }
                 else -> {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        results.forEach { result ->
+                        // 가까운 거리순 정렬 후 표시
+                        results.sortedBy { it.distanceKmToTarget }.forEach { result ->
                             PlanBOptionCard(
                                 result = result,
                                 onSelect = { onSelect(result.placeId) },
@@ -1612,10 +1613,7 @@ internal fun ScheduleContent(
     isPlanBLoading: Boolean,
     isLoading: Boolean,
     isEditing: Boolean,
-    canEdit: Boolean,
     isOverseas: Boolean,
-    onStartEditing: () -> Unit,
-    onFinishEditing: () -> Unit,
     onSwapSlot: (scheduleId: Long, newPlaceId: Long) -> Unit,
     onRequestPlanB: (targetPlaceId: Long) -> Unit,
     modifier: Modifier = Modifier,
