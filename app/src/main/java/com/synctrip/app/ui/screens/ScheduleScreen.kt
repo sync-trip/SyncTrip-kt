@@ -2025,15 +2025,11 @@ fun ScheduleEditScreen(
                     dragSourceDayNumber = it.originalDayNumber
                 }
             }
-            // 헤더를 만나면 드래그 방향으로 건너뛰어 그 너머 슬롯 위치로 이동 (크로스 Day 허용)
-            // return으로 막으면 sh.calvin.reorderable이 해당 스텝을 취소해 헤더 직전에서 드래그가 멈춤
-            var targetIdx = to.index
-            val direction = if (to.index > from.index) 1 else -1
-            while (targetIdx in flatItems.indices && flatItems[targetIdx] is FlatItem.DayHeader) {
-                targetIdx += direction
-            }
-            if (targetIdx !in flatItems.indices) return@rememberReorderableLazyListState
-            flatItems.add(targetIdx, flatItems.removeAt(from.index))
+            // 첫 번째 Day 헤더(인덱스 0) 앞으로는 이동 불가
+            if (to.index == 0) return@rememberReorderableLazyListState
+            // to.index를 그대로 사용: removeAt 후 인덱스 시프트로 인해 헤더 직전/직후 정확한 위치에 삽입됨
+            // (while 루프로 건너뛰면 removeAt 후 targetIdx가 실제 위치보다 1 밀려 오삽입됨)
+            flatItems.add(to.index, flatItems.removeAt(from.index))
             hasDragged = true
         }
     )
