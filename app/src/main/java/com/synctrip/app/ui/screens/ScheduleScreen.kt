@@ -7,7 +7,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -28,6 +30,9 @@ import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,12 +41,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import kotlin.math.abs
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.Dash
@@ -187,34 +194,23 @@ fun ScheduleScreen(
                 else -> {
                     val dayIndex = selectedDayIndex.coerceIn(0, days.lastIndex)
                     val currentSlots = days[dayIndex].slots
-                    // 지도(240dp 고정) + 타임라인 분할 화면
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        ScheduleDayMapView(
-                            slots             = currentSlots,
-                            isOverseas        = isOverseas,
-                            selectedSlot      = detailSlot,
-                            accommodationName = accommodationName,
-                            accommodationLat  = accommodationLat,
-                            accommodationLng  = accommodationLng,
-                            modifier          = Modifier
-                                .fillMaxWidth()
-                                .height(240.dp),
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        SlotTimeline(
-                            slots                = currentSlots,
-                            isEditing            = isEditing,
-                            accommodationName    = accommodationName,
-                            onAccommodationClick = { showHotelSheet = true },
-                            onSlotClick          = { slot -> detailSlot = slot },
-                            onSwapClick          = { slot ->
-                                planBTargetSlot = slot
-                                showPlanBSheet  = true
-                                onRequestPlanB(slot.place.placeId)
-                            },
-                            modifier             = Modifier.weight(1f),
-                        )
-                    }
+                    DraggableMapTimelinePanel(
+                        slots                = currentSlots,
+                        isEditing            = isEditing,
+                        isOverseas           = isOverseas,
+                        selectedSlot         = detailSlot,
+                        accommodationName    = accommodationName,
+                        accommodationLat     = accommodationLat,
+                        accommodationLng     = accommodationLng,
+                        onAccommodationClick = { showHotelSheet = true },
+                        onSlotClick          = { slot -> detailSlot = slot },
+                        onSwapClick          = { slot ->
+                            planBTargetSlot = slot
+                            showPlanBSheet  = true
+                            onRequestPlanB(slot.place.placeId)
+                        },
+                        modifier             = Modifier.fillMaxSize(),
+                    )
                 }
             }
         }
@@ -451,11 +447,14 @@ private fun SlotTimeline(
                     onClick  = onAccommodationClick,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
-                slots.firstOrNull()?.travelTimeFromPrev?.let { minutes ->
-                    TravelTimeConnector(
-                        minutes = minutes,
-                        modifier = Modifier.padding(start = 34.dp),
-                    )
+                slots.firstOrNull()?.let { first ->
+                    first.travelTimeFromPrev?.let { minutes ->
+                        TravelTimeConnector(
+                            minutes = minutes,
+                            transitSummary = first.transitSummary,
+                            modifier = Modifier.padding(start = 34.dp),
+                        )
+                    }
                 }
             }
         }
@@ -463,6 +462,7 @@ private fun SlotTimeline(
             if (index > 0) {
                 TravelTimeConnector(
                     minutes = slot.travelTimeFromPrev ?: 0,
+                    transitSummary = slot.transitSummary,
                     modifier = Modifier.padding(start = 34.dp),
                 )
             }
@@ -534,8 +534,10 @@ private fun AccommodationDepartureRow(
 @Composable
 private fun TravelTimeConnector(
     minutes: Int,
+    transitSummary: String? = null,
     modifier: Modifier = Modifier,
 ) {
+    val hasRoute = transitSummary != null
     Row(
         modifier = modifier.padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -543,16 +545,40 @@ private fun TravelTimeConnector(
         Box(
             modifier = Modifier
                 .width(2.dp)
-                .height(28.dp)
+                .height(if (hasRoute) 44.dp else 28.dp)
                 .background(MaterialTheme.colorScheme.outlineVariant),
         )
         if (minutes > 0) {
             Spacer(Modifier.width(6.dp))
-            Text(
-                "${minutes}분",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (hasRoute) {
+                        Icon(
+                            Icons.Outlined.DirectionsTransit,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(3.dp))
+                    }
+                    Text(
+                        "${minutes}분",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (hasRoute && transitSummary != null) {
+                    Text(
+                        transitSummary,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = MaterialTheme.typography.labelSmall.fontSize * 0.85f,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }
@@ -1056,6 +1082,125 @@ private fun PlanBOptionCard(
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             ) {
                 Text("선택", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draggable Map+Timeline Panel — 드래그로 지도/목록 비율 조절 (3개 스냅 지점)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 지도(상단)와 타임라인(하단)을 드래그 핸들로 구분하는 분할 패널.
+ * 핸들을 위아래로 드래그해 세 가지 뷰로 전환한다:
+ *   - 핸들을 위로 끝까지 → 지도 전체 (목록 최소)
+ *   - 기본 위치(240dp)   → 지도+목록 분할
+ *   - 핸들을 아래로 끝까지 → 목록 전체 (지도 숨김)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DraggableMapTimelinePanel(
+    slots: List<ScheduleSlotResponse>,
+    isEditing: Boolean,
+    isOverseas: Boolean,
+    selectedSlot: ScheduleSlotResponse?,
+    accommodationName: String?,
+    accommodationLat: Double?,
+    accommodationLng: Double?,
+    onAccommodationClick: () -> Unit,
+    onSlotClick: (ScheduleSlotResponse) -> Unit,
+    onSwapClick: (ScheduleSlotResponse) -> Unit,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
+    // 기본 지도 높이 240dp — Animatable으로 드래그/스냅 처리
+    val defaultMapHeightPx = with(density) { 240.dp.toPx() }
+    val mapHeightAnim = remember { Animatable(defaultMapHeightPx) }
+
+    BoxWithConstraints(modifier = modifier) {
+        val totalHeightPx = constraints.maxHeight.toFloat()
+        val handleHeightPx = with(density) { 36.dp.toPx() }
+        // 목록 영역 최소 60dp 보장
+        val maxMapPx = (totalHeightPx - handleHeightPx - with(density) { 60.dp.toPx() })
+            .coerceAtLeast(defaultMapHeightPx)
+        // 3개 스냅 지점: 지도 숨김 / 기본 240dp / 지도 최대
+        val snapAnchors = remember(totalHeightPx) {
+            listOf(0f, defaultMapHeightPx, maxMapPx)
+        }
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 지도 영역 — height 0dp 이면 공간 차지 안 함
+            val mapHeightDp = with(density) { mapHeightAnim.value.toDp() }
+            ScheduleDayMapView(
+                slots             = slots,
+                isOverseas        = isOverseas,
+                selectedSlot      = selectedSlot,
+                accommodationName = accommodationName,
+                accommodationLat  = accommodationLat,
+                accommodationLng  = accommodationLng,
+                modifier          = Modifier.fillMaxWidth().height(mapHeightDp),
+            )
+
+            // 드래그 핸들 — 세로 드래그로 지도/목록 비율 조절
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .draggable(
+                        orientation = Orientation.Vertical,
+                        state = rememberDraggableState { delta ->
+                            coroutineScope.launch {
+                                mapHeightAnim.snapTo(
+                                    (mapHeightAnim.value + delta).coerceIn(0f, maxMapPx)
+                                )
+                            }
+                        },
+                        onDragStopped = {
+                            coroutineScope.launch {
+                                // 가장 가까운 스냅 지점으로 부드럽게 이동
+                                val nearest = snapAnchors.minByOrNull {
+                                    abs(it - mapHeightAnim.value)
+                                } ?: defaultMapHeightPx
+                                mapHeightAnim.animateTo(nearest, spring<Float>())
+                            }
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                // pill 형태 드래그 핸들 인디케이터
+                Box(
+                    modifier = Modifier
+                        .width(36.dp)
+                        .height(4.dp)
+                        .background(
+                            MaterialTheme.colorScheme.outlineVariant,
+                            RoundedCornerShape(2.dp),
+                        ),
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // 구글맵이 제스처를 소비하므로 타임라인 영역에만 PullToRefreshBox 배치
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh    = onRefresh,
+                modifier     = Modifier.weight(1f),
+            ) {
+                SlotTimeline(
+                    slots                = slots,
+                    isEditing            = isEditing,
+                    accommodationName    = accommodationName,
+                    onAccommodationClick = onAccommodationClick,
+                    onSlotClick          = onSlotClick,
+                    onSwapClick          = onSwapClick,
+                    modifier             = Modifier.fillMaxSize(),
+                )
             }
         }
     }
@@ -1656,43 +1801,25 @@ internal fun ScheduleContent(
             else -> {
                 val dayIndex     = selectedDayIndex.coerceIn(0, days.lastIndex)
                 val currentSlots = days[dayIndex].slots
-                // 지도(240dp 고정) + 타임라인 분할 화면 — 슬롯 없으면 지도 영역 숨김
-                Column(modifier = Modifier.weight(1f)) {
-                    if (currentSlots.isNotEmpty()) {
-                        ScheduleDayMapView(
-                            slots             = currentSlots,
-                            isOverseas        = isOverseas,
-                            selectedSlot      = detailSlot,
-                            accommodationName = accommodationName,
-                            accommodationLat  = accommodationLat,
-                            accommodationLng  = accommodationLng,
-                            modifier          = Modifier
-                                .fillMaxWidth()
-                                .height(240.dp),
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
-                    // 구글맵이 제스처를 소비하므로 타임라인 영역에만 PullToRefreshBox 배치
-                    PullToRefreshBox(
-                        isRefreshing = isRefreshing,
-                        onRefresh    = onRefresh,
-                        modifier     = Modifier.weight(1f),
-                    ) {
-                        SlotTimeline(
-                            slots                = currentSlots,
-                            isEditing            = isEditing,
-                            accommodationName    = accommodationName,
-                            onAccommodationClick = { showHotelSheet = true },
-                            onSlotClick          = { slot -> detailSlot = slot },
-                            onSwapClick          = { slot ->
-                                planBTargetSlot = slot
-                                showPlanBSheet  = true
-                                onRequestPlanB(slot.place.placeId)
-                            },
-                            modifier             = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
+                DraggableMapTimelinePanel(
+                    slots                = currentSlots,
+                    isEditing            = isEditing,
+                    isOverseas           = isOverseas,
+                    selectedSlot         = detailSlot,
+                    accommodationName    = accommodationName,
+                    accommodationLat     = accommodationLat,
+                    accommodationLng     = accommodationLng,
+                    isRefreshing         = isRefreshing,
+                    onRefresh            = onRefresh,
+                    onAccommodationClick = { showHotelSheet = true },
+                    onSlotClick          = { slot -> detailSlot = slot },
+                    onSwapClick          = { slot ->
+                        planBTargetSlot = slot
+                        showPlanBSheet  = true
+                        onRequestPlanB(slot.place.placeId)
+                    },
+                    modifier             = Modifier.weight(1f),
+                )
             }
         }
     }
@@ -1758,15 +1885,15 @@ private val previewPlace = SchedulePlaceInfo(
 )
 
 private val previewSlots = listOf(
-    ScheduleSlotResponse(1L, 1, "09:00", 90, null,
+    ScheduleSlotResponse(1L, 1, "09:00", 90, null, null,
         previewPlace.copy(name = "아사쿠사 센소지", category = ApiPlaceCategory.CULTURE)),
-    ScheduleSlotResponse(2L, 2, "11:30", 60, 25,
+    ScheduleSlotResponse(2L, 2, "11:30", 60, 25, "丸ノ内線 → 日比谷線",
         previewPlace.copy(name = "도쿄 스카이트리", category = ApiPlaceCategory.ACTIVITY, address = "도쿄 스미다구 오시아게 1-1-2", rating = 4.6f)),
-    ScheduleSlotResponse(3L, 3, "13:30", 60, 20,
+    ScheduleSlotResponse(3L, 3, "13:30", 60, 20, "日比谷線",
         previewPlace.copy(name = "우에노 공원", category = ApiPlaceCategory.NATURE, address = "도쿄 다이토구 우에노 공원")),
-    ScheduleSlotResponse(4L, 4, "15:00", 120, 15,
+    ScheduleSlotResponse(4L, 4, "15:00", 120, 15, null,
         previewPlace.copy(name = "아키하바라", category = ApiPlaceCategory.SHOPPING, address = "도쿄 치요다구 외신다이마치 1")),
-    ScheduleSlotResponse(5L, 5, "18:30", 90, 35,
+    ScheduleSlotResponse(5L, 5, "18:30", 90, 35, "山手線",
         previewPlace.copy(name = "이치란 신주쿠점", category = ApiPlaceCategory.FOOD, address = "도쿄 신주쿠구 가부키초 1-22-7", rating = 4.3f)),
 )
 

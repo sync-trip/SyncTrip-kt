@@ -402,6 +402,7 @@ data class ScheduleSlotResponse(
     val startTime: String?,  // 자유 시간 슬롯은 null
     val durationMinutes: Int?,
     val travelTimeFromPrev: Int?,
+    val transitSummary: String? = null,
     val place: SchedulePlaceInfo,
     // ── 알고리즘 경고 플래그 (배지 표시용) ──────────────────────────────
     // 백엔드 record 컴포넌트 네이밍(isXxx / xxx) 불확실성 대비 alternate 병기.

@@ -295,4 +295,6 @@
 
 | 2026-06-01 | **홈 추천 여행지 → 여행 생성 Step 2 직행 (➕)** — 홈화면 추천 카드 "이 여행지로 계획 세우기" 클릭 시 선택 여행지명을 `createTrip?destination={name}` 쿼리 파라미터로 전달. `CreateTripScreen`에 `initialPage: Int = 1` 파라미터 추가 — `destinationArg` 있으면 `page=2` 초기화해 Step 1(여행지 선택) 건너뛰고 Step 2(여행 정보)부터 진입. `getPopularDestinations()` 응답에서 name 매칭으로 `selectedDestination` 자동 설정 + `bandName` 자동 입력. `selectedDestination` 로딩 중 `CircularProgressIndicator` 표시(null 크래시 방지). FAB·EmptyTripsPlaceholder 진입은 `initialPage=1` 유지. `HomeScreen.onCreateTripClick: (String) -> Unit`으로 시그니처 변경. (`HomeScreen.kt`, `NavGraph.kt`, `TripCreationScreens.kt`) |
 
-**마지막 수정:** 2026-06-01 (홈 추천 여행지 Step 2 직행) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
+| 2026-06-02 | **일정 탭 드래그 분할 패널 (➕)** — `DraggableMapTimelinePanel` 신규 컴포저블 추가(`ScheduleScreen.kt`). 지도(상단)와 타임라인(하단) 사이 pill 드래그 핸들 삽입. 세로 드래그로 3개 스냅 지점 전환: ① 핸들 아래로 → 목록 전체(지도 0dp), ② 기본 240dp, ③ 핸들 위로 → 지도 최대(목록 최소 60dp). `Animatable` + `spring<Float>()` 애니메이션. `ScheduleScreen`·`ScheduleContent` 양쪽에서 `DraggableMapTimelinePanel` 호출로 교체 |
+
+**마지막 수정:** 2026-06-02 (일정 탭 드래그 분할 패널) | **참조 문서:** `SyncTrip_인수인계문서_v6.md`, `SyncTrip_구현현황.md`
