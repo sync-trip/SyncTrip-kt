@@ -617,7 +617,7 @@ class BandViewModel : ViewModel() {
                 id          = m.userId.toString(),
                 category    = "지출",
                 description = "${m.userName} 정산",
-                amount      = m.totalPaid.toLong(),
+                amount      = m.netAmount.toLong(),
                 paidBy      = m.userName,
             )
         },
