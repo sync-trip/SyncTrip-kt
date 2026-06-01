@@ -60,7 +60,7 @@ fun HomeScreen(
     onNotificationsClick: () -> Unit,
     onContentCardClick: (String) -> Unit,
     onTripBandClick: (String) -> Unit,
-    onCreateTripClick: () -> Unit,
+    onCreateTripClick: (String) -> Unit,
     onPassportClick: () -> Unit,
     onJoinWithCode: (String) -> Unit,
     onLogout: () -> Unit,
@@ -280,7 +280,7 @@ fun HomeScreen(
                         }
 
                         Button(
-                            onClick  = { selectedRecommended = null; onCreateTripClick() },
+                            onClick  = { val destName = selectedRecommended?.destination ?: ""; selectedRecommended = null; onCreateTripClick(destName) },
                             modifier = Modifier.fillMaxWidth(),
                             shape    = RoundedCornerShape(12.dp),
                         ) {
@@ -374,7 +374,7 @@ fun HomeScreen(
                     snackbarHost        = { SnackbarHost(snackbarHostState) },
                     floatingActionButton = {
                         ExtendedFloatingActionButton(
-                            onClick        = onCreateTripClick,
+                            onClick        = { onCreateTripClick("") },
                             icon           = { Icon(Icons.Outlined.Add, contentDescription = null) },
                             text           = { Text("새 여행") },
                             containerColor = MaterialTheme.colorScheme.primary,
@@ -392,7 +392,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
-                            .padding(bottom = 16.dp),
+                            .padding(bottom = 88.dp),
                     ) {
                         Spacer(Modifier.height(8.dp))
 
@@ -438,7 +438,7 @@ fun HomeScreen(
 
                         if (myTripBands.isEmpty()) {
                             EmptyTripsPlaceholder(
-                                onCreateTripClick = onCreateTripClick,
+                                onCreateTripClick = { onCreateTripClick("") },
                                 modifier          = Modifier.padding(horizontal = 20.dp),
                             )
                         } else {

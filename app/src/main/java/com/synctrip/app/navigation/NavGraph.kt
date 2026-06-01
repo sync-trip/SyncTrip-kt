@@ -23,6 +23,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.synctrip.app.SyncTripApplication
 import com.synctrip.app.core.TokenDataStore
 import com.synctrip.app.data.models.*
@@ -265,7 +266,7 @@ fun SyncTripNavGraph(
                 onNotificationsClick = { navController.navigate("notifications") },
                 onContentCardClick   = {},
                 onTripBandClick      = { bandId -> navController.navigate("tripLobby/$bandId") },
-                onCreateTripClick    = { navController.navigate("createTrip") },
+                onCreateTripClick    = { dest -> navController.navigate("createTrip?destination=${android.net.Uri.encode(dest)}") },
                 onPassportClick      = { navController.navigate("passport") },
                 onAlarmSettingsClick = { navController.navigate("notificationSettings") },
                 onProfileEditClick   = { navController.navigate("profileEdit") },
@@ -299,7 +300,12 @@ fun SyncTripNavGraph(
             )
         }
 
-        composable("createTrip") {
+        composable(
+            route = "createTrip?destination={destination}",
+            arguments = listOf(navArgument("destination") { defaultValue = "" }),
+        ) {
+            // 홈화면 추천 카드에서 진입 시 사전 선택할 여행지 이름 (없으면 빈 문자열)
+            val destinationArg      = it.arguments?.getString("destination") ?: ""
             val bandViewModel       = viewModel<BandViewModel>()
             val bandUiState         by bandViewModel.uiState.collectAsState()
             val snackbarState       = remember { SnackbarHostState() }
@@ -318,10 +324,16 @@ fun SyncTripNavGraph(
             var accommodationResults   by remember { mutableStateOf<List<ApiPlaceSearchResult>>(emptyList()) }
             var isAccommodationLoading by remember { mutableStateOf(false) }
 
-            // 화면 진입 시 인기 여행지 로드
+            // 화면 진입 시 인기 여행지 로드 후, 홈화면에서 선택한 여행지 자동 선택
             LaunchedEffect(Unit) {
                 runCatching { ApiClient.api.getPopularDestinations() }
-                    .onSuccess { destinations = it }
+                    .onSuccess { dests ->
+                        destinations = dests
+                        if (destinationArg.isNotBlank()) {
+                            selectedDestination = dests.find { d -> d.name == destinationArg }
+                            selectedDestination?.let { d -> bandName = "${d.name} 여행" }
+                        }
+                    }
             }
 
             // 밴드 생성 에러 스낵바
@@ -440,7 +452,8 @@ fun SyncTripNavGraph(
                             }
                         }
                     },
-                    onBackClick = { navController.popBackStack() },
+                    onBackClick  = { navController.popBackStack() },
+                    initialPage  = if (destinationArg.isNotBlank()) 2 else 1,
                 )
             }
         }
@@ -1110,6 +1123,15 @@ fun SyncTripNavGraph(
             val snackbarState = remember { SnackbarHostState() }
             var query            by remember { mutableStateOf("") }
             var selectedCategory by remember { mutableStateOf(PlaceCategory.ALL) }
+
+            // 편집 락 하트비트 — 장소 검색 화면(scheduleEdit의 자식)에 머무는 동안에도 락 유지.
+            // ScheduleEditScreen의 하트비트는 이 화면에선 멈추므로, 검색만 오래 하다 락이 만료되지 않도록 30초마다 갱신.
+            LaunchedEffect(bandId) {
+                while (true) {
+                    kotlinx.coroutines.delay(30_000)
+                    scheduleViewModel.heartbeatEditing(bandId)
+                }
+            }
 
             LaunchedEffect(uiState.error) {
                 uiState.error?.let { err ->

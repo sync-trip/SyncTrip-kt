@@ -479,7 +479,7 @@ private fun BandHubTabContent(
             ) {
                 Spacer(Modifier.height(4.dp))
 
-                MembersSection(members = members, onInviteClick = onInviteClick)
+                MembersSection(members = members, bandStatus = band.status, onInviteClick = onInviteClick)
 
                 // PLANNING 단계일 때만 내 준비 현황 표시
                 if (band.status == BandStatus.PLANNING) {
@@ -638,22 +638,29 @@ private fun BandHeroSection(
             )
         }
 
-        // 준비 현황 뱃지 (우하단)
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 16.dp),
-            shape = RoundedCornerShape(999.dp),
-            color = Color.Black.copy(alpha = 0.48f),
-        ) {
-            Text(
-                text     = "👥 $readyCount / $totalCount 준비",
-                style    = MaterialTheme.typography.labelMedium.copy(
-                    color      = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                ),
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            )
+        // 상태별 우하단 배지 — PLANNING: 준비 현황, VOTING: 투표 중, 그 외: 미표시
+        val badgeText = when (band.status) {
+            BandStatus.PLANNING -> "👥 $readyCount / $totalCount 준비"
+            BandStatus.VOTING   -> "🗳 투표 중"
+            else                -> null
+        }
+        if (badgeText != null) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 16.dp),
+                shape = RoundedCornerShape(999.dp),
+                color = Color.Black.copy(alpha = 0.48f),
+            ) {
+                Text(
+                    text     = badgeText,
+                    style    = MaterialTheme.typography.labelMedium.copy(
+                        color      = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
         }
     }
 }
@@ -842,6 +849,7 @@ fun TripLobbyScreen(
             // ── 멤버 목록 ─────────────────────────────────────────────────────
             MembersSection(
                 members       = members,
+                bandStatus    = band.status,
                 onInviteClick = onInviteClick,
             )
 
@@ -988,124 +996,83 @@ private fun AccommodationSection(
     canEdit: Boolean,
     onEditClick: () -> Unit,
 ) {
-    if (accommodationName != null) {
-        // 숙소 설정됨 — primaryContainer 강조 카드
-        Card(
-            shape    = RoundedCornerShape(20.dp),
-            colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-            modifier = Modifier.fillMaxWidth(),
+    // 비방장 + 미설정이면 표시할 내용 없음 — 카드 숨김
+    if (accommodationName == null && !canEdit) return
+
+    val context = LocalContext.current
+
+    Card(
+        shape    = RoundedCornerShape(20.dp),
+        colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Row(
-                modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            // 원형 아이콘 배지
+            Surface(
+                shape    = CircleShape,
+                color    = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.size(44.dp),
             ) {
-                // 원형 아이콘 배지
-                Surface(
-                    shape    = CircleShape,
-                    color    = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(44.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(
-                            imageVector        = Icons.Outlined.Hotel,
-                            contentDescription = null,
-                            tint               = MaterialTheme.colorScheme.onPrimary,
-                            modifier           = Modifier.size(22.dp),
-                        )
-                    }
-                }
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    val context = LocalContext.current
-                    Text(
-                        "숙소",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                        ),
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Icon(
+                        imageVector        = Icons.Outlined.Apartment,
+                        contentDescription = null,
+                        tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier           = Modifier.size(22.dp),
                     )
-                    Text(
-                        accommodationName,
-                        style    = MaterialTheme.typography.bodyLarge.copy(
-                            color      = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontWeight = FontWeight.SemiBold,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    // 좌표 있을 때만 지도 앱 연결 버튼 표시
-                    if (accommodationLat != null && accommodationLng != null) {
-                        TextButton(
-                            onClick = {
-                                val uri = android.net.Uri.parse(
-                                    "geo:$accommodationLat,$accommodationLng?q=${android.net.Uri.encode(accommodationName)}"
-                                )
-                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
-                            },
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                        ) {
-                            Text(
-                                "지도에서 보기",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = MaterialTheme.colorScheme.primary,
-                                ),
-                            )
-                        }
-                    }
                 }
-                if (canEdit) {
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    "숙소",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+                Text(
+                    accommodationName ?: "아직 선택된 숙소가 없어요",
+                    style    = MaterialTheme.typography.bodyMedium.copy(
+                        color      = if (accommodationName != null) MaterialTheme.colorScheme.onSurface
+                                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        fontWeight = if (accommodationName != null) FontWeight.SemiBold else FontWeight.Normal,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            // 지도 아이콘 버튼 — 좌표 있을 때만 표시
+            if (accommodationName != null && accommodationLat != null && accommodationLng != null) {
+                IconButton(onClick = {
+                    val uri = android.net.Uri.parse(
+                        "geo:$accommodationLat,$accommodationLng?q=${android.net.Uri.encode(accommodationName)}"
+                    )
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
+                }) {
+                    Icon(
+                        imageVector        = Icons.Outlined.Map,
+                        contentDescription = "지도에서 보기",
+                        tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier           = Modifier.size(20.dp),
+                    )
+                }
+            }
+            // 편집 버튼 — 방장 전용
+            if (canEdit) {
+                if (accommodationName != null) {
                     IconButton(onClick = onEditClick) {
                         Icon(
                             imageVector        = Icons.Outlined.Edit,
                             contentDescription = "숙소 수정",
-                            tint               = MaterialTheme.colorScheme.onPrimaryContainer,
+                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier           = Modifier.size(20.dp),
                         )
                     }
-                }
-            }
-        }
-    } else {
-        // 숙소 미설정 — 아웃라인 카드
-        Card(
-            shape    = RoundedCornerShape(20.dp),
-            colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(
-                modifier              = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Surface(
-                    shape    = CircleShape,
-                    color    = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.size(44.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(
-                            imageVector        = Icons.Outlined.Hotel,
-                            contentDescription = null,
-                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier           = Modifier.size(22.dp),
-                        )
-                    }
-                }
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        "숙소",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                    )
-                    Text(
-                        "아직 선택된 숙소가 없어요",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        ),
-                    )
-                }
-                if (canEdit) {
+                } else {
                     FilledTonalButton(onClick = onEditClick) {
                         Text("선택")
                     }
@@ -1118,6 +1085,7 @@ private fun AccommodationSection(
 @Composable
 private fun MembersSection(
     members: List<BandMemberResponse>,
+    bandStatus: BandStatus,
     onInviteClick: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1146,7 +1114,7 @@ private fun MembersSection(
             verticalAlignment     = Alignment.CenterVertically,
         ) {
             members.forEach { member ->
-                MemberAvatar(member = member)
+                MemberAvatar(member = member, showReadyBadge = bandStatus == BandStatus.PLANNING)
             }
             // 초대 버튼
             Column(
@@ -1172,7 +1140,7 @@ private fun MembersSection(
 }
 
 @Composable
-private fun MemberAvatar(member: BandMemberResponse) {
+private fun MemberAvatar(member: BandMemberResponse, showReadyBadge: Boolean) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(modifier = Modifier.size(52.dp)) {
             // 프로필 아이콘
@@ -1199,8 +1167,8 @@ private fun MemberAvatar(member: BandMemberResponse) {
                     )
                 }
             }
-            // ready 상태 뱃지
-            if (member.isReady) {
+            // PLANNING 단계에서만 ready 뱃지 표시 — 이후 단계에서는 의미 없음
+            if (showReadyBadge && member.isReady) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)

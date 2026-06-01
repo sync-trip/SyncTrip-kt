@@ -83,10 +83,12 @@ fun CreateTripScreen(
     onCreateTrip: () -> Unit,
     onSkipAccommodationAndCreate: () -> Unit,
     onBackClick: () -> Unit,
+    // 홈화면에서 여행지를 미리 선택하고 진입한 경우 2로 설정해 Step 1을 건너뜀
+    initialPage: Int = 1,
     modifier: Modifier = Modifier,
 ) {
     // 현재 단계: 1 = 여행지 선택, 2 = 여행 정보, 3 = 숙소 선택
-    var page by remember { mutableStateOf(1) }
+    var page by remember { mutableStateOf(initialPage) }
 
     val pageTitle = when (page) {
         1 -> "여행지 선택"
@@ -263,18 +265,28 @@ fun CreateTripScreen(
                 onDestinationSelect      = onDestinationSelect,
                 modifier                 = Modifier.padding(innerPadding),
             )
-            2 -> TripInfoPage(
-                selectedDestination = selectedDestination!!,
-                bandName            = bandName,
-                onBandNameChange    = onBandNameChange,
-                startDate           = startDate,
-                onStartDateChange   = onStartDateChange,
-                endDate             = endDate,
-                onEndDateChange     = onEndDateChange,
-                travelStyle         = travelStyle,
-                onTravelStyleChange = onTravelStyleChange,
-                modifier            = Modifier.padding(innerPadding),
-            )
+            2 -> {
+                val dest = selectedDestination
+                if (dest == null) {
+                    // 홈화면에서 진입 후 여행지 로딩 완료 전 잠깐 표시
+                    Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    TripInfoPage(
+                        selectedDestination = dest,
+                        bandName            = bandName,
+                        onBandNameChange    = onBandNameChange,
+                        startDate           = startDate,
+                        onStartDateChange   = onStartDateChange,
+                        endDate             = endDate,
+                        onEndDateChange     = onEndDateChange,
+                        travelStyle         = travelStyle,
+                        onTravelStyleChange = onTravelStyleChange,
+                        modifier            = Modifier.padding(innerPadding),
+                    )
+                }
+            }
             else -> AccommodationSearchPage(
                 destinationLat        = destinationLat,
                 destinationLng        = destinationLng,

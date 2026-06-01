@@ -397,8 +397,7 @@ private fun SlotWarningBadges(slot: ScheduleSlotResponse, modifier: Modifier = M
     val warnings = buildList {
         if (slot.openingHoursViolation)  add("⚠ 영업시간 위반" to MaterialTheme.colorScheme.error)
         if (slot.lateSchedule)           add("🌙 심야 일정" to MaterialTheme.colorScheme.tertiary)
-        if (slot.mealWindowViolation)    add("🍽 식사시간 어긋남" to MaterialTheme.colorScheme.secondary)
-        if (slot.isOutlierCandidate)     add("📍 동선 이탈" to MaterialTheme.colorScheme.outline)
+if (slot.isOutlierCandidate)     add("📍 동선 이탈" to MaterialTheme.colorScheme.outline)
     }
     if (warnings.isEmpty()) return
     FlowRow(
@@ -508,7 +507,7 @@ private fun AccommodationDepartureRow(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    Icons.Outlined.Hotel,
+                    Icons.Outlined.Apartment,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.size(16.dp),
@@ -1282,7 +1281,7 @@ private fun HotelMarker() {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector        = Icons.Outlined.Hotel,
+            imageVector        = Icons.Outlined.Apartment,
             contentDescription = "숙소",
             tint               = Color.White,
             modifier           = Modifier.size(20.dp),
@@ -1322,7 +1321,7 @@ private fun HotelBottomSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Outlined.Hotel,
+                        Icons.Outlined.Apartment,
                         contentDescription = null,
                         tint     = Color.White,
                         modifier = Modifier.size(22.dp),
@@ -1937,11 +1936,23 @@ fun ScheduleEditScreen(
     var showLockErrorDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(bandId) {
-        // scheduleAddPlace 복귀 시 isEditing=true이면 락이 유지 중 — startEditing 재호출 불필요
-        if (!viewModel.uiState.value.isEditing) {
-            viewModel.startEditing(bandId)
-        }
+        // 편집 화면 진입(최초·scheduleAddPlace "+" 복귀 모두)마다 락을 재획득/갱신한다.
+        // 항상 호출해도 본인이 보유 중이면 백엔드가 lastEditingAt만 갱신(idempotent)하고,
+        // 타인이 보유 중이면 CONFLICT로 즉시 "편집 불가" 안내된다.
+        // (이전엔 isEditing 플래그가 true면 건너뛰었으나, 백엔드 락 미보유 상태와 어긋나면
+        //  장소 추가 시 FORBIDDEN("편집 시작 버튼을 눌러주세요")으로 실패했음 — 항상 재획득으로 해소)
+        viewModel.startEditing(bandId)
         viewModel.loadSchedule(bandId)
+    }
+
+    // 편집 락 하트비트 — 화면에 머무는 동안 30초마다 lastEditingAt 갱신.
+    // 백엔드 락 타임아웃이 1분이므로, 드래그·swap 등 액션 없이 화면만 보고 있어도 락이 유지된다.
+    // (앱 강제 종료·네트워크 단절로 화면을 떠나면 하트비트가 멈춰 최대 1분 안에 백엔드가 자동 해제)
+    LaunchedEffect(bandId) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            viewModel.heartbeatEditing(bandId)
+        }
     }
 
     // "+" 버튼으로 scheduleAddPlace 이동 시 락을 유지하기 위해 onDispose의 finishEditing을 억제하는 플래그

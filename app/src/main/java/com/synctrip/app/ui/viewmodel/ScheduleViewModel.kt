@@ -89,6 +89,19 @@ class ScheduleViewModel : ViewModel() {
         }
     }
 
+    /**
+     * POST /api/bands/{bandId}/schedule/edit/start — 편집 락 하트비트.
+     * 편집 화면에 머무는 동안 주기적으로 호출해 백엔드 lastEditingAt을 갱신한다.
+     * (백엔드 락 타임아웃 1분 — 액션 없이 화면만 보고 있어도 락이 만료되지 않도록 유지)
+     * startEditing과 달리 isEditing/error 상태를 건드리지 않아 스낵바·UI를 방해하지 않는다.
+     */
+    fun heartbeatEditing(bandId: Long) {
+        viewModelScope.launch {
+            // 실패(일시적 네트워크 등)는 무시 — 다음 하트비트나 액션 시점에 다시 갱신된다.
+            runCatching { ScheduleRepository.startEditing(bandId) }
+        }
+    }
+
     /** POST /api/bands/{bandId}/schedule/edit/finish — 편집 락 반환 후 일정 새로고침 (editingUserId 초기화) */
     fun finishEditing(bandId: Long) {
         viewModelScope.launch {
@@ -97,7 +110,9 @@ class ScheduleViewModel : ViewModel() {
                     _uiState.update { it.copy(isEditing = false) }
                     loadSchedule(bandId)  // 허브 화면에서 "○○님이 편집 중" 배너가 남지 않도록 갱신
                 }
-                .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
+                // 호출 실패 시에도 로컬 편집 상태는 종료로 정리 — 재진입 시 startEditing이 다시 호출되도록.
+                // 실제 백엔드 락은 1분 하트비트 타임아웃으로 자동 해제된다.
+                .onFailure { _uiState.update { it.copy(isEditing = false) } }
         }
     }
 
