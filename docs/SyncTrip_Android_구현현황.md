@@ -148,7 +148,7 @@
 
 | USR | 기능명 | 상태 | 구현 위치 | 비고 |
 |---|---|---|---|---|
-| USR-023 | 공유 앨범 | ✅ 구현 | `ui/screens/AlbumScreen.kt` + `AlbumViewModel` + `AlbumRepository` | 인스타그램 피드 형식. 피드/지도 탭 전환. EXIF(위도·경도·촬영시각) 추출. Base64 업로드. 낙관적 삭제. 지도 핀 클릭 → 피드 스크롤 |
+| USR-023 | 공유 앨범 | ✅ 구현 | `ui/screens/AlbumScreen.kt` + `AlbumViewModel` + `AlbumRepository` | 인스타그램 피드 형식. 피드/지도 탭 전환. EXIF(위도·경도·촬영시각) 추출. Base64 업로드. 낙관적 삭제. 지도 핀 클릭 → 피드 스크롤. **(2026-06-02 수정)** Android 10+ 위치 EXIF redact 대응: `ACCESS_MEDIA_LOCATION` 권한 + `MediaStore.setRequireOriginal()` + PhotoPicker(`PickVisualMedia`) 전환으로 GPS 좌표 추출 정상화 |
 | USR-024 | 여권 스탬프 UI + API 연동 | ✅ 구현 | `MyPassportScreen` + `BandViewModel.loadPassportStamps()` | `GET /api/users/me/stamps` 연동. DESC→ASC 역순 정렬(오래된 스탬프 먼저). ISO/배열 두 날짜 포맷 모두 파싱. 로딩 중 CircularProgressIndicator 표시 |
 | USR-025 | 과거 여행 기록 | ✅ 구현 | `HomeScreen.kt` `PastTripsScreen` + `NavGraph "pastTrips"` | DONE 밴드 필터링. 홈 드로어 "지난 여행" 항목으로 진입. 썸네일·기간·인원수 카드 표시 |
 
@@ -205,6 +205,10 @@
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-06-02 | **공유 앨범 버그 수정 2건** — ① 업로드 후 새 사진이 피드 최상단에 추가돼도 스크롤이 안 따라가던 문제: `photos[0].id` 변화 감지 `LaunchedEffect`로 최상단 자동 스크롤. ② "9시간 전" 오표기: 서버 `uploadedAt`(타임존 없는 UTC)을 기기 로컬로 파싱해 9h 어긋나던 것을 `formatRelativeTime`에서 UTC 파싱으로 수정 |
+| 2026-06-02 | **공유 앨범 업로드 이미지 압축** — 원본 그대로 Base64 전송(수~십 MB, 업로드 1분+)하던 것을 최대 변 1080px 리사이즈 + JPEG 품질 80% + Base64 NO_WRAP으로 압축(수백 KB). `decodeDownscaledBitmap` 헬퍼 추가. 좌표·촬영시각은 원본 EXIF에서 별도 추출하므로 재인코딩 영향 없음 |
+| 2026-06-02 | **공유 앨범 지도 사진 마커 + 좌표 0,0 진단** — 지도 핀을 기본 마커에서 흰 틀 안 사진 썸네일 마커(`PhotoMarker`+`MarkerComposable`)로 교체(피드 photoData를 핀 id로 매칭해 디코딩). 업로드 시 좌표가 (0.0,0.0)으로 저장되던 문제 대응: 포토피커 위치 redact로 GPS 태그가 0,0으로 비워지는 케이스를 "위치 없음"으로 처리(`hasValidGps`), `AlbumService`에 업로드 좌표 로그 + `extractPhotoData`에 EXIF 진단 로그(`AlbumExif`) 추가 |
+| 2026-06-02 | **공유 앨범 EXIF GPS 추출 수정** — Android 10+ 위치 메타데이터 redact로 사진 GPS가 항상 null이던 문제 해결. `AndroidManifest`에 `ACCESS_MEDIA_LOCATION` 권한 추가, `AlbumScreen` 사진 선택을 `GetContent()`→PhotoPicker(`PickVisualMedia`)로 전환, `extractPhotoData()`에 `MediaStore.setRequireOriginal()` + 권한 런타임 요청 적용. 좌표 추출 정상화로 지도 핀 표시 및 핀→피드 연결 동작 |
 | 2026-05-23 | 문서 최초 작성. USR-001~031 전체 Android 구현 현황 정리 |
 | 2026-05-23 | 아키텍처 레이어 전체 구현. TokenDataStore, Repository 4개, ViewModel 3개 추가. ApiClient 401 자동갱신 인터셉터. Splash 자동로그인, Login 실 Auth 연결, HomeScreen BandViewModel 연결 |
 | 2026-05-23 | HomeScreen 우측 사이드 드로어 구현 (RTL 트릭). 로그아웃 확인 AlertDialog. BackHandler 닫기. BASE_URL 수정 |
