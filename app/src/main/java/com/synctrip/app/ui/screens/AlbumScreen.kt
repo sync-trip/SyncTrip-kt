@@ -1060,15 +1060,6 @@ private fun extractPhotoData(
             }.getOrNull()
         }
 
-        // [진단] EXIF 추출 결과 로그 — 위치가 0,0이거나 null이면 redact 원인 추적용
-        android.util.Log.d(
-            "AlbumExif",
-            "uri=$uri (scheme=${uri.scheme}), exifUri=$exifUri, " +
-                "hasGps=$hasGps, lat=${latLong[0]}, lng=${latLong[1]}, " +
-                "hasValidGps=$hasValidGps, rawDate=$rawDate, isoDate=$isoDate, " +
-                "bytes=${imageBytes.size}"
-        )
-
         PhotoExtractionResult(
             photoData  = base64,
             bitmap     = bitmap,

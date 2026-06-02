@@ -86,6 +86,13 @@ interface SyncTripApiService {
         @Body body: ScheduleMoveRequest,
     ): Unit
 
+    /** 일정 슬롯(장소) 삭제 — 같은 Day의 남은 슬롯 순서·시간은 백엔드가 재계산 */
+    @DELETE("api/bands/{bandId}/schedule/{scheduleId}")
+    suspend fun deleteScheduleSlot(
+        @Path("bandId") bandId: Long,
+        @Path("scheduleId") scheduleId: Long,
+    ): Unit
+
     @POST("api/bands/{bandId}/schedule/edit/start")
     suspend fun startEditing(@Path("bandId") bandId: Long)
 

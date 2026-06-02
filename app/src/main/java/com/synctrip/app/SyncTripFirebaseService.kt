@@ -61,8 +61,12 @@ class SyncTripFirebaseService : FirebaseMessagingService() {
             PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
         )
 
+        // 상태바 작은 아이콘은 단색 실루엣(위치 핀), 알림 펼침 시 오른쪽엔 컬러 앱 로고 표시
+        val largeIcon = android.graphics.BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher1)
+
         val notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.drawable.ic_stat_notification)
+            .setLargeIcon(largeIcon)
             .setContentTitle(title)
             .setContentText(body)
             .setAutoCancel(true)

@@ -2176,6 +2176,8 @@ fun ScheduleEditScreen(
     var planBTargetSlot     by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
     var showPlanBSheet      by remember { mutableStateOf(false) }
     var pendingPlanBPlaceId by remember { mutableStateOf<Long?>(null) }
+    // 삭제 확인 다이얼로그 대상 슬롯 (null이면 닫힘)
+    var slotToDelete        by remember { mutableStateOf<ScheduleSlotResponse?>(null) }
 
     // schedule 갱신 시 flatItems 동기화 — 드래그 중에는 갱신 무시
     // swap/Plan B 성공 후 서버 상태를 덮어쓰므로 hasPendingChanges도 초기화
@@ -2378,6 +2380,14 @@ fun ScheduleEditScreen(
                                             },
                                             modifier  = Modifier.weight(1f),
                                         )
+                                        // 장소 삭제 버튼 — 확인 다이얼로그를 거쳐 DELETE 호출
+                                        IconButton(onClick = { slotToDelete = slot }) {
+                                            Icon(
+                                                Icons.Outlined.DeleteOutline,
+                                                contentDescription = "장소 삭제",
+                                                tint = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -2424,6 +2434,25 @@ fun ScheduleEditScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { pendingPlanBPlaceId = null }) { Text("취소") }
+                },
+            )
+        }
+
+        // 장소 삭제 확인 다이얼로그
+        val deleteTarget = slotToDelete
+        if (deleteTarget != null) {
+            AlertDialog(
+                onDismissRequest = { slotToDelete = null },
+                title = { Text("장소 삭제") },
+                text  = { Text("'${deleteTarget.place.name}'을(를) 일정에서 삭제할까요?\n남은 일정의 동선이 자동으로 재계산됩니다.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.deleteSlot(bandId, deleteTarget.scheduleId)
+                        slotToDelete = null
+                    }) { Text("삭제", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { slotToDelete = null }) { Text("취소") }
                 },
             )
         }

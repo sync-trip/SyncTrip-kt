@@ -80,6 +80,15 @@ class ScheduleViewModel : ViewModel() {
         }
     }
 
+    /** DELETE /api/bands/{bandId}/schedule/{scheduleId} — 장소 삭제 후 일정 새로고침 */
+    fun deleteSlot(bandId: Long, scheduleId: Long) {
+        viewModelScope.launch {
+            runCatching { ScheduleRepository.deleteSlot(bandId, scheduleId) }
+                .onSuccess { loadSchedule(bandId) }
+                .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
+        }
+    }
+
     /** POST /api/bands/{bandId}/schedule/edit/start — 편집 락 획득 */
     fun startEditing(bandId: Long) {
         viewModelScope.launch {

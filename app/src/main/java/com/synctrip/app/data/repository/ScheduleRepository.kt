@@ -26,6 +26,9 @@ object ScheduleRepository {
     suspend fun moveSlot(bandId: Long, request: ScheduleMoveRequest) =
         ApiClient.api.moveSchedule(bandId, request)
 
+    suspend fun deleteSlot(bandId: Long, scheduleId: Long) =
+        ApiClient.api.deleteScheduleSlot(bandId, scheduleId)
+
     suspend fun getPlanB(bandId: Long, targetPlaceId: Long): List<PlanBResponse> =
         ApiClient.api.getPlanB(bandId, PlanBRequest(targetPlaceId))
 
