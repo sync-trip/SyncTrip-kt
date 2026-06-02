@@ -1,19 +1,26 @@
 package com.synctrip.app.ui.screens
 
 import android.Manifest
+import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.core.content.ContextCompat
+import coil3.compose.AsyncImage
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -138,17 +145,16 @@ fun AlbumContent(
     var captionInput      by remember { mutableStateOf("") }
     var showUploadDialog  by remember { mutableStateOf(false) }
 
-    // 사진 선택 런처 — PhotoPicker(MediaStore URI 반환)로 선택 후 EXIF 추출 + Base64 변환.
-    // GetContent()의 SAF URI와 달리 MediaStore URI는 setRequireOriginal()과 호환되어
-    // 원본 GPS EXIF를 안정적으로 읽을 수 있다.
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    // 갤러리 그리드 시트 상태 — MediaStore를 직접 조회한 사진 URI 목록
+    var showPickerSheet by remember { mutableStateOf(false) }
+    var deviceImages    by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
+    // 그리드에서 사진 선택 → EXIF/GPS 추출 + 압축 후 업로드 다이얼로그로.
+    // MediaStore content URI라 extractPhotoData의 setRequireOriginal()이 동작해 원본 GPS 접근 가능.
+    val handlePicked: (Uri) -> Unit = { uri ->
+        showPickerSheet = false
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                extractPhotoData(context, uri)
-            }
+            val result = withContext(Dispatchers.IO) { extractPhotoData(context, uri) }
             result?.let { (data, bitmap, lat, lng, takenAt) ->
                 pendingPhotoData  = data
                 pendingBitmap     = bitmap
@@ -161,29 +167,30 @@ fun AlbumContent(
         }
     }
 
-    // 이미지 전용 PhotoPicker 실행 요청
-    val launchPhotoPicker = {
-        photoPickerLauncher.launch(
-            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-        )
+    // MediaStore에서 기기 사진 목록을 읽어 그리드 시트 열기
+    val openPickerSheet = {
+        scope.launch {
+            deviceImages = withContext(Dispatchers.IO) { queryDeviceImages(context) }
+            showPickerSheet = true
+        }
+        Unit
     }
 
-    // ACCESS_MEDIA_LOCATION 권한 요청 런처 — 결과와 무관하게 사진 선택은 진행
-    // (권한 거부 시 GPS만 누락되고 사진 업로드 자체는 가능)
-    val mediaLocationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { _ -> launchPhotoPicker() }
+    // 사진/위치 권한 요청 런처 — 사진 읽기(전체/부분) 허용 시 그리드 오픈
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { granted ->
+        val canRead = granted[Manifest.permission.READ_MEDIA_IMAGES] == true ||
+            granted[Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED] == true
+        if (canRead) openPickerSheet()
+    }
 
-    // 사진 추가 진입점 — Android 10+ 는 원본 GPS EXIF 접근을 위해 권한 선요청
+    // 사진 추가 진입점 — 권한 확인 후 그리드 오픈, 없으면 요청
     val onAddPhotoClick = {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-            ContextCompat.checkSelfPermission(
-                context, Manifest.permission.ACCESS_MEDIA_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            mediaLocationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+        if (hasMediaReadPermission(context)) {
+            openPickerSheet()
         } else {
-            launchPhotoPicker()
+            permissionLauncher.launch(MEDIA_PERMISSIONS)
         }
     }
 
@@ -224,6 +231,15 @@ fun AlbumContent(
                 pendingPhotoData = null
                 pendingBitmap    = null
             },
+        )
+    }
+
+    // 갤러리 사진 선택 그리드 시트
+    if (showPickerSheet) {
+        AlbumPickerSheet(
+            images     = deviceImages,
+            onPick     = handlePicked,
+            onDismiss  = { showPickerSheet = false },
         )
     }
 
@@ -712,6 +728,82 @@ private fun PhotoMarker(bitmap: Bitmap?) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 갤러리 사진 선택 그리드 시트 (MediaStore 직접 조회)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 기기 갤러리 사진을 3열 그리드로 보여주는 바텀시트.
+ * 시스템 포토피커가 위치 EXIF를 제거하는 것과 달리, MediaStore content URI를
+ * 직접 넘기므로 선택 후 원본 GPS를 읽을 수 있다.
+ * @param images   MediaStore에서 조회한 사진 URI 목록(최신순)
+ * @param onPick   사진 선택 콜백
+ * @param onDismiss 시트 닫기 콜백
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AlbumPickerSheet(
+    images: List<Uri>,
+    onPick: (Uri) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+        ) {
+            Text(
+                "사진 선택",
+                style    = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+            )
+
+            if (images.isEmpty()) {
+                Box(
+                    modifier         = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "표시할 사진이 없어요",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns               = GridCells.Fixed(3),
+                    modifier              = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalArrangement   = Arrangement.spacedBy(3.dp),
+                    contentPadding        = PaddingValues(bottom = 24.dp),
+                ) {
+                    items(images, key = { it.toString() }) { uri ->
+                        AsyncImage(
+                            model              = uri,
+                            contentDescription = "갤러리 사진",
+                            contentScale       = ContentScale.Crop,
+                            modifier           = Modifier
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { onPick(uri) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 업로드 확인 다이얼로그
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -816,6 +908,39 @@ private fun AlbumUploadDialog(
 // 유틸리티 함수
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** 사진 추가 시 요청할 권한 — 사진 읽기(전체/부분) + 원본 위치 접근 */
+private val MEDIA_PERMISSIONS = arrayOf(
+    Manifest.permission.READ_MEDIA_IMAGES,
+    Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+    Manifest.permission.ACCESS_MEDIA_LOCATION,
+)
+
+/** 사진 목록 조회 권한(전체 허용 또는 14+ 부분 선택)이 있는지 확인 */
+private fun hasMediaReadPermission(context: Context): Boolean {
+    val full = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES)
+    val partial = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+    return full == PackageManager.PERMISSION_GRANTED || partial == PackageManager.PERMISSION_GRANTED
+}
+
+/**
+ * MediaStore에서 기기 사진의 content URI 목록을 최신순으로 읽는다.
+ * 반환되는 URI는 `content://media/...` 형태라 setRequireOriginal()로 원본 GPS 접근이 가능하다.
+ * @param limit 최대 조회 장수(그리드 성능을 위해 상한)
+ */
+private fun queryDeviceImages(context: Context, limit: Int = 300): List<Uri> {
+    val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+    val projection = arrayOf(MediaStore.Images.Media._ID)
+    val sortOrder  = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+    val result = ArrayList<Uri>(limit)
+    context.contentResolver.query(collection, projection, null, null, sortOrder)?.use { cursor ->
+        val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+        while (cursor.moveToNext() && result.size < limit) {
+            result.add(ContentUris.withAppendedId(collection, cursor.getLong(idColumn)))
+        }
+    }
+    return result
+}
+
 /** 업로드 이미지 최대 변 길이(px) — 이보다 큰 사진은 비율 유지하며 축소 */
 private const val MAX_UPLOAD_DIMENSION = 1080
 /** 업로드 JPEG 압축 품질 (0~100) */
@@ -854,6 +979,26 @@ private fun decodeDownscaledBitmap(bytes: ByteArray, maxDimension: Int): Bitmap?
 }
 
 /**
+ * EXIF Orientation 값에 따라 비트맵을 실제로 회전/반전시킨다.
+ * 재인코딩 시 방향 태그가 사라지므로, 픽셀 자체를 올바른 방향으로 만들어야 한다.
+ * @return 보정된 비트맵 (보정 불필요 시 원본 그대로)
+ */
+private fun applyExifOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+    val matrix = Matrix()
+    when (orientation) {
+        ExifInterface.ORIENTATION_ROTATE_90     -> matrix.postRotate(90f)
+        ExifInterface.ORIENTATION_ROTATE_180    -> matrix.postRotate(180f)
+        ExifInterface.ORIENTATION_ROTATE_270    -> matrix.postRotate(270f)
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL   -> matrix.postScale(1f, -1f)
+        ExifInterface.ORIENTATION_TRANSPOSE     -> { matrix.postRotate(90f); matrix.postScale(-1f, 1f) }
+        ExifInterface.ORIENTATION_TRANSVERSE    -> { matrix.postRotate(270f); matrix.postScale(-1f, 1f) }
+        else -> return bitmap   // ORIENTATION_NORMAL / UNDEFINED — 보정 불필요
+    }
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+}
+
+/**
  * 갤러리에서 선택한 URI에서 이미지 데이터, EXIF GPS, 촬영 시각을 추출한다.
  * @return Triple(Base64 문자열, Bitmap, 위도, 경도, 촬영시각 ISO 8601) 또는 null
  */
@@ -865,19 +1010,7 @@ private fun extractPhotoData(
         // 1) 이미지 바이트 읽기
         val imageBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
 
-        // 2) 업로드용 리사이즈 + JPEG 압축
-        //    원본 그대로 Base64로 보내면 수~십 MB라 업로드가 매우 느리다.
-        //    최대 변 1080px로 축소하고 JPEG 품질 80%로 압축해 수백 KB로 줄인다.
-        //    좌표·촬영시각은 아래에서 원본 EXIF로 따로 추출하므로 재인코딩으로 손실돼도 무방.
-        val bitmap = decodeDownscaledBitmap(imageBytes, MAX_UPLOAD_DIMENSION)
-            ?: return null
-        val base64 = ByteArrayOutputStream().use { baos ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, UPLOAD_JPEG_QUALITY, baos)
-            // NO_WRAP: 개행 없이 인코딩해 페이로드를 더 줄임 (디코딩 측은 DEFAULT로도 호환)
-            Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
-        }
-
-        // 3) EXIF 메타데이터 추출 (GPS, 촬영 시각)
+        // 2) EXIF 메타데이터 추출 (방향, GPS, 촬영 시각)
         //    Android 10(API 29)+ 는 위치 EXIF를 redact하므로, 원본 위치를 읽으려면
         //    setRequireOriginal()로 변환한 URI로 스트림을 열어야 한다.
         //    (ACCESS_MEDIA_LOCATION 권한 필요. SAF 등 비-MediaStore URI면 예외 → 원본 URI로 fallback)
@@ -892,6 +1025,24 @@ private fun extractPhotoData(
             // 권한 미허용 등으로 원본 접근 실패 시, redact된 원본 URI로 재시도 (GPS는 없을 수 있음)
             context.contentResolver.openInputStream(uri)?.use { ExifInterface(it) }
         }
+
+        // 3) 업로드용 리사이즈 + EXIF 방향 보정 + JPEG 압축
+        //    원본 그대로 Base64로 보내면 수~십 MB라 업로드가 느려 1080px/품질80%로 수백 KB로 줄인다.
+        //    재인코딩 시 EXIF Orientation 태그가 사라지므로, 압축 전에 방향만큼 비트맵을 실제로
+        //    회전시켜야 피드/마커에서 사진이 90도 눕지 않는다. (좌표·촬영시각은 위 EXIF에서 별도 추출)
+        val orientation = exif?.getAttributeInt(
+            ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
+        ) ?: ExifInterface.ORIENTATION_NORMAL
+        val bitmap = decodeDownscaledBitmap(imageBytes, MAX_UPLOAD_DIMENSION)
+            ?.let { applyExifOrientation(it, orientation) }
+            ?: return null
+        val base64 = ByteArrayOutputStream().use { baos ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, UPLOAD_JPEG_QUALITY, baos)
+            // NO_WRAP: 개행 없이 인코딩해 페이로드를 더 줄임 (디코딩 측은 DEFAULT로도 호환)
+            Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+        }
+
+        // 4) GPS 좌표
         val latLong = FloatArray(2)
         val hasGps = exif?.getLatLong(latLong) == true
         // 갤러리/포토피커가 위치를 redact하면 GPS 태그는 남기되 값을 0,0으로 비우는 기기가 있다.

@@ -205,6 +205,7 @@
 
 | 날짜 | 변경 내용 |
 |---|---|
+| 2026-06-02 | **공유 앨범 EXIF GPS 복구 — MediaStore 직접 그리드(방법 A)** — 로그로 시스템 PhotoPicker가 위치 EXIF만 redact함을 확정(takenAt은 추출되나 lat/lng=null). PhotoPicker(`PickVisualMedia`)를 제거하고, `MediaStore.Images` 직접 쿼리(`queryDeviceImages`) → `ModalBottomSheet` 3열 그리드(`AlbumPickerSheet`, coil `AsyncImage`)로 사진 선택 → 진짜 `content://media/...` URI를 `extractPhotoData`에 전달해 `setRequireOriginal()`로 원본 GPS 획득. 권한: `READ_MEDIA_IMAGES`+`READ_MEDIA_VISUAL_USER_SELECTED`(14+ 부분허용)+`ACCESS_MEDIA_LOCATION` 일괄 요청 |
 | 2026-06-02 | **공유 앨범 버그 수정 2건** — ① 업로드 후 새 사진이 피드 최상단에 추가돼도 스크롤이 안 따라가던 문제: `photos[0].id` 변화 감지 `LaunchedEffect`로 최상단 자동 스크롤. ② "9시간 전" 오표기: 서버 `uploadedAt`(타임존 없는 UTC)을 기기 로컬로 파싱해 9h 어긋나던 것을 `formatRelativeTime`에서 UTC 파싱으로 수정 |
 | 2026-06-02 | **공유 앨범 업로드 이미지 압축** — 원본 그대로 Base64 전송(수~십 MB, 업로드 1분+)하던 것을 최대 변 1080px 리사이즈 + JPEG 품질 80% + Base64 NO_WRAP으로 압축(수백 KB). `decodeDownscaledBitmap` 헬퍼 추가. 좌표·촬영시각은 원본 EXIF에서 별도 추출하므로 재인코딩 영향 없음 |
 | 2026-06-02 | **공유 앨범 지도 사진 마커 + 좌표 0,0 진단** — 지도 핀을 기본 마커에서 흰 틀 안 사진 썸네일 마커(`PhotoMarker`+`MarkerComposable`)로 교체(피드 photoData를 핀 id로 매칭해 디코딩). 업로드 시 좌표가 (0.0,0.0)으로 저장되던 문제 대응: 포토피커 위치 redact로 GPS 태그가 0,0으로 비워지는 케이스를 "위치 없음"으로 처리(`hasValidGps`), `AlbumService`에 업로드 좌표 로그 + `extractPhotoData`에 EXIF 진단 로그(`AlbumExif`) 추가 |

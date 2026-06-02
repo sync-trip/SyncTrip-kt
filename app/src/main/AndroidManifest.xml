@@ -11,10 +11,17 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- ── 사진 읽기 권한 (공유 앨범 갤러리 그리드용) ──────────────────────────── -->
+    <!-- MediaStore를 직접 조회해 원본 사진 URI를 얻으려면 사진 읽기 권한이 필요하다.
+         시스템 포토피커는 위치 EXIF를 항상 제거하므로 직접 그리드를 구성한다. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Android 14+ "선택한 사진만 허용" 부분 접근 대응 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+
     <!-- ── 사진 EXIF 위치 메타데이터 접근 권한 ──────────────────────────────── -->
     <!-- Android 10(API 29)+ 는 갤러리 사진의 GPS EXIF를 기본 차단(redact)함.
          공유 앨범에서 촬영 위치를 핀으로 표시하려면 원본 위치 접근 권한이 필요.
-         MediaStore.setRequireOriginal()과 함께 사용해야 동작한다. -->
+         MediaStore URI + MediaStore.setRequireOriginal()과 함께 사용해야 동작한다. -->
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
 
     <application
