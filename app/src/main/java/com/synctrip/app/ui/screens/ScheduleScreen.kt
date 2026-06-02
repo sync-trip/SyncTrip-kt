@@ -644,7 +644,7 @@ private fun TimelineNode(
         }
         Spacer(Modifier.height(3.dp))
         Text(
-            text = time ?: "--:--",
+            text = time?.take(5) ?: "--:--",
             style = MaterialTheme.typography.labelSmall.copy(
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
@@ -849,7 +849,7 @@ private fun PlaceDetailBottomSheet(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(Modifier.height(12.dp))
 
-            slot.startTime?.let { DetailRow(Icons.Outlined.Schedule, "시작 시간", it) }
+            slot.startTime?.let { DetailRow(Icons.Outlined.Schedule, "시작 시간", it.take(5)) }
             slot.place.address?.let { DetailRow(Icons.Outlined.LocationOn, "주소", it) }
             slot.place.rating?.let { DetailRow(Icons.Outlined.Star, "평점", "%.1f / 5.0".format(it)) }
 
