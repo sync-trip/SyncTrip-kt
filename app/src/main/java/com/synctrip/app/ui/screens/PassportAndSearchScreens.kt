@@ -171,25 +171,27 @@ fun PlaceSearchScreen(
                     PlaneLoadingIndicator()
                 }
             } else if (places.isEmpty()) {
-                // 검색 전 또는 결과 없음 — 안내 문구 표시
+                // 검색어 입력 여부로 "검색 전"과 "검색 결과 없음"을 구분해 안내 문구 표시
+                val searched = query.isNotBlank()
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
-                            Icons.Outlined.Search,
+                            if (searched) Icons.Outlined.SearchOff else Icons.Outlined.Search,
                             contentDescription = null,
                             tint               = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                             modifier           = Modifier.size(56.dp),
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "검색하여 장소를 담아봐요!",
+                            if (searched) "검색 결과가 없습니다" else "검색하여 장소를 담아봐요!",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             ),
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "원하는 장소를 검색하고 장바구니에 담아보세요.",
+                            if (searched) "다른 키워드로 검색하거나 여행 도시 안의 장소인지 확인해보세요."
+                            else "원하는 장소를 검색하고 장바구니에 담아보세요.",
                             style     = MaterialTheme.typography.bodyMedium.copy(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
                             ),
