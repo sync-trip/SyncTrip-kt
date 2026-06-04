@@ -141,6 +141,10 @@ fun ProfileEditScreen(
 ) {
     val context = LocalContext.current
     var name by remember { mutableStateOf(initialName) }
+    // API 응답 도착 후 initialName이 채워지면 name 동기화 (최초 1회, 사용자가 입력 중이면 덮어쓰지 않음)
+    LaunchedEffect(initialName) {
+        if (name.isEmpty() && initialName.isNotEmpty()) name = initialName
+    }
     // 갤러리에서 고른 이미지 URI (null이면 기존 URL 유지)
     var pickedImageUri by remember { mutableStateOf<Uri?>(null) }
     // 저장 시 넘길 Base64 문자열 (null이면 기존 URL 유지)
@@ -169,7 +173,7 @@ fun ProfileEditScreen(
                 actions = {
                     TextButton(
                         onClick  = { onSave(name, encodedImage ?: initialProfileImageUrl) },
-                        enabled  = name.isNotBlank() && !isLoading,
+                        enabled  = name.isNotBlank() && !isLoading && (name != initialName || pickedImageUri != null),
                     ) {
                         Text("저장", fontWeight = FontWeight.SemiBold)
                     }

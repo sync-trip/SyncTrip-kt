@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.synctrip.app.data.models.AlbumPhotoMapResponse
 import com.synctrip.app.data.models.AlbumPhotoResponse
 import com.synctrip.app.data.repository.AlbumRepository
+import com.synctrip.app.util.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,7 +45,7 @@ class AlbumViewModel : ViewModel() {
             }.onSuccess { (feed, pins) ->
                 _uiState.update { it.copy(photos = feed, mapPins = pins, isLoading = false) }
             }.onFailure { e ->
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "앨범 로드 실패") }
+                _uiState.update { it.copy(isLoading = false, error = e.toUserMessage()) }
             }
         }
     }
@@ -91,7 +92,7 @@ class AlbumViewModel : ViewModel() {
                 }
                 onSuccess()
             }.onFailure { e ->
-                _uiState.update { it.copy(isUploading = false, error = e.message ?: "사진 업로드 실패") }
+                _uiState.update { it.copy(isUploading = false, error = e.toUserMessage()) }
             }
         }
     }

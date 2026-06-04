@@ -11,14 +11,27 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- ── 사진 읽기 권한 (공유 앨범 갤러리 그리드용) ──────────────────────────── -->
+    <!-- MediaStore를 직접 조회해 원본 사진 URI를 얻으려면 사진 읽기 권한이 필요하다.
+         시스템 포토피커는 위치 EXIF를 항상 제거하므로 직접 그리드를 구성한다. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Android 14+ "선택한 사진만 허용" 부분 접근 대응 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+
+    <!-- ── 사진 EXIF 위치 메타데이터 접근 권한 ──────────────────────────────── -->
+    <!-- Android 10(API 29)+ 는 갤러리 사진의 GPS EXIF를 기본 차단(redact)함.
+         공유 앨범에서 촬영 위치를 핀으로 표시하려면 원본 위치 접근 권한이 필요.
+         MediaStore URI + MediaStore.setRequireOriginal()과 함께 사용해야 동작한다. -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
+
     <application
         android:name=".SyncTripApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/ic_launcher1"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@mipmap/ic_launcher1_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Synctrip">
 
@@ -53,6 +66,10 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="synctrip_notifications" />
+        <!-- 백그라운드 알림 상태바 아이콘 — 지정 안 하면 컬러 런처 아이콘이 흰 사각형으로 깨져 보임 -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
 
         <!-- ── FCM 푸시 알림 서비스 ──────────────────────────────────────────── -->
         <service

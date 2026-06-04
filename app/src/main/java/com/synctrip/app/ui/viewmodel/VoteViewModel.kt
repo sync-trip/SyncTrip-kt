@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.synctrip.app.data.models.*
 import com.synctrip.app.data.repository.VoteRepository
+import com.synctrip.app.util.toUserMessage
 import com.synctrip.app.network.VoteEvent
 import com.synctrip.app.network.VoteStompClient
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,9 +79,14 @@ class VoteViewModel : ViewModel() {
                         runCatching { VoteRepository.submitVote(bandId, place.placeId, 1) }
                         // CONFLICT(이미 투표)는 무시 — 화면 재진입 시 중복 방지
                     }
-                    if (autoLike.isNotEmpty()) refreshStatus()
+                    // autoLike 장소도 votedPlaces에 포함해야 totalCount(진행률 분모)가 정확함
+                    // 미포함 시 "8/8" 완료인데 서버는 "10/10"으로 판단 → 화면 불일치
+                    if (autoLike.isNotEmpty()) {
+                        _uiState.update { it.copy(votedPlaces = it.votedPlaces + autoLike) }
+                        refreshStatus()
+                    }
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.toUserMessage()) }
         }
     }
 
@@ -98,7 +104,7 @@ class VoteViewModel : ViewModel() {
                     // 모두 투표 완료 시 상태 조회
                     if (remaining.isEmpty()) refreshStatus()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.toUserMessage()) }
         }
     }
 
@@ -118,7 +124,7 @@ class VoteViewModel : ViewModel() {
                     )
                     if (remaining.isEmpty()) refreshStatus()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.toUserMessage()) }
         }
     }
 
@@ -147,7 +153,7 @@ class VoteViewModel : ViewModel() {
             _uiState.update { it.copy(isLoading = true, error = null) }
             runCatching { VoteRepository.getVoteResults(bandId) }
                 .onSuccess { results -> _uiState.update { it.copy(voteResults = results, isLoading = false) } }
-                .onFailure { err -> _uiState.update { it.copy(isLoading = false, error = err.message) } }
+                .onFailure { err -> _uiState.update { it.copy(isLoading = false, error = err.toUserMessage()) } }
         }
     }
 

@@ -7,6 +7,7 @@ import com.synctrip.app.auth.GoogleAuthManager
 import com.synctrip.app.auth.KakaoAuthManager
 import com.synctrip.app.data.models.LoginResponse
 import com.synctrip.app.data.repository.AuthRepository
+import com.synctrip.app.util.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -32,7 +33,7 @@ class AuthViewModel : ViewModel() {
                 AuthRepository.kakaoLogin(context, kakaoToken)
             }.fold(
                 onSuccess = { AuthUiState.Success(it) },
-                onFailure = { AuthUiState.Error(it.message ?: "카카오 로그인 실패") },
+                onFailure = { AuthUiState.Error(it.toUserMessage()) },
             )
         }
     }
@@ -46,7 +47,7 @@ class AuthViewModel : ViewModel() {
                 AuthRepository.googleLogin(context, idToken)
             }.fold(
                 onSuccess = { AuthUiState.Success(it) },
-                onFailure = { AuthUiState.Error(it.message ?: "구글 로그인 실패") },
+                onFailure = { AuthUiState.Error(it.toUserMessage()) },
             )
         }
     }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.synctrip.app.data.models.*
 import com.synctrip.app.network.ApiClient
+import com.synctrip.app.util.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -36,7 +37,7 @@ class NotificationViewModel : ViewModel() {
                     _uiState.update { it.copy(groups = groups, isLoading = false) }
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(isLoading = false, error = e.message) }
+                    _uiState.update { it.copy(isLoading = false, error = e.toUserMessage()) }
                 }
         }
         viewModelScope.launch {

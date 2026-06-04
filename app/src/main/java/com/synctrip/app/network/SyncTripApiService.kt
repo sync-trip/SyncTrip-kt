@@ -68,13 +68,29 @@ interface SyncTripApiService {
     @GET("api/bands/{bandId}/schedule")
     suspend fun getSchedule(@Path("bandId") bandId: Long): ScheduleResponse
 
-    @GET("api/bands/{bandId}/schedule/alts")
-    suspend fun getScheduleAlts(@Path("bandId") bandId: Long): List<ScheduleAltResponse>
-
     @POST("api/bands/{bandId}/schedule/swap")
     suspend fun swapScheduleSlot(
         @Path("bandId") bandId: Long,
         @Body body: ScheduleSwapRequest,
+    ): Unit
+
+    @PATCH("api/bands/{bandId}/schedule/reorder")
+    suspend fun reorderSchedule(
+        @Path("bandId") bandId: Long,
+        @Body body: ScheduleReorderRequest,
+    ): Unit
+
+    @POST("api/bands/{bandId}/schedule/move")
+    suspend fun moveSchedule(
+        @Path("bandId") bandId: Long,
+        @Body body: ScheduleMoveRequest,
+    ): Unit
+
+    /** 일정 슬롯(장소) 삭제 — 같은 Day의 남은 슬롯 순서·시간은 백엔드가 재계산 */
+    @DELETE("api/bands/{bandId}/schedule/{scheduleId}")
+    suspend fun deleteScheduleSlot(
+        @Path("bandId") bandId: Long,
+        @Path("scheduleId") scheduleId: Long,
     ): Unit
 
     @POST("api/bands/{bandId}/schedule/edit/start")
@@ -88,6 +104,13 @@ interface SyncTripApiService {
         @Path("bandId") bandId: Long,
         @Body body: PlanBRequest,
     ): List<PlanBResponse>
+
+    /** 장소 검색 결과를 특정 Day에 직접 추가 */
+    @POST("api/bands/{bandId}/schedule/add-search")
+    suspend fun addSlotFromSearch(
+        @Path("bandId") bandId: Long,
+        @Body body: ScheduleAddFromSearchRequest,
+    ): Unit
 
     // ── Vote ─────────────────────────────────────────────────────────────────
 

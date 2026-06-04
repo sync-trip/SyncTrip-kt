@@ -6,6 +6,7 @@ import com.synctrip.app.data.models.*
 import com.synctrip.app.data.repository.BandRepository
 import com.synctrip.app.data.repository.ScheduleRepository
 import com.synctrip.app.network.ApiClient
+import com.synctrip.app.util.toUserMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -137,7 +138,7 @@ class BandViewModel : ViewModel() {
                     // 종료일이 지난 TRAVELLING 밴드는 자동으로 DONE으로 전환
                     autoAdvanceExpiredBands(bands)
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.toUserMessage()) }
         }
     }
 
@@ -172,7 +173,7 @@ class BandViewModel : ViewModel() {
         viewModelScope.launch {
             runCatching { BandRepository.getMembers(bandId) }
                 .onSuccess { _uiState.value = _uiState.value.copy(members = it) }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.toUserMessage()) }
         }
     }
 
@@ -181,7 +182,7 @@ class BandViewModel : ViewModel() {
         viewModelScope.launch {
             runCatching { BandRepository.updateAccommodation(bandId, name, lat, lng) }
                 .onSuccess { loadBands(); onSuccess() }
-                .onFailure { onError(it.message ?: "숙소 수정 실패") }
+                .onFailure { onError(it.toUserMessage()) }
         }
     }
 
@@ -193,7 +194,7 @@ class BandViewModel : ViewModel() {
                     _uiState.value = _uiState.value.copy(isLoading = false)
                     onSuccess(it)
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.toUserMessage()) }
         }
     }
 
@@ -205,7 +206,7 @@ class BandViewModel : ViewModel() {
                     _uiState.value = _uiState.value.copy(isLoading = false)
                     onSuccess(it)
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.toUserMessage()) }
         }
     }
 
@@ -213,7 +214,7 @@ class BandViewModel : ViewModel() {
         viewModelScope.launch {
             runCatching { BandRepository.getInviteCode(bandId) }
                 .onSuccess { _uiState.value = _uiState.value.copy(inviteCode = it) }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.toUserMessage()) }
         }
     }
 
@@ -229,7 +230,7 @@ class BandViewModel : ViewModel() {
                         },
                     )
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.toUserMessage()) }
         }
     }
 
@@ -237,7 +238,7 @@ class BandViewModel : ViewModel() {
         viewModelScope.launch {
             runCatching { BandRepository.getPicks(bandId) }
                 .onSuccess { _uiState.value = _uiState.value.copy(picks = it) }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.toUserMessage()) }
         }
     }
 
@@ -250,7 +251,7 @@ class BandViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(isSearchLoading = true)
             runCatching { BandRepository.searchPlaces(bandId, keyword, category) }
                 .onSuccess { _uiState.value = _uiState.value.copy(searchResults = it, isSearchLoading = false) }
-                .onFailure { _uiState.value = _uiState.value.copy(isSearchLoading = false, error = it.message ?: it.toString()) }
+                .onFailure { _uiState.value = _uiState.value.copy(isSearchLoading = false, error = it.toUserMessage()) }
         }
     }
 
@@ -308,7 +309,7 @@ class BandViewModel : ViewModel() {
                         searchResults = _uiState.value.searchResults.map {
                             if (it.externalId == place.externalId) it.copy(isBookmarked = false) else it
                         },
-                        error = it.message,
+                        error = it.toUserMessage(),
                     )
                 }
         }
@@ -331,7 +332,7 @@ class BandViewModel : ViewModel() {
                         searchResults = _uiState.value.searchResults.map {
                             if (it.externalId == externalId) it.copy(isBookmarked = true) else it
                         },
-                        error = it.message,
+                        error = it.toUserMessage(),
                     )
                 }
         }
@@ -352,20 +353,19 @@ class BandViewModel : ViewModel() {
                     )
                     onSuccess(transition)
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.toUserMessage()) }
         }
     }
 
     /** GET /api/bands/{bandId}/settlement → UI Settlement 모델로 변환 */
-    fun loadSettlement(bandId: Long) {
+    fun loadSettlement(bandId: Long, currentUserId: Long) {
         viewModelScope.launch {
-            val currentUserId = _uiState.value.userProfile?.id
             runCatching { ApiClient.api.getSettlement(bandId) }
                 .onSuccess { resp ->
                     val ui = resp.toUiSettlement(bandId, currentUserId)
                     _uiState.update { it.copy(settlement = ui) }
                 }
-                .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+                .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
         }
     }
 
@@ -375,18 +375,19 @@ class BandViewModel : ViewModel() {
             _uiState.update { it.copy(isExpensesLoading = true) }
             runCatching { ApiClient.api.getExpenses(bandId) }
                 .onSuccess { list -> _uiState.update { it.copy(expenses = list, isExpensesLoading = false) } }
-                .onFailure { e -> _uiState.update { it.copy(isExpensesLoading = false, error = e.message) } }
+                .onFailure { e -> _uiState.update { it.copy(isExpensesLoading = false, error = e.toUserMessage()) } }
         }
     }
 
-    /** POST /api/bands/{bandId}/expenses — 지출 추가, 성공 시 목록 맨 앞에 추가 */
-    fun createExpense(bandId: Long, request: ExpenseCreateRequest) {
+    /** POST /api/bands/{bandId}/expenses — 지출 추가, 성공 시 목록 맨 앞에 추가 후 정산 재조회 */
+    fun createExpense(bandId: Long, request: ExpenseCreateRequest, currentUserId: Long) {
         viewModelScope.launch {
             runCatching { ApiClient.api.createExpense(bandId, request) }
                 .onSuccess { created ->
                     _uiState.update { it.copy(expenses = listOf(created) + it.expenses) }
+                    loadSettlement(bandId, currentUserId)
                 }
-                .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+                .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
         }
     }
 
@@ -399,17 +400,18 @@ class BandViewModel : ViewModel() {
                         state.copy(expenses = state.expenses.map { if (it.id == expenseId) updated else it })
                     }
                 }
-                .onFailure { e -> _uiState.update { it.copy(error = e.message) } }
+                .onFailure { e -> _uiState.update { it.copy(error = e.toUserMessage()) } }
         }
     }
 
-    /** DELETE /api/bands/{bandId}/expenses/{expenseId} — 지출 삭제 (낙관적 업데이트) */
-    fun deleteExpense(bandId: Long, expenseId: Long) {
+    /** DELETE /api/bands/{bandId}/expenses/{expenseId} — 지출 삭제 (낙관적 업데이트), 성공 시 정산 재조회 */
+    fun deleteExpense(bandId: Long, expenseId: Long, currentUserId: Long) {
         val prev = _uiState.value.expenses
         _uiState.update { it.copy(expenses = it.expenses.filter { e -> e.id != expenseId }) }
         viewModelScope.launch {
             runCatching { ApiClient.api.deleteExpense(bandId, expenseId) }
-                .onFailure { e -> _uiState.update { it.copy(expenses = prev, error = e.message) } }
+                .onSuccess { loadSettlement(bandId, currentUserId) }
+                .onFailure { e -> _uiState.update { it.copy(expenses = prev, error = e.toUserMessage()) } }
         }
     }
 
@@ -422,7 +424,7 @@ class BandViewModel : ViewModel() {
                     _uiState.value = _uiState.value.copy(isLoading = false)
                     onSuccess()
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.message) }
+                .onFailure { _uiState.value = _uiState.value.copy(isLoading = false, error = it.toUserMessage()) }
         }
     }
 
@@ -598,13 +600,13 @@ class BandViewModel : ViewModel() {
                 onSuccess()
             }.onFailure { e ->
                 _uiState.update { it.copy(isLoading = false) }
-                onError(e.message ?: "프로필 저장 실패")
+                onError(e.toUserMessage())
             }
         }
     }
 
     /** SettlementResponse(백엔드) → Settlement(UI) 변환 */
-    private fun SettlementResponse.toUiSettlement(bandId: Long, currentUserId: Long?) = Settlement(
+    private fun SettlementResponse.toUiSettlement(bandId: Long, currentUserId: Long) = Settlement(
         tripId    = bandId.toString(),
         tripTitle = "정산",
         totalAmount = totalExpense.toLong(),
@@ -615,7 +617,7 @@ class BandViewModel : ViewModel() {
                 id          = m.userId.toString(),
                 category    = "지출",
                 description = "${m.userName} 정산",
-                amount      = m.totalPaid.toLong(),
+                amount      = m.netAmount.toLong(),
                 paidBy      = m.userName,
             )
         },
@@ -623,6 +625,7 @@ class BandViewModel : ViewModel() {
             PendingTransfer(
                 fromNickname = t.fromUserName,
                 toNickname   = t.toUserName,
+                toUserId     = t.toUserId,
                 amount       = t.amount.toLong(),
                 isResolved   = false,
             )

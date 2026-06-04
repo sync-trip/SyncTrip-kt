@@ -14,7 +14,7 @@ Write all code comments in Korean. Every class, function, and Composable must ha
 
 Always read in this order before starting any new feature:
 1. `docs/SyncTrip_인수인계문서_v6.md` — full spec & finalized design decisions (Section 4 is mandatory)
-2. `docs/SyncTrip_구현현황.md` — Spring Boot backend implementation status
+2. `C:\SyncTrip-Spring\docs\SyncTrip_구현현황.md` — Spring Boot backend implementation status (lives in the backend repo, not here)
 3. `docs/SyncTrip_Android_구현현황.md` — Android implementation status
 
 ---
@@ -30,9 +30,9 @@ After every implementation or fix, update `docs/SyncTrip_Android_구현현황.md
 
 ## 4. Tech Stack
 
-**Android** (`C:\projects\SyncTrip-kt`): Kotlin + Jetpack Compose + Material 3, state hoisting (all state in ViewModel), Retrofit2 + OkHttp (`ApiClient.api`), Navigation Compose (`navigation/NavGraph.kt`)
+**Android** (`C:\Users\Min\StudioProjects\SyncTrip-kt`): Kotlin + Jetpack Compose + Material 3, state hoisting (all state in ViewModel), Retrofit2 + OkHttp (`ApiClient.api`), Navigation Compose (`navigation/NavGraph.kt`)
 
-**Backend** (`C:\projects\SyncTrip-Spring`): Java + Spring Boot, MySQL 8.0.16+, JWT, WebSocket (STOMP) — see `docs/SyncTrip_구현현황.md`
+**Backend** (`C:\SyncTrip-Spring`): Java + Spring Boot, MySQL 8.0.16+, JWT, WebSocket (STOMP) — see `docs/SyncTrip_구현현황.md`
 
 ---
 

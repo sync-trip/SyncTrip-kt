@@ -715,6 +715,7 @@ private fun VoteCandidateCard(
 @Composable
 fun SettlementScreen(
     settlement: Settlement,
+    currentUserId: Long,
     onSettleClick: (transferId: String) -> Unit,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -758,7 +759,7 @@ fun SettlementScreen(
             }
 
             items(settlement.pendingTransfers) { transfer ->
-                TransferCard(transfer = transfer, onSettleClick = onSettleClick)
+                TransferCard(transfer = transfer, currentUserId = currentUserId, onSettleClick = onSettleClick)
             }
 
             item {
@@ -811,7 +812,14 @@ private fun MyBalanceCard(balance: Long, currency: String) {
 }
 
 @Composable
-private fun TransferCard(transfer: PendingTransfer, onSettleClick: (String) -> Unit) {
+private fun TransferCard(
+    transfer: PendingTransfer,
+    currentUserId: Long,
+    onSettleClick: (String) -> Unit,
+) {
+    // 내가 받는 사람이면 true, 보내는 사람이면 false
+    val isReceiver = transfer.toUserId == currentUserId
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape    = RoundedCornerShape(12.dp),
@@ -830,10 +838,21 @@ private fun TransferCard(transfer: PendingTransfer, onSettleClick: (String) -> U
                     style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold),
                 )
             }
-            if (!transfer.isResolved) {
-                OutlinedButton(onClick = { onSettleClick("") }, shape = RoundedCornerShape(8.dp)) { Text("정산 완료") }
-            } else {
-                Icon(Icons.Outlined.CheckCircle, "완료", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            when {
+                transfer.isResolved -> Icon(Icons.Outlined.CheckCircle, "완료", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                // 받는 사람만 정산 완료 버튼 표시
+                isReceiver -> OutlinedButton(onClick = { onSettleClick("") }, shape = RoundedCornerShape(8.dp)) { Text("정산 완료") }
+                // 보내는 사람은 송금 대기 상태 표시
+                else -> Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ) {
+                    Text(
+                        "송금 대기중",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    )
+                }
             }
         }
     }
@@ -860,8 +879,8 @@ private fun ExpenseItemRow(item: SettlementItem) {
 
 /**
  * 정산 탭 콘텐츠.
- * 정산 요약(송금 목록/잔액) + 실제 지출 목록 + 지출 추가 FAB를 포함한다.
- * TripBandHubScreen의 정산 탭에서 호출한다.
+ * 좌측: 멤버 아바타 + 이름 + 정산 잔액(받을/낼 금액) 고정 패널
+ * 우측: 지출 블록 스크롤 목록 + 지출 추가 FAB
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -872,93 +891,116 @@ internal fun SettlementContent(
     members: List<BandMemberResponse>,
     currentUserId: Long,
     isExpensesLoading: Boolean,
-    onAddExpense: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+    onAddExpense: (itemName: String, amount: Double, currency: String, payerId: Long, memberIds: List<Long>) -> Unit,
     onDeleteExpense: (expenseId: Long) -> Unit,
     onSettleClick: (transferId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showAddSheet by remember { mutableStateOf(false) }
+    val currency = settlement?.currency ?: "KRW"
 
     Box(modifier = modifier) {
-        if (settlement == null && isExpensesLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                PlaneLoadingIndicator()
-            }
-        } else {
-            LazyColumn(
-                modifier            = Modifier.fillMaxSize(),
-                contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+        Row(modifier = Modifier.fillMaxSize()) {
+
+            // ── 좌측 멤버 패널 (고정 너비, 독립 스크롤) ─────────────────────
+            Column(
+                modifier = Modifier
+                    .width(80.dp)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = 16.dp),
             ) {
-                if (settlement != null) {
-                    item { TotalAmountCard(settlement = settlement) }
-                    item { MyBalanceCard(balance = settlement.myBalance, currency = settlement.currency) }
-                    if (settlement.pendingTransfers.isNotEmpty()) {
+                members.forEach { member ->
+                    // settlement.summary 각 항목의 id = userId.toString() (toUiSettlement 참조)
+                    val netAmount = settlement?.summary
+                        ?.firstOrNull { it.id == member.userId.toString() }
+                        ?.amount ?: 0L
+                    MemberBalanceItem(member = member, netAmount = netAmount)
+                }
+                Spacer(Modifier.height(80.dp))
+            }
+
+            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // ── 우측 지출 블록 리스트 ──────────────────────────────────────
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                LazyColumn(
+                    modifier            = Modifier.fillMaxSize(),
+                    contentPadding      = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (settlement != null) {
                         item {
-                            Text(
-                                "정산 현황",
-                                style = MaterialTheme.typography.titleLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                            )
+                            CompactTotalCard(totalAmount = settlement.totalAmount, currency = currency)
                         }
-                        items(settlement.pendingTransfers) { transfer ->
-                            TransferCard(transfer = transfer, onSettleClick = onSettleClick)
+                        if (settlement.pendingTransfers.isNotEmpty()) {
+                            item {
+                                TransferSummaryCard(
+                                    transfers = settlement.pendingTransfers,
+                                    summaries = settlement.summary,
+                                    currency  = currency,
+                                )
+                            }
                         }
                     }
-                }
 
-                item {
-                    Row(
-                        modifier            = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment   = Alignment.CenterVertically,
-                    ) {
-                        Text("지출 내역", style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            "${expenses.size}건",
-                            style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                        )
-                    }
-                }
-
-                if (isExpensesLoading) {
                     item {
-                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        }
-                    }
-                } else if (expenses.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                            contentAlignment = Alignment.Center,
+                        Row(
+                            modifier              = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment     = Alignment.CenterVertically,
                         ) {
+                            Text("지출 내역", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "아직 등록된 지출이 없어요",
-                                style = MaterialTheme.typography.bodyMedium.copy(
+                                "${expenses.size}건",
+                                style = MaterialTheme.typography.bodySmall.copy(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
                             )
                         }
                     }
-                } else {
-                    items(expenses, key = { it.id }) { expense ->
-                        ExpenseCard(
-                            expense       = expense,
-                            isOwner       = expense.payerId == currentUserId,
-                            onDelete      = { onDeleteExpense(expense.id) },
-                        )
+
+                    when {
+                        isExpensesLoading -> item {
+                            Box(
+                                Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            }
+                        }
+                        expenses.isEmpty() -> item {
+                            Box(
+                                Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    "아직 등록된 지출이 없어요",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    ),
+                                )
+                            }
+                        }
+                        else -> items(expenses, key = { it.id }) { expense ->
+                            ExpenseCard(
+                                expense  = expense,
+                                isOwner  = expense.payerId == currentUserId,
+                                onDelete = { onDeleteExpense(expense.id) },
+                            )
+                        }
                     }
+
+                    item { Spacer(Modifier.height(72.dp)) }
                 }
             }
         }
 
         // 지출 추가 FAB
         FloatingActionButton(
-            onClick           = { showAddSheet = true },
-            modifier          = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-            containerColor    = MaterialTheme.colorScheme.primary,
+            onClick        = { showAddSheet = true },
+            modifier       = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            containerColor = MaterialTheme.colorScheme.primary,
         ) {
             Icon(Icons.Outlined.Add, contentDescription = "지출 추가", tint = MaterialTheme.colorScheme.onPrimary)
         }
@@ -966,17 +1008,327 @@ internal fun SettlementContent(
 
     if (showAddSheet) {
         ExpenseInputSheet(
-            bandId         = bandId,
-            members        = members,
-            currentUserId  = currentUserId,
-            baseCurrency   = settlement?.currency ?: "KRW",
-            onDismiss      = { showAddSheet = false },
-            onConfirm      = { itemName, amount, currency, memberIds ->
-                onAddExpense(itemName, amount, currency, memberIds)
+            bandId        = bandId,
+            members       = members,
+            currentUserId = currentUserId,
+            baseCurrency  = currency,
+            onDismiss     = { showAddSheet = false },
+            onConfirm     = { itemName, amount, cur, payerId, memberIds ->
+                onAddExpense(itemName, amount, cur, payerId, memberIds)
                 showAddSheet = false
             },
         )
     }
+}
+
+/**
+ * 송금 안내 카드 — 각 행을 탭하면 계산 근거 다이얼로그 표시.
+ * summaries: memberSummaries에서 매핑된 SettlementItem 목록 (netAmount 조회용)
+ */
+@Composable
+private fun TransferSummaryCard(
+    transfers : List<PendingTransfer>,
+    summaries : List<SettlementItem>,
+    currency  : String,
+) {
+    var selected by remember { mutableStateOf<PendingTransfer?>(null) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape    = RoundedCornerShape(12.dp),
+        colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Text(
+                "송금 안내",
+                style = MaterialTheme.typography.labelMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            )
+            Spacer(Modifier.height(10.dp))
+            transfers.forEachIndexed { index, transfer ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { selected = transfer }
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment     = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            transfer.fromNickname,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        )
+                        Text(
+                            "→",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        )
+                        Text(
+                            transfer.toNickname,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        )
+                    }
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            "${NumberFormat.getNumberInstance(Locale.KOREA).format(transfer.amount)} $currency",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color      = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
+                        Icon(
+                            Icons.Outlined.Info,
+                            contentDescription = "계산 근거 보기",
+                            modifier = Modifier.size(14.dp),
+                            tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (index < transfers.lastIndex) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                }
+            }
+        }
+    }
+
+    selected?.let { transfer ->
+        TransferExplainDialog(
+            transfer  = transfer,
+            summaries = summaries,
+            currency  = currency,
+            onDismiss = { selected = null },
+        )
+    }
+}
+
+/**
+ * 송금 계산 근거 다이얼로그.
+ * 송금인/수취인의 netAmount를 토대로 왜 이 금액인지 설명한다.
+ * summaries[i].paidBy = userName, summaries[i].amount = netAmount
+ */
+@Composable
+private fun TransferExplainDialog(
+    transfer  : PendingTransfer,
+    summaries : List<SettlementItem>,
+    currency  : String,
+    onDismiss : () -> Unit,
+) {
+    val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
+
+    // paidBy(userName)로 각 멤버의 netAmount 조회
+    val fromNet    = summaries.firstOrNull { it.paidBy == transfer.fromNickname }?.amount ?: 0L
+    val toNet      = summaries.firstOrNull { it.paidBy == transfer.toNickname }?.amount ?: 0L
+    val fromOwes   = -fromNet   // 송금인은 netAmount < 0, 절댓값으로 변환
+    val toReceives = toNet      // 수취인은 netAmount > 0
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    "${transfer.fromNickname} → ${transfer.toNickname}",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                )
+                Text(
+                    "${fmt.format(transfer.amount)} $currency",
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        color      = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // 송금인 현황
+                TransferPartyRow(
+                    name     = transfer.fromNickname,
+                    label    = "덜 낸 금액 (총 내야 할 금액)",
+                    amount   = fromOwes,
+                    currency = currency,
+                    isDebt   = true,
+                )
+                // 수취인 현황
+                TransferPartyRow(
+                    name     = transfer.toNickname,
+                    label    = "더 낸 금액 (총 받아야 할 금액)",
+                    amount   = toReceives,
+                    currency = currency,
+                    isDebt   = false,
+                )
+
+                HorizontalDivider()
+
+                // 결론 설명 텍스트
+                val isFullSettlement = transfer.amount >= fromOwes
+                Text(
+                    if (isFullSettlement)
+                        "${transfer.fromNickname}님이 분담액보다 ${fmt.format(fromOwes)} $currency 덜 냈어요. 이 금액을 모두 보내면 ${transfer.fromNickname}님의 정산이 완료돼요."
+                    else
+                        "${transfer.fromNickname}님이 분담액보다 ${fmt.format(fromOwes)} $currency 덜 냈어요. 여러 명에게 나눠 보내야 해서, 그 중 ${fmt.format(transfer.amount)} $currency 을 ${transfer.toNickname}님에게 먼저 보내는 거예요.",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("확인") }
+        },
+    )
+}
+
+/** 다이얼로그 내 송금인/수취인 한 줄 요약 */
+@Composable
+private fun TransferPartyRow(
+    name    : String,
+    label   : String,
+    amount  : Long,
+    currency: String,
+    isDebt  : Boolean,
+) {
+    val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
+    Row(
+        modifier              = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment     = Alignment.Top,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(name,  style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+            Text(label, style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+        }
+        Text(
+            "${fmt.format(amount)} $currency",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color      = if (isDebt) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            ),
+        )
+    }
+}
+
+/** 우측 패널 상단 — 총 지출 컴팩트 요약 카드 */
+@Composable
+private fun CompactTotalCard(totalAmount: Long, currency: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape    = RoundedCornerShape(12.dp),
+        colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Row(
+            modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically,
+        ) {
+            Text(
+                "총 지출",
+                style = MaterialTheme.typography.labelMedium.copy(
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                ),
+            )
+            Text(
+                "${NumberFormat.getNumberInstance(Locale.KOREA).format(totalAmount)} $currency",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    color      = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.Bold,
+                ),
+            )
+        }
+    }
+}
+
+/**
+ * 좌측 패널 — 멤버 1명의 아바타·이름·정산 잔액.
+ * netAmount 양수 = 받아야 할 금액(초록), 음수 = 내야 할 금액(빨강), 0 = 정산됨(회색).
+ */
+@Composable
+private fun MemberBalanceItem(member: BandMemberResponse, netAmount: Long) {
+    val isPositive = netAmount > 0
+    val isZero     = netAmount == 0L
+
+    // 프로필 이미지 없을 때 이니셜 아바타 색 — userId 기반 결정론적 선택
+    val avatarColor = remember(member.userId) {
+        val palette = listOf(
+            Color(0xFF6366F1), Color(0xFF10B981), Color(0xFFF59E0B),
+            Color(0xFFEF4444), Color(0xFF3B82F6), Color(0xFFEC4899),
+            Color(0xFF8B5CF6), Color(0xFF14B8A6),
+        )
+        palette[(member.userId % palette.size).toInt().coerceAtLeast(0)]
+    }
+
+    Column(
+        modifier            = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp, horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier         = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(if (member.profileImageUrl != null) Color.Transparent else avatarColor),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (member.profileImageUrl != null) {
+                AsyncImage(
+                    model              = member.profileImageUrl,
+                    contentDescription = member.name,
+                    contentScale       = ContentScale.Crop,
+                    modifier           = Modifier.fillMaxSize().clip(CircleShape),
+                )
+            } else {
+                Text(
+                    member.name.first().toString(),
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        color      = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(5.dp))
+
+        Text(
+            member.name,
+            style    = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+
+        Spacer(Modifier.height(3.dp))
+
+        Text(
+            text = when {
+                isZero     -> "정산됨"
+                isPositive -> "+${NumberFormat.getNumberInstance(Locale.KOREA).format(netAmount)}"
+                else       -> "-${NumberFormat.getNumberInstance(Locale.KOREA).format(-netAmount)}"
+            },
+            style = MaterialTheme.typography.labelSmall.copy(
+                color      = when {
+                    isZero     -> MaterialTheme.colorScheme.onSurfaceVariant
+                    isPositive -> MaterialTheme.colorScheme.primary
+                    else       -> MaterialTheme.colorScheme.error
+                },
+                fontWeight = FontWeight.SemiBold,
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 }
 
 /** 지출 카드 — 항목명/금액/결제자/날짜 표시. 본인 지출에만 삭제 버튼 표시 */
@@ -1061,12 +1413,15 @@ private fun ExpenseInputSheet(
     currentUserId: Long,
     baseCurrency: String,
     onDismiss: () -> Unit,
-    onConfirm: (itemName: String, amount: Double, currency: String, memberIds: List<Long>) -> Unit,
+    onConfirm: (itemName: String, amount: Double, currency: String, payerId: Long, memberIds: List<Long>) -> Unit,
 ) {
-    var itemName    by remember { mutableStateOf("") }
-    var amountText  by remember { mutableStateOf("") }
-    var currency    by remember { mutableStateOf(baseCurrency) }
+    var itemName     by remember { mutableStateOf("") }
+    var amountText   by remember { mutableStateOf("") }
+    var currency     by remember { mutableStateOf(baseCurrency) }
     var isOcrLoading by remember { mutableStateOf(false) }
+    // 결제자: 기본값은 현재 사용자
+    var selectedPayerId by remember { mutableStateOf(currentUserId) }
+    var payerDropdownExpanded by remember { mutableStateOf(false) }
     // 분담자: 기본값은 전체 멤버
     val selectedIds = remember { mutableStateListOf<Long>().apply { addAll(members.map { it.userId }) } }
 
@@ -1139,6 +1494,36 @@ private fun ExpenseInputSheet(
                 modifier      = Modifier.fillMaxWidth(),
             )
 
+            // 결제자 선택 드롭다운
+            val selectedPayerName = members.firstOrNull { it.userId == selectedPayerId }?.name ?: ""
+            ExposedDropdownMenuBox(
+                expanded         = payerDropdownExpanded,
+                onExpandedChange = { payerDropdownExpanded = it },
+            ) {
+                OutlinedTextField(
+                    value         = selectedPayerName + if (selectedPayerId == currentUserId) " (나)" else "",
+                    onValueChange = {},
+                    readOnly      = true,
+                    label         = { Text("결제자") },
+                    trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = payerDropdownExpanded) },
+                    modifier      = Modifier.fillMaxWidth().menuAnchor(),
+                )
+                ExposedDropdownMenu(
+                    expanded         = payerDropdownExpanded,
+                    onDismissRequest = { payerDropdownExpanded = false },
+                ) {
+                    members.forEach { member ->
+                        DropdownMenuItem(
+                            text    = { Text(member.name + if (member.userId == currentUserId) " (나)" else "") },
+                            onClick = {
+                                selectedPayerId = member.userId
+                                payerDropdownExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value         = amountText,
@@ -1179,7 +1564,7 @@ private fun ExpenseInputSheet(
                 onClick  = {
                     val amount = amountText.toDoubleOrNull() ?: return@Button
                     if (itemName.isBlank()) return@Button
-                    onConfirm(itemName.trim(), amount, currency.ifBlank { "KRW" }, selectedIds.toList())
+                    onConfirm(itemName.trim(), amount, currency.ifBlank { "KRW" }, selectedPayerId, selectedIds.toList())
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled  = itemName.isNotBlank() && amountText.isNotBlank() && !isOcrLoading,
@@ -1304,14 +1689,14 @@ private val previewSettlement = Settlement(
         SettlementItem("s1", "숙박", "제주 호텔 2박", 280_000L, "Alex"),
         SettlementItem("s2", "식사", "흑돼지 저녁", 120_000L, "Jamie"),
     ),
-    pendingTransfers = listOf(PendingTransfer("나", "Alex", 45_000L, false)),
+    pendingTransfers = listOf(PendingTransfer("나", "Alex", toUserId = 2L, 45_000L, false)),
 )
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
 private fun SettlementPreview() {
     SynctripTheme {
-        SettlementScreen(settlement = previewSettlement, onSettleClick = {}, onBackClick = {})
+        SettlementScreen(settlement = previewSettlement, currentUserId = 1L, onSettleClick = {}, onBackClick = {})
     }
 }
 

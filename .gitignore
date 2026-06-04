@@ -1,6 +1,5 @@
 *.iml
 .gradle
-/local.properties
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
@@ -11,9 +10,18 @@
 /.idea/deploymentTargetSelector.xml
 .DS_Store
 /build
+/app/build
 /captures
 .externalNativeBuild
 .cxx
+
+# 로컬 환경 설정 (API 키 포함 — 절대 커밋 금지)
 local.properties
+
+# Firebase / Google 서비스 설정 (절대 커밋 금지)
 /app/google-services.json
-/app/google-services.json
+
+# 앱 서명 키스토어 (절대 커밋 금지)
+*.keystore
+*.jks
+*.p12

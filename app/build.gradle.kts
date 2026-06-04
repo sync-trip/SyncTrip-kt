@@ -99,6 +99,9 @@ dependencies {
     implementation(libs.kakao.user)
     implementation(libs.kakao.maps)
 
+    // ── Drag & Drop ──────────────────────────────────────────────────────────
+    implementation("sh.calvin.reorderable:reorderable:2.4.3")
+
     // ── Firebase ─────────────────────────────────────────────────────────────
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging-ktx")

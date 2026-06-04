@@ -81,6 +81,8 @@ fun PlaceSearchScreen(
     onBackClick: () -> Unit,
     /** 준비 완료 버튼 클릭 콜백 — null이면 버튼 미표시 */
     onReadyClick: (() -> Unit)? = null,
+    /** 일정 추가 모드 콜백 — null이 아니면 픽 바 숨기고 카드에 "추가" 버튼 표시 */
+    onAddToSchedule: ((ApiPlaceSearchResult) -> Unit)? = null,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier,
 ) {
@@ -127,13 +129,15 @@ fun PlaceSearchScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
         },
-        // 구 앱 cartCard 스타일 — 하단에 N/5 카운트 표시
+        // 일정 추가 모드에서는 픽 바 숨김
         bottomBar = {
-            CartBottomBar(
-                cartCount    = cartCount,
-                maxPickCount = maxPickCount,
-                onClick      = { showCartSheet = true },
-            )
+            if (onAddToSchedule == null) {
+                CartBottomBar(
+                    cartCount    = cartCount,
+                    maxPickCount = maxPickCount,
+                    onClick      = { showCartSheet = true },
+                )
+            }
         },
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
@@ -167,25 +171,27 @@ fun PlaceSearchScreen(
                     PlaneLoadingIndicator()
                 }
             } else if (places.isEmpty()) {
-                // 검색 전 또는 결과 없음 — 안내 문구 표시
+                // 검색어 입력 여부로 "검색 전"과 "검색 결과 없음"을 구분해 안내 문구 표시
+                val searched = query.isNotBlank()
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
-                            Icons.Outlined.Search,
+                            if (searched) Icons.Outlined.SearchOff else Icons.Outlined.Search,
                             contentDescription = null,
                             tint               = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                             modifier           = Modifier.size(56.dp),
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "검색하여 장소를 담아봐요!",
+                            if (searched) "검색 결과가 없습니다" else "검색하여 장소를 담아봐요!",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             ),
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "원하는 장소를 검색하고 장바구니에 담아보세요.",
+                            if (searched) "다른 키워드로 검색하거나 여행 도시 안의 장소인지 확인해보세요."
+                            else "원하는 장소를 검색하고 장바구니에 담아보세요.",
                             style     = MaterialTheme.typography.bodyMedium.copy(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
                             ),
@@ -204,9 +210,10 @@ fun PlaceSearchScreen(
                 ) {
                     items(places, key = { it.externalId }) { place ->
                         PlaceCard(
-                            place        = place,
-                            onPlaceClick = { selectedExternalId = place.externalId },
-                            onCartToggle = { onCartToggle(place.externalId) },
+                            place           = place,
+                            onPlaceClick    = { selectedExternalId = place.externalId },
+                            onCartToggle    = { onCartToggle(place.externalId) },
+                            onAddToSchedule = if (onAddToSchedule != null) { { onAddToSchedule(place) } } else null,
                         )
                     }
                 }
@@ -270,7 +277,12 @@ private fun CategoryTabRow(selectedCategory: PlaceCategory, onCategoryChange: (P
 }
 
 @Composable
-private fun PlaceCard(place: ApiPlaceSearchResult, onPlaceClick: () -> Unit, onCartToggle: () -> Unit) {
+private fun PlaceCard(
+    place: ApiPlaceSearchResult,
+    onPlaceClick: () -> Unit,
+    onCartToggle: () -> Unit,
+    onAddToSchedule: (() -> Unit)? = null,
+) {
     // 북마크 아이콘 스프링 바운스 애니메이션
     val iconScale = remember { Animatable(1f) }
     val scope = rememberCoroutineScope()
@@ -311,26 +323,44 @@ private fun PlaceCard(place: ApiPlaceSearchResult, onPlaceClick: () -> Unit, onC
                     }
                 }
 
-                IconButton(
-                    onClick  = {
-                        onCartToggle()
-                        // 클릭 시 즉각 반응감 — LaunchedEffect와 별도로 퀵 탭 피드백
-                        scope.launch {
-                            iconScale.animateTo(1.2f, spring(stiffness = Spring.StiffnessHigh))
-                        }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(32.dp)
-                        .background(buttonBgColor, CircleShape),
-                ) {
-                    Icon(
-                        imageVector        = if (place.isBookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                        contentDescription = "장바구니",
-                        tint               = Color.White,
-                        modifier           = Modifier.size(18.dp).scale(iconScale.value),
-                    )
+                if (onAddToSchedule != null) {
+                    // 일정 추가 모드 — "추가" 버튼 표시
+                    IconButton(
+                        onClick  = onAddToSchedule,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .size(32.dp)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.88f), CircleShape),
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Outlined.Add,
+                            contentDescription = "일정에 추가",
+                            tint               = Color.White,
+                            modifier           = Modifier.size(18.dp),
+                        )
+                    }
+                } else {
+                    IconButton(
+                        onClick  = {
+                            onCartToggle()
+                            scope.launch {
+                                iconScale.animateTo(1.2f, spring(stiffness = Spring.StiffnessHigh))
+                            }
+                        },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .size(32.dp)
+                            .background(buttonBgColor, CircleShape),
+                    ) {
+                        Icon(
+                            imageVector        = if (place.isBookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
+                            contentDescription = "장바구니",
+                            tint               = Color.White,
+                            modifier           = Modifier.size(18.dp).scale(iconScale.value),
+                        )
+                    }
                 }
             }
 
